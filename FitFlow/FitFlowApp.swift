@@ -1,11 +1,5 @@
-//
-//  FitFlowApp.swift
-//  FitFlow
-//
-//  Created by Carlos Esteve Fernández on 14/4/25.
-//
-
 import SwiftUI
+import SwiftData
 
 @main
 struct FitFlowApp: App {
@@ -13,5 +7,15 @@ struct FitFlowApp: App {
         WindowGroup {
             ContentView()
         }
+        .modelContainer(for: [
+            User.self,
+            WorkoutSession.self,
+            ExerciseEntry.self,
+            ExerciseSet.self,
+            FavoriteWorkoutTitle.self,
+            FavoriteExercise.self,
+            Routine.self,
+            RoutineExercise.self
+        ])
     }
 }

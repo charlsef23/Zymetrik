@@ -1,63 +1,91 @@
-//
-//  WelcomeView.swift
-//  FitFlow
-//
-//  Created by Carlos Esteve Fernández on 14/4/25.
-//
-
 import SwiftUI
+import AuthenticationServices
+import SwiftData
 
 struct WelcomeView: View {
-    @State private var fadeIn = false
-    @State private var moveUp = false
+    @Environment(\.modelContext) private var context
+    @Query private var usuarios: [User]
+
+    @AppStorage("userName") private var userName: String = ""
+    @AppStorage("userEmail") private var userEmail: String = ""
 
     var body: some View {
-        VStack(spacing: 30) {
-            Spacer()
+        NavigationStack {
+            VStack(spacing: 32) {
+                Spacer()
 
-            Image("logo")
-                .resizable()
-                .scaledToFit()
-                .frame(height: 140)
-                .opacity(fadeIn ? 1 : 0)
-                .animation(.easeIn(duration: 1), value: fadeIn)
+                VStack(spacing: 8) {
+                    Image(systemName: "bolt.circle.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 100, height: 100)
+                        .foregroundColor(.blue)
 
-            Text("FitFlow")
-                .font(.system(size: 42, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
-                .opacity(fadeIn ? 1 : 0)
-                .animation(.easeIn(duration: 1).delay(0.3), value: fadeIn)
+                    Text("FitFlow")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                }
 
-            Text("Tu compañero ideal para mantenerte en forma.")
-                .font(.title3)
-                .multilineTextAlignment(.center)
-                .foregroundColor(.gray)
-                .padding(.horizontal)
-                .opacity(fadeIn ? 1 : 0)
-                .animation(.easeIn(duration: 1).delay(0.6), value: fadeIn)
-
-            Spacer()
-
-            Button(action: {
-                // Navegación futura
-            }) {
-                Text("Empezar")
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
+                Text("Tu compañero ideal para el entrenamiento")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                    .multilineTextAlignment(.center)
                     .padding(.horizontal)
-            }
-            .offset(y: moveUp ? 0 : 20)
-            .opacity(moveUp ? 1 : 0)
-            .animation(.easeOut(duration: 1).delay(1), value: moveUp)
 
-            Spacer(minLength: 40)
-        }
-        .onAppear {
-            fadeIn = true
-            moveUp = true
+                VStack(spacing: 16) {
+                    NavigationLink(destination: LoginView()) {
+                        Text("Iniciar sesión")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                    }
+
+                    NavigationLink(destination: RegistroView()) {
+                        Text("Registrarse")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.gray.opacity(0.15))
+                            .foregroundColor(.blue)
+                            .cornerRadius(10)
+                    }
+
+                    SignInWithAppleButton(
+                        .signIn,
+                        onRequest: { request in
+                            request.requestedScopes = [.fullName, .email]
+                        },
+                        onCompletion: { result in
+                            switch result {
+                            case .success(let authResults):
+                                if let credential = authResults.credential as? ASAuthorizationAppleIDCredential {
+                                    let name = credential.fullName?.givenName ?? "Usuario"
+                                    let email = credential.email ?? "usuario@icloud.com"
+
+                                    if !usuarios.contains(where: { $0.email == email }) {
+                                        let nuevoUsuario = User(name: name, email: email, password: "apple-auth")
+                                        context.insert(nuevoUsuario)
+                                        try? context.save()
+                                    }
+
+                                    userName = name
+                                    userEmail = email
+                                }
+                            case .failure(let error):
+                                print("Error al iniciar sesión con Apple: \(error.localizedDescription)")
+                            }
+                        }
+                    )
+                    .signInWithAppleButtonStyle(.black)
+                    .frame(height: 45)
+                    .cornerRadius(10)
+                }
+                .padding(.horizontal)
+
+                Spacer()
+            }
+            .padding()
         }
     }
 }
