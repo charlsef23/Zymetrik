@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct FitFlowApp: App {
+struct Zymetrik: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
