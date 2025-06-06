@@ -1,65 +1,45 @@
 import SwiftUI
 
 struct MensajesView: View {
-    @State private var searchText = ""
-
-    let chats = ["carlafit", "gymbro", "ztrainer", "entrena_con_lu", "mari_lifts"]
-
-    var chatsFiltrados: [String] {
-        searchText.isEmpty ? chats : chats.filter {
-            $0.localizedCaseInsensitiveContains(searchText)
-        }
-    }
+    // Lista de chats simulados
+    let chats = [
+        (usuario: "Carlos", foto: "foto_perfil"),
+        (usuario: "gymbro", foto: "persona1"),
+        (usuario: "carla_fit", foto: "persona2"),
+        (usuario: "lu_entrena", foto: "persona3")
+    ]
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // 🔍 Barra de búsqueda
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
-
-                    TextField("Buscar usuario", text: $searchText)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-
-                    if !searchText.isEmpty {
-                        Button(action: {
-                            searchText = ""
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
-                        }
-                    }
-                }
-                .padding(10)
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
-                .padding(.horizontal)
-                .padding(.top, 8)
-
-                // 📋 Lista de chats
-                List(chatsFiltrados, id: \.self) { usuario in
-                    NavigationLink(destination: ChatView(usuario: usuario)) {
-                        HStack(spacing: 14) {
-                            Image(systemName: "person.circle.fill")
+            List {
+                ForEach(chats, id: \.usuario) { chat in
+                    NavigationLink(destination: ChatView(usuario: chat.usuario, foto: chat.foto)) {
+                        HStack(spacing: 12) {
+                            Image(chat.foto)
                                 .resizable()
-                                .frame(width: 44, height: 44)
-                                .foregroundColor(.gray)
+                                .scaledToFill()
+                                .frame(width: 50, height: 50)
+                                .clipShape(Circle())
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(usuario)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(chat.usuario)
                                     .font(.headline)
                                 Text("Último mensaje aquí...")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
                             }
+
+                            Spacer()
+
+                            Text("09:12")
+                                .font(.caption)
+                                .foregroundColor(.gray)
                         }
                         .padding(.vertical, 6)
                     }
                 }
-                .listStyle(.plain)
             }
+            .listStyle(.plain)
             .navigationTitle("Mensajes")
         }
     }

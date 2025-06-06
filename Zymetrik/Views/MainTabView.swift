@@ -1,36 +1,42 @@
 import SwiftUI
 
 struct MainTabView: View {
-    init() {
-        let appearance = UITabBarAppearance()
-        appearance.configureWithTransparentBackground()
-        appearance.backgroundColor = UIColor.systemBackground
-        appearance.shadowImage = nil
-        appearance.shadowColor = nil
-
-        UITabBar.appearance().standardAppearance = appearance
-        UITabBar.appearance().scrollEdgeAppearance = appearance
-        UITabBar.appearance().unselectedItemTintColor = UIColor.gray
-    }
+    let entrenamientosDemo: [SesionEntrenamiento] = [
+        SesionEntrenamiento(
+            titulo: "Pecho & Tríceps",
+            fecha: Date(),
+            ejercicios: [
+                EjercicioEntrenamiento(nombre: "Press Banca", tipo: .fuerza, sets: [SetEjercicio(peso: "80", repeticiones: "8")]),
+                EjercicioEntrenamiento(nombre: "Fondos", tipo: .fuerza, sets: [SetEjercicio(peso: "Corporal", repeticiones: "12")])
+            ]
+        )
+    ]
 
     var body: some View {
         TabView {
-            SocialFeedView()
+            SocialFeedView(sesiones: entrenamientosDemo)
                 .tabItem {
                     Image(systemName: "house.fill")
-                        .padding(.top, 4)
+                }
+
+            BuscarView()
+                .tabItem {
+                    Image(systemName: "magnifyingglass")
+                }
+
+            CrearPostView()
+                .tabItem {
+                    Image(systemName: "plus.app")
                 }
 
             EntrenamientoView()
                 .tabItem {
                     Image(systemName: "dumbbell.fill")
-                        .padding(.top, 4)
                 }
 
             PerfilView()
                 .tabItem {
                     Image(systemName: "person.crop.circle")
-                        .padding(.top, 4)
                 }
         }
         .accentColor(.black)

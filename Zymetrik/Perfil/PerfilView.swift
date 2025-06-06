@@ -3,93 +3,114 @@ import SwiftUI
 struct PerfilView: View {
     @State private var selectedTab: PerfilTab = .entrenamientos
     @State private var showAjustes = false
-
-    let entrenamientos = [
-        "Pecho y tríceps",
-        "Pierna completa",
-        "Espalda y bíceps"
-    ]
-
-    let logros: [Logro] = [
-        Logro(titulo: "Primer entrenamiento", descripcion: "Completaste tu primer día en Zymetrik", icono: "star.fill"),
-        Logro(titulo: "5 entrenos", descripcion: "Has registrado 5 entrenamientos", icono: "flame.fill"),
-        Logro(titulo: "Semana completa", descripcion: "Entrenaste 7 días seguidos", icono: "calendar.circle.fill")
-    ]
+    @State private var showSeguidores = false
+    @State private var showSiguiendo = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    // Foto y nombre
-                    VStack(spacing: 8) {
-                        Image("foto_perfil")
+                VStack(spacing: 20) {
+                    // Título + botón de ajustes
+                    HStack {
+                        Text("Perfil")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                        Spacer()
+                        Button {
+                            showAjustes = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.title2)
+                                .foregroundColor(.black)
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    // Foto, nombre y bio
+                    VStack(spacing: 12) {
+                        Image(systemName: "person.circle.fill")
                             .resizable()
-                            .frame(width: 90, height: 90)
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(Color.secondary, lineWidth: 1))
+                            .frame(width: 84, height: 84)
+                            .foregroundColor(.gray)
 
                         Text("Carlitos")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                            .font(.title3)
+                            .fontWeight(.semibold)
 
                         Text("📱 Creador de @zymetrik.app\n👨🏻‍💻 Apple Developer · SwiftUI ")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
-                    }
-                    .padding(.top)
-
-                    // Contadores con navegación
-                    HStack {
-                        Spacer()
-                        VStack {
-                            Text("12")
-                                .font(.headline)
-                                .foregroundColor(.black)
-                            Text("Entrenos")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                        
+                        HStack{
+                            NavigationLink(destination: EditarPerfilView()) {
+                                Text("Editar perfil")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .padding(.horizontal, 24)
+                                    .padding(.vertical, 8)
+                                    .background(Color.black)
+                                    .foregroundColor(.white)
+                                    .clipShape(Capsule())
+                            }
+                            .padding(.top, 4)
+                            NavigationLink(
+                                destination: ShareProfileView(
+                                    username: "carlos", // o una variable con el nombre real
+                                    profileImage: Image("foto_perfil") // o una imagen cargada dinámicamente
+                                )
+                            ) {
+                                Text("Compartir")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .padding(.horizontal, 24)
+                                    .padding(.vertical, 8)
+                                    .background(Color.black)
+                                    .foregroundColor(.white)
+                                    .clipShape(Capsule())
+                            }
+                            .padding(.top, 4)
                         }
-                        Spacer()
-                        NavigationLink(destination: ListaSeguidoresView()) {
+                        
+
+                        HStack {
+                            Spacer()
                             VStack {
-                                Text("910")
+                                Text("12")
                                     .font(.headline)
                                     .foregroundColor(.black)
-                                Text("Seguidores")
+                                Text("Entrenos")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
-                        }
-                        Spacer()
-                        NavigationLink(destination: ListaSeguidosView()) {
-                            VStack {
-                                Text("562")
-                                    .font(.headline)
-                                    .foregroundColor(.black)
-                                Text("Siguiendo")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                            Spacer()
+                            NavigationLink(destination: ListaSeguidoresView()) {
+                                VStack {
+                                    Text("910")
+                                        .font(.headline)
+                                        .foregroundColor(.black)
+                                    Text("Seguidores")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
+                            Spacer()
+                            NavigationLink(destination: ListaSeguidosView()) {
+                                VStack {
+                                    Text("562")
+                                        .font(.headline)
+                                        .foregroundColor(.black)
+                                    Text("Siguiendo")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            Spacer()
                         }
-                        Spacer()
+                        .padding(.top, 8)
                     }
 
-                    // Botón editar perfil
-                    Button(action: {
-                        // Acción editar perfil
-                    }) {
-                        Text("Editar perfil")
-                            .fontWeight(.semibold)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .foregroundColor(.black)
-                            .cornerRadius(10)
-                    }
-                    .padding(.horizontal)
-
-                    // Tabs
+                    // Pestañas
                     HStack {
                         ForEach(PerfilTab.allCases, id: \.self) { tab in
                             Button {
@@ -108,69 +129,33 @@ struct PerfilView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.vertical, 10)
 
-                    // Contenido según tab
-                    VStack(alignment: .leading, spacing: 8) {
-                        switch selectedTab {
-                        case .entrenamientos:
-                            ForEach(entrenamientos, id: \.self) { nombre in
-                                HStack {
-                                    Image(systemName: "dumbbell.fill")
-                                    Text(nombre)
-                                    Spacer()
-                                }
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
-                            }
-
-                        case .estadisticas:
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(.systemGray6))
-                                .frame(height: 180)
-                                .overlay(Text("📊 Gráfico de estadísticas").foregroundColor(.secondary))
-
-                        case .logros:
-                            ForEach(logros) { logro in
-                                HStack(spacing: 12) {
-                                    Image(systemName: logro.icono)
-                                        .foregroundColor(.yellow)
-                                        .frame(width: 32, height: 32)
-                                        .background(Color.yellow.opacity(0.2))
-                                        .clipShape(Circle())
-
-                                    VStack(alignment: .leading) {
-                                        Text(logro.titulo)
-                                            .font(.headline)
-                                        Text(logro.descripcion)
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Spacer()
-                                }
-                                .padding()
-                            }
+                    // Contenido modularizado
+                    VStack(alignment: .leading, spacing: 12) {
+                        if selectedTab == .entrenamientos {
+                            PerfilEntrenamientosView()
+                        } else if selectedTab == .estadisticas {
+                            PerfilEstadisticasView()
+                        } else if selectedTab == .logros {
+                            PerfilLogrosView()
                         }
                     }
-                    .padding(.horizontal)
                 }
-            }
-            .navigationTitle("Perfil")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showAjustes = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .foregroundColor(.black)
-                    }
-                }
+                .padding(.top)
             }
             .sheet(isPresented: $showAjustes) {
                 SettingsView()
             }
+            .sheet(isPresented: $showSeguidores) {
+                Text("Pantalla de seguidores")
+            }
+            .sheet(isPresented: $showSiguiendo) {
+                Text("Pantalla de siguiendo")
+            }
         }
     }
+}
+
+#Preview {
+    PerfilView()
 }

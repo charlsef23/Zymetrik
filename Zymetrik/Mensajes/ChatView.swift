@@ -1,68 +1,131 @@
 import SwiftUI
 
+// Modelo de mensaje
+struct ChatMessage: Identifiable, Equatable {
+    let id = UUID()
+    let text: String
+    let isCurrentUser: Bool
+    let time: String
+}
+
 struct ChatView: View {
     let usuario: String
-    @State private var nuevoMensaje = ""
-    @State private var mensajes: [Mensaje] = [
-        Mensaje(texto: "¡Hola!", esUsuarioActual: false),
-        Mensaje(texto: "¿Entrenamos hoy?", esUsuarioActual: true)
+    let foto: String
+
+    @State private var mensajes: [ChatMessage] = [
+        ChatMessage(text: "Hola! ¿Listo para entrenar?", isCurrentUser: false, time: "09:03"),
+        ChatMessage(text: "¡Claro! Nos vemos en 10 minutos", isCurrentUser: true, time: "09:05"),
+        ChatMessage(text: "Perfecto 🔥", isCurrentUser: false, time: "09:06")
     ]
 
+    @State private var nuevoMensaje = ""
+    @State private var irAlPerfil = false
+    @FocusState private var campoEnfocado: Bool
+
     var body: some View {
-        VStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(mensajes) { mensaje in
-                        HStack {
-                            if mensaje.esUsuarioActual {
-                                Spacer()
-                                Text(mensaje.texto)
-                                    .padding()
-                                    .background(Color.blue)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(16)
-                                    .frame(maxWidth: 240, alignment: .trailing)
-                            } else {
-                                Text(mensaje.texto)
-                                    .padding()
-                                    .background(Color(.systemGray5))
-                                    .foregroundColor(.black)
-                                    .cornerRadius(16)
-                                    .frame(maxWidth: 240, alignment: .leading)
-                                Spacer()
+        VStack(spacing: 0) {
+            // Encabezado con foto y nombre
+            Button {
+                irAlPerfil = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(foto)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 44, height: 44)
+                        .clipShape(Circle())
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(usuario)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Text("En línea")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+                    Spacer()
+                }
+                .padding()
+                .background(Color(.systemGray6))
+            }
+
+            Divider()
+
+            // Lista de mensajes
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(mensajes) { mensaje in
+                            HStack {
+                                if mensaje.isCurrentUser { Spacer() }
+
+                                VStack(alignment: mensaje.isCurrentUser ? .trailing : .leading, spacing: 4) {
+                                    Text(mensaje.text)
+                                        .padding()
+                                        .background(mensaje.isCurrentUser ? Color.black : Color(.systemGray5))
+                                        .foregroundColor(mensaje.isCurrentUser ? .white : .black)
+                                        .cornerRadius(16)
+
+                                    Text(mensaje.time)
+                                        .font(.caption2)
+                                        .foregroundColor(.gray)
+                                }
+
+                                if !mensaje.isCurrentUser { Spacer() }
                             }
+                            .padding(.horizontal)
+                            .id(mensaje.id)
+                        }
+                    }
+                    .padding(.vertical, 10)
+                }
+                .onChange(of: mensajes) { _, nuevosMensajes in
+                    if let ultimo = nuevosMensajes.last {
+                        withAnimation {
+                            proxy.scrollTo(ultimo.id, anchor: .bottom)
                         }
                     }
                 }
-                .padding(.horizontal)
-                .padding(.top)
             }
 
+            // Campo para escribir mensaje
             HStack {
-                TextField("Escribe un mensaje", text: $nuevoMensaje)
-                    .padding(12)
+                TextField("Mensaje...", text: $nuevoMensaje)
+                    .padding(10)
                     .background(Color(.systemGray6))
-                    .cornerRadius(20)
+                    .cornerRadius(10)
+                    .focused($campoEnfocado)
 
-                Button(action: {
-                    let mensaje = Mensaje(texto: nuevoMensaje, esUsuarioActual: true)
-                    mensajes.append(mensaje)
-                    nuevoMensaje = ""
-                }) {
+                Button {
+                    if !nuevoMensaje.isEmpty {
+                        let hora = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)
+                        withAnimation {
+                            mensajes.append(ChatMessage(text: nuevoMensaje, isCurrentUser: true, time: hora))
+                        }
+                        nuevoMensaje = ""
+                        campoEnfocado = false
+                    }
+                } label: {
                     Image(systemName: "paperplane.fill")
-                        .foregroundColor(.blue)
-                        .font(.title2)
+                        .rotationEffect(.degrees(45))
+                        .font(.title3)
+                        .padding(10)
+                        .background(Color.black)
+                        .foregroundColor(.white)
+                        .clipShape(Circle())
                 }
             }
             .padding()
         }
-        .navigationTitle(usuario)
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $irAlPerfil) {
+            UserProfileView(username: usuario)
+        }
+        .onTapGesture {
+            campoEnfocado = false
+        }
     }
 }
 
-struct Mensaje: Identifiable {
-    let id = UUID()
-    let texto: String
-    let esUsuarioActual: Bool
+#Preview {
+    ChatView(usuario: "Carlos", foto: "foto_perfil")
 }

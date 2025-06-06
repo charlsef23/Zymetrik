@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ComentarioMock: Identifiable {
+struct ComentarioMock: Identifiable, Equatable {
     let id = UUID()
     let username: String
     let avatarURL: String?
@@ -13,106 +13,122 @@ struct ComentariosSheetView: View {
     let comentarios: [ComentarioMock]
     @Binding var isPresented: Bool
     @State private var nuevoComentario: String = ""
-    
+    @FocusState private var campoEnfocado: Bool
+
+    @State private var comentariosInternos: [ComentarioMock] = []
+
     var body: some View {
         VStack(spacing: 0) {
-            // Línea superior
-            Capsule()
-                .fill(Color.gray.opacity(0.4))
-                .frame(width: 40, height: 6)
+            let topBar = Capsule()
+                .fill(Color.gray.opacity(0.3))
+                .frame(width: 40, height: 5)
                 .padding(.top, 8)
 
-            Text("Comentarios")
+            let title = Text("Comentarios")
                 .font(.headline)
+                .fontWeight(.semibold)
                 .padding(.vertical, 12)
 
-            Divider()
+            let divider = Divider()
 
-            // Lista de comentarios
-            ScrollView {
-                VStack(spacing: 16) {
-                    ForEach(comentarios) { comentario in
-                        HStack(alignment: .top, spacing: 12) {
-                            avatarView(url: comentario.avatarURL, username: comentario.username)
+            let comentariosList = ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 20) {
+                        ForEach(comentariosInternos) { comentario in
+                            HStack(alignment: .top, spacing: 12) {
+                                avatarView(url: comentario.avatarURL, username: comentario.username)
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(comentario.username)
-                                        .font(.subheadline).bold()
-                                    Spacer()
-                                    Text(relativeDate(from: comentario.createdAt))
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack {
+                                        Text(comentario.username)
+                                            .font(.subheadline).bold()
+                                        Spacer()
+                                        Text(relativeDate(from: comentario.createdAt))
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
+
+                                    Text(comentario.content)
+                                        .font(.body)
+                                        .foregroundColor(.primary)
+
+                                    Button("Responder") {}
                                         .font(.caption)
-                                        .foregroundColor(.gray)
+                                        .foregroundColor(.black)
                                 }
 
-                                Text(comentario.content)
-                                    .font(.subheadline)
+                                VStack(spacing: 6) {
+                                    Button {
+                                        // Acción futura
+                                    } label: {
+                                        Image(systemName: "heart")
+                                            .foregroundColor(.black)
+                                    }
 
-                                Button("Responder") {}
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
-                            }
-
-                            VStack {
-                                Button {
-                                    // acción futura
-                                } label: {
-                                    Image(systemName: "heart")
+                                    Text("\(comentario.likes)")
+                                        .font(.caption2)
+                                        .foregroundColor(.black)
                                 }
-                                Text("\(comentario.likes)")
-                                    .font(.caption)
                             }
+                            .padding(.horizontal)
+                            .id(comentario.id)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+                .onChange(of: comentariosInternos) { _, nuevosComentarios in
+                    withAnimation {
+                        if let ultimo = nuevosComentarios.last {
+                            proxy.scrollTo(ultimo.id, anchor: .bottom)
                         }
                     }
                 }
-                .padding()
             }
 
-            Divider()
+            let inputField = HStack {
+                TextField("Comentario...", text: $nuevoComentario)
+                    .padding(10)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+                    .focused($campoEnfocado)
 
-            // Barra de emojis
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
-                    ForEach(["❤️", "🙌", "🔥", "👏", "😢", "😍", "😮", "😂"], id: \.self) { emoji in
-                        Button {
-                            nuevoComentario += emoji
-                        } label: {
-                            Text(emoji)
-                                .font(.title2)
-                        }
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.top, 6)
-            }
-
-            // Campo de comentario
-            HStack(spacing: 12) {
-                avatarView(url: nil, username: "Tú")
-
-                HStack {
-                    TextField("¿Qué opinas de esto?", text: $nuevoComentario)
+                Button {
+                    let nuevo = ComentarioMock(
+                        username: "Tú",
+                        avatarURL: nil,
+                        content: nuevoComentario,
+                        createdAt: Date(),
+                        likes: 0
+                    )
+                    comentariosInternos.append(nuevo)
+                    nuevoComentario = ""
+                    campoEnfocado = false
+                } label: {
+                    Image(systemName: "paperplane.fill")
+                        .rotationEffect(.degrees(45))
+                        .font(.title3)
                         .padding(10)
-
-                    Button {
-                        // lógica de enviar
-                        nuevoComentario = ""
-                    } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 26))
-                            .foregroundColor(nuevoComentario.isEmpty ? .gray : .blue)
-                    }
-                    .disabled(nuevoComentario.isEmpty)
+                        .background(Color.black)
+                        .foregroundColor(.white)
+                        .clipShape(Circle())
                 }
-                .background(Color(.systemGray6))
-                .clipShape(Capsule())
+                .disabled(nuevoComentario.isEmpty)
             }
             .padding(.horizontal)
-            .padding(.bottom, 12)
+            .padding(.vertical, 12)
+            .background(Color.white)
+
+            topBar
+            title
+            divider
+            comentariosList
+            inputField
+        }
+        .onAppear {
+            comentariosInternos = comentarios
         }
         .background(Color.white)
         .cornerRadius(20)
-        .ignoresSafeArea(edges: .bottom)
     }
 
     func avatarView(url: String?, username: String) -> some View {
@@ -129,7 +145,7 @@ struct ComentariosSheetView: View {
                 .clipShape(Circle())
             } else {
                 Circle()
-                    .fill(Color.blue)
+                    .fill(Color.black)
                     .overlay(Text(String(username.prefix(1))).foregroundColor(.white).bold())
                     .frame(width: 36, height: 36)
             }
@@ -142,14 +158,4 @@ struct ComentariosSheetView: View {
         formatter.unitsStyle = .short
         return formatter.localizedString(for: date, relativeTo: Date())
     }
-}
-
-#Preview {
-    ComentariosSheetView(
-        comentarios: [
-            ComentarioMock(username: "Carlos", avatarURL: nil, content: "¡Increíble entrenamiento!", createdAt: Date().addingTimeInterval(-300), likes: 5),
-            ComentarioMock(username: "Ana", avatarURL: nil, content: "🔥🔥🔥", createdAt: Date().addingTimeInterval(-600), likes: 3)
-        ],
-        isPresented: .constant(true)
-    )
 }

@@ -1,103 +1,92 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @State private var isPrivateAccount = false
-    @State private var notifyWorkoutReminder = true
-    @State private var notifyFollowers = true
-    @State private var notifyLikes = true
-    @State private var notifyComments = true
-    @State private var notifyShares = true
-    @State private var showNotifications = false
+    @State private var mostrarShare = false
 
     var body: some View {
         NavigationStack {
-            List {
-                // Perfil
-                Section("Perfil") {
-                    HStack {
-                        Circle()
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: 50, height: 50)
-                            .overlay(Image(systemName: "person.fill").foregroundColor(.black))
+            ScrollView {
+                VStack(spacing: 32) {
 
-                        VStack(alignment: .leading) {
-                            Text("Carlos Esteve")
-                                .font(.headline)
-                            Text("@carlos")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                        }
+                    // ENCABEZADO: Centro de cuentas
+                    HStack(spacing: 16) {
+                        Image("foto_perfil") // Usa tu imagen real o sistema
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 56, height: 56)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color.primary, lineWidth: 1))
+
+                        Text("Centro de cuentas")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.primary)
+
                         Spacer()
-                        Button(action: {}) {
-                            Text("Editar")
+
+                        Button(action: {
+                            mostrarShare = true
+                        }) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.primary)
                         }
                     }
-                }
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(Color(.systemBackground))
+                            .shadow(color: Color.primary.opacity(0.05), radius: 5, x: 0, y: 3)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                            )
+                    )
+                    .padding(.horizontal)
 
-                // Privacidad
-                Section("Privacidad") {
-                    Toggle("Cuenta privada", isOn: $isPrivateAccount)
-                    NavigationLink("Solicitudes de seguimiento") {
-                        Text("Solicitudes pendientes")
+                    // SECCIONES
+                    VStack(spacing: 32) {
+                        SectionGroup(title: "Zymetrik", items: [
+                            SettingRow(icon: "bookmark.fill", title: "Guardado", destination: AnyView(GuardadosView())),
+                            SettingRow(icon: "bell.fill", title: "Notificaciones", destination: AnyView(Text("NotificacionesView()")))
+                        ])
+
+                        SectionGroup(title: "Quién puede ver tu contenido", items: [
+                            SettingRow(icon: "lock.fill", title: "Privacidad de la cuenta", value: "Privada", destination: AnyView(Text("PrivacidadView()"))),
+                            SettingRow(icon: "square.grid.2x2", title: "Publicaciones cruzadas", destination: AnyView(Text("PublicacionesView()"))),
+                            SettingRow(icon: "hand.raised.fill", title: "Cuentas bloqueadas", value: "4", destination: AnyView(CuentasBloqueadasView()))
+                        ])
+
+                        SectionGroup(title: "Cómo pueden interactuar contigo los demás", items: [
+                            SettingRow(icon: "message.fill", title: "Mensajes", destination: AnyView(Text("MensajesView()"))),
+                            SettingRow(icon: "at", title: "Etiquetas y menciones", destination: AnyView(Text("EtiquetasView()"))),
+                            SettingRow(icon: "text.bubble.fill", title: "Comentarios", destination: AnyView(Text("ComentariosView()")))
+                        ])
+
+                        SectionGroup(title: "Soporte", items: [
+                            SettingRow(icon: "envelope.fill", title: "Enviar feedback", destination: AnyView(Text("FeedbackView()"))),
+                            SettingRow(icon: "questionmark.circle.fill", title: "Contactar con soporte", destination: AnyView(Text("SoporteView()"))),
+                            SettingRow(icon: "book.fill", title: "FAQ", destination: AnyView(Text("FAQView()")))
+                        ])
+
+                        SectionGroup(title: "Cuenta", items: [
+                            SettingRow(icon: "rectangle.portrait.and.arrow.forward", title: "Cerrar sesión", destination: AnyView(Text("CerrarSesionView()"))),
+                            SettingRow(icon: "trash.fill", title: "Eliminar cuenta", destination: AnyView(Text("EliminarCuentaView()")))
+                        ])
+
+                        Spacer(minLength: 20)
                     }
+                    .padding(.horizontal)
                 }
-
-                // Notificaciones (acceso)
-                Section {
-                    NavigationLink("Notificaciones") {
-                        List {
-                            Section("Notificaciones") {
-                                Toggle("Recordatorios para entrenar", isOn: $notifyWorkoutReminder)
-                                Toggle("Nuevos seguidores", isOn: $notifyFollowers)
-                                Toggle("Me gusta (fuerza)", isOn: $notifyLikes)
-                                Toggle("Comentarios", isOn: $notifyComments)
-                                Toggle("Compartidos", isOn: $notifyShares)
-                            }
-                        }
-                        .navigationTitle("Notificaciones")
-                    }
-                }
-
-                // Contenido
-                Section("Contenido") {
-                    NavigationLink("Preferencias de visualización") {
-                        Text("Aquí irán las opciones de tema, diseño, etc.")
-                    }
-                    NavigationLink("Idioma") {
-                        Text("Selecciona el idioma")
-                    }
-                }
-
-                // Salud
-                Section("Salud") {
-                    Button("Conectar con Apple Health") {}
-                }
-
-                // Membresía
-                Section("Membresía") {
-                    HStack {
-                        Text("Plan actual")
-                        Spacer()
-                        Text("Gratuito")
-                            .foregroundColor(.gray)
-                    }
-                    Button("Ver planes y suscribirme") {}
-                }
-
-                // Soporte
-                Section("Soporte") {
-                    Button("Enviar feedback") {}
-                    Button("Contactar con soporte") {}
-                    Button("FAQ") {}
-                }
-
-                // Cuenta
-                Section("Cuenta") {
-                    Button("Cerrar sesión", role: .destructive) {}
-                    Button("Eliminar cuenta", role: .destructive) {}
-                }
+                .padding(.top, 16)
             }
-            .navigationTitle("Ajustes")
+            .background(Color.white)
+            .navigationTitle("Configuración")
+            .sheet(isPresented: $mostrarShare) {
+                ShareProfileView(
+                    username: "carlos",
+                    profileImage: Image("foto_perfil")
+                )
+            }
         }
     }
 }
