@@ -9,13 +9,13 @@ extension Date {
 
 struct Ejercicio: Identifiable {
     let id = UUID()
-    let nombre: String
-    let descripcion: String
-    let categoria: String
-    let tipo: TipoEjercicio
+    var nombre: String
+    var descripcion: String
+    var categoria: String
+    var tipo: TipoEjercicio
+    var esFavorito: Bool = false
 }
 
 enum TipoEjercicio: String, CaseIterable {
-    case gimnasio = "Gimnasio"
-    case cardio = "Cardio"
+    case gimnasio, cardio, funcional
 }
