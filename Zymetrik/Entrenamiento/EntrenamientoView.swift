@@ -1,70 +1,46 @@
 import SwiftUI
 
 struct EntrenamientoView: View {
-    @State private var fechaSeleccionada = Date()
-    @State private var mostrarFormulario = false
-
-    // Sesiones de entrenamiento organizadas por fecha
-    @State private var sesionesPorFecha: [Date: [SesionEntrenamiento]] = [:]
+    @State private var selectedDate: Date = Date()
+    @State private var fechasConEntrenamiento: Set<Date> = []
+    @State private var mostrarListaEjercicios = false
 
     var body: some View {
         NavigationStack {
             ZStack {
                 ScrollView {
-                    VStack(spacing: 24) {
-                        // Selector de calendario (mensual ↔ horizontal)
+                    VStack(alignment: .leading, spacing: 20) {
+                        Text("Toca Entrenar")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal)
+
+                        // Calendario
                         CalendarioSelectorView(
-                            selectedDate: $fechaSeleccionada,
-                            fechasConEntrenamiento: Set(sesionesPorFecha.keys.map { $0.stripTime() })
+                            selectedDate: $selectedDate,
+                            fechasConEntrenamiento: fechasConEntrenamiento
                         )
-                        .padding(.horizontal)
 
-                        // Sesiones del día seleccionado
-                        let fechaKey = fechaSeleccionada.stripTime()
-                        let sesiones = sesionesPorFecha[fechaKey] ?? []
-
-                        if sesiones.isEmpty {
-                            Text("No tienes entrenamientos para este día.")
-                                .foregroundColor(.gray)
-                                .padding(.horizontal)
-                        } else {
-                            ForEach(sesiones) { sesion in
-                                SesionCardView(sesion: sesion)
-                            }
-                        }
-
-                        Spacer(minLength: 120)
+                        // Estado del día
+                        Text("No tienes entrenamientos para este día.")
+                            .foregroundColor(.gray)
+                            .font(.subheadline)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.top, 60)
                     }
                     .padding(.top)
                 }
 
                 // Botón flotante
                 FloatingAddButton {
-                    mostrarFormulario = true
+                    mostrarListaEjercicios = true
                 }
             }
-            .sheet(isPresented: $mostrarFormulario) {
-                FormularioSesionView { nuevaSesion in
-                    let key = nuevaSesion.fecha
-                    sesionesPorFecha[key, default: []].append(nuevaSesion)
-                }
+            .sheet(isPresented: $mostrarListaEjercicios) {
+                ListaEjerciciosView() // ← Aquí puedes enlazar con tu vista real
             }
-            .navigationTitle("Toca Entrenar")
-            .navigationBarTitleDisplayMode(.inline)
             .background(Color(.systemGroupedBackground))
+            .navigationBarHidden(true)
         }
     }
-
-    // MARK: - Helpers
-
-    private func formatearFechaCompleta(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "es_ES")
-        formatter.dateStyle = .full
-        return formatter.string(from: date)
-    }
-}
-
-#Preview {
-    EntrenamientoView()
 }

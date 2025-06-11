@@ -1,18 +1,17 @@
 import SwiftUI
 
 struct SocialFeedView: View {
-    var sesiones: [SesionEntrenamiento]
-
     @State private var selectedTab = "Para ti"
     let tabs = ["Para ti", "Siguiendo"]
 
     @State private var mostrarFormularioPost = false
-    @State private var posts: [UUID] = []
-    @State private var followingPosts: [UUID] = []
+    @State private var posts: [EntrenamientoPost] = []
+    @State private var followingPosts: [EntrenamientoPost] = []
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Título y acciones
                 HStack {
                     Text("Inicio")
                         .font(.largeTitle)
@@ -30,8 +29,9 @@ struct SocialFeedView: View {
                 .padding(.horizontal)
                 .padding(.top)
 
+                // Tabs
                 HStack(spacing: 0) {
-                    ForEach(tabs, id: \ .self) { tab in
+                    ForEach(tabs, id: \.self) { tab in
                         Button {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 selectedTab = tab
@@ -52,6 +52,7 @@ struct SocialFeedView: View {
                 .padding(.horizontal)
                 .padding(.top, 8)
 
+                // Feed
                 ScrollView {
                     if (selectedTab == "Para ti" ? posts.isEmpty : followingPosts.isEmpty) {
                         VStack(spacing: 16) {
@@ -86,11 +87,8 @@ struct SocialFeedView: View {
                         .frame(maxWidth: .infinity)
                     } else {
                         LazyVStack(spacing: 20) {
-                            ForEach(selectedTab == "Para ti" ? posts : followingPosts, id: \ .self) { _ in
-                                PostEntrenamientoView(
-                                    sesion: sesiones.first ?? SesionEntrenamiento(titulo: "Demo", fecha: Date(), ejercicios: []),
-                                    username: "Carlos"
-                                )
+                            ForEach(selectedTab == "Para ti" ? posts : followingPosts) { post in
+                                PostView(post: post)
                             }
                         }
                         .padding(.top)
@@ -99,7 +97,13 @@ struct SocialFeedView: View {
                 }
             }
             .sheet(isPresented: $mostrarFormularioPost) {
-                CrearPostView()
+                CrearPostView { nuevo in
+                    if selectedTab == "Para ti" {
+                        posts.insert(nuevo, at: 0)
+                    } else {
+                        followingPosts.insert(nuevo, at: 0)
+                    }
+                }
             }
         }
     }

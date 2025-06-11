@@ -7,42 +7,6 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 32) {
-
-                    // ENCABEZADO: Centro de cuentas
-                    HStack(spacing: 16) {
-                        Image("foto_perfil") // Usa tu imagen real o sistema
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 56, height: 56)
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(Color.primary, lineWidth: 1))
-
-                        Text("Centro de cuentas")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.primary)
-
-                        Spacer()
-
-                        Button(action: {
-                            mostrarShare = true
-                        }) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.primary)
-                        }
-                    }
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 20)
-                            .fill(Color(.systemBackground))
-                            .shadow(color: Color.primary.opacity(0.05), radius: 5, x: 0, y: 3)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 20)
-                                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                            )
-                    )
-                    .padding(.horizontal)
-
                     // SECCIONES
                     VStack(spacing: 32) {
                         SectionGroup(title: "Zymetrik", items: [
