@@ -3,19 +3,36 @@ import SwiftUI
 struct PerfilView: View {
     @State private var selectedTab: PerfilTab = .entrenamientos
     @State private var showAjustes = false
-    @State private var showSeguidores = false
-    @State private var showSiguiendo = false
+    @State private var showEditarPerfil = false
+
+    @State private var nombre = "Carlitos"
+    @State private var username = "carlosesteve23"
+    @State private var presentacion = "👨🏻‍💻 Apple Developer · SwiftUI "
+    @State private var enlaces = ""
+    @State private var imagenPerfil: Image? = Image(systemName: "person.circle.fill")
+
+    let esVerificado = true
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Título + botón de ajustes
+                    // Título y engranaje
                     HStack {
-                        Text("Perfil")
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
+                        HStack(spacing: 6) {
+                            Text(username)
+                                .font(.title)
+                                .fontWeight(.bold)
+
+                            if esVerificado {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .foregroundColor(.blue)
+                                    .font(.system(size: 20))
+                            }
+                        }
+
                         Spacer()
+
                         Button {
                             showAjustes = true
                         } label: {
@@ -26,24 +43,35 @@ struct PerfilView: View {
                     }
                     .padding(.horizontal)
 
-                    // Foto, nombre y bio
+                    // Avatar + datos
                     VStack(spacing: 12) {
-                        Image(systemName: "person.circle.fill")
+                        imagenPerfil?
                             .resizable()
                             .frame(width: 84, height: 84)
+                            .clipShape(Circle())
                             .foregroundColor(.gray)
 
-                        Text("Carlitos")
-                            .font(.title3)
-                            .fontWeight(.semibold)
+                        HStack(spacing: 6) {
+                            Text(nombre)
+                                .font(.title3)
+                                .fontWeight(.semibold)
 
-                        Text("📱 Creador de @zymetrik.app\n👨🏻‍💻 Apple Developer · SwiftUI ")
+                            if esVerificado {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .foregroundColor(.blue)
+                                    .font(.system(size: 16))
+                            }
+                        }
+
+                        Text(presentacion)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
-                        
-                        HStack{
-                            NavigationLink(destination: EditarPerfilView()) {
+
+                        HStack {
+                            Button {
+                                showEditarPerfil = true
+                            } label: {
                                 Text("Editar perfil")
                                     .font(.subheadline)
                                     .fontWeight(.medium)
@@ -53,12 +81,9 @@ struct PerfilView: View {
                                     .foregroundColor(.white)
                                     .clipShape(Capsule())
                             }
-                            .padding(.top, 4)
+
                             NavigationLink(
-                                destination: ShareProfileView(
-                                    username: "carlos", // o una variable con el nombre real
-                                    profileImage: Image("foto_perfil") // o una imagen cargada dinámicamente
-                                )
+                                destination: ShareProfileView(username: username, profileImage: imagenPerfil ?? Image(systemName: "person"))
                             ) {
                                 Text("Compartir")
                                     .font(.subheadline)
@@ -69,48 +94,34 @@ struct PerfilView: View {
                                     .foregroundColor(.white)
                                     .clipShape(Capsule())
                             }
-                            .padding(.top, 4)
                         }
-                        
 
+                        // Estadísticas
                         HStack {
                             Spacer()
                             VStack {
-                                Text("12")
-                                    .font(.headline)
-                                    .foregroundColor(.black)
-                                Text("Entrenos")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                Text("12").font(.headline)
+                                Text("Entrenos").font(.caption).foregroundColor(.secondary)
                             }
                             Spacer()
                             NavigationLink(destination: ListaSeguidoresView()) {
                                 VStack {
-                                    Text("910")
-                                        .font(.headline)
-                                        .foregroundColor(.black)
-                                    Text("Seguidores")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                                    Text("910").font(.headline)
+                                    Text("Seguidores").font(.caption).foregroundColor(.secondary)
                                 }
                             }
                             Spacer()
                             NavigationLink(destination: ListaSeguidosView()) {
                                 VStack {
-                                    Text("562")
-                                        .font(.headline)
-                                        .foregroundColor(.black)
-                                    Text("Siguiendo")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                                    Text("562").font(.headline)
+                                    Text("Siguiendo").font(.caption).foregroundColor(.secondary)
                                 }
                             }
                             Spacer()
                         }
-                        .padding(.top, 8)
                     }
 
-                    // Pestañas
+                    // Tabs
                     HStack {
                         ForEach(PerfilTab.allCases, id: \.self) { tab in
                             Button {
@@ -122,40 +133,36 @@ struct PerfilView: View {
                                     .padding(.vertical, 6)
                                     .padding(.horizontal, 16)
                                     .background(
-                                        Capsule()
-                                            .fill(selectedTab == tab ? Color(.systemGray5) : Color.clear)
+                                        Capsule().fill(selectedTab == tab ? Color(.systemGray5) : Color.clear)
                                     )
                             }
                             .buttonStyle(.plain)
                         }
                     }
 
-                    // Contenido modularizado
-                    VStack(alignment: .leading, spacing: 12) {
-                        if selectedTab == .entrenamientos {
-                            PerfilEntrenamientosView()
-                        } else if selectedTab == .estadisticas {
-                            PerfilEstadisticasView()
-                        } else if selectedTab == .logros {
-                            PerfilLogrosView()
-                        }
+                    // Contenido del tab
+                    if selectedTab == .entrenamientos {
+                        PerfilEntrenamientosView()
+                    } else if selectedTab == .estadisticas {
+                        PerfilEstadisticasView()
+                    } else {
+                        PerfilLogrosView()
                     }
                 }
                 .padding(.top)
             }
+            .sheet(isPresented: $showEditarPerfil) {
+                EditarPerfilView(
+                    nombre: $nombre,
+                    username: $username,
+                    presentacion: $presentacion,
+                    enlaces: $enlaces,
+                    imagenPerfil: $imagenPerfil
+                )
+            }
             .sheet(isPresented: $showAjustes) {
                 SettingsView()
             }
-            .sheet(isPresented: $showSeguidores) {
-                Text("Pantalla de seguidores")
-            }
-            .sheet(isPresented: $showSiguiendo) {
-                Text("Pantalla de siguiendo")
-            }
         }
     }
-}
-
-#Preview {
-    PerfilView()
 }

@@ -38,46 +38,51 @@ struct BuscarView: View {
                 .padding(.horizontal)
                 .padding(.top, 8)
 
-                // 👤 Lista de usuarios encontrados
-                List(usuariosFiltrados, id: \.self) { usuario in
-                    NavigationLink(destination: UserProfileView(username: usuario)) {
-                        HStack(spacing: 14) {
-                            Image(systemName: "person.circle.fill")
-                                .resizable()
-                                .frame(width: 44, height: 44)
-                                .foregroundColor(.gray)
+                // 👤 Resultados sin List
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(usuariosFiltrados, id: \.self) { usuario in
+                            NavigationLink(destination: UserProfileView(username: usuario)) {
+                                HStack(spacing: 14) {
+                                    Image(systemName: "person.circle.fill")
+                                        .resizable()
+                                        .frame(width: 44, height: 44)
+                                        .foregroundColor(.gray)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(usuario)
-                                    .font(.headline)
-                                Text("Ver perfil")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(usuario)
+                                            .font(.headline)
+                                        Text("Ver perfil")
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
+
+                                    Spacer()
+
+                                    Button(action: {
+                                        // Acción seguir (futuro)
+                                    }) {
+                                        Text("Seguir")
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 6)
+                                            .background(Color(.systemGray5))
+                                            .foregroundColor(.black)
+                                            .cornerRadius(20)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(.vertical, 12)
+                                .padding(.horizontal)
                             }
-
-                            Spacer()
-
-                            Button(action: {
-                                // Acción seguir (futuro)
-                            }) {
-                                Text("Seguir")
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 6)
-                            }
-                            .background(Color(.systemGray5))
-                            .foregroundColor(.black)
-                            .cornerRadius(20)
                             .buttonStyle(.plain)
+
+                            Divider()
+                                .padding(.leading, 72)
                         }
-                        .padding(.vertical, 4)
                     }
                 }
-                .listStyle(.plain)
             }
             .navigationTitle("Buscar")
         }
     }
-}
-#Preview {
-    BuscarView()
 }
