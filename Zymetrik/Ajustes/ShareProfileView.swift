@@ -99,13 +99,6 @@ struct ShareProfileView: View {
             .padding(.top)
             .navigationTitle("Compartir perfil")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cerrar") {
-                        dismiss()
-                    }
-                }
-            }
         }
     }
 }
