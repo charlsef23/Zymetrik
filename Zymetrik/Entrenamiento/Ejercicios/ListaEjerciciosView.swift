@@ -1,17 +1,19 @@
 import SwiftUI
 
 struct ListaEjerciciosView: View {
-    @State private var ejerciciosSeleccionados: [UUID] = []
+    var modoSeleccion: Bool = false
+    @Binding var ejerciciosSeleccionadosBinding: [Ejercicio]
+    var onFinalizarSeleccion: (() -> Void)? = nil
+
     @State private var tipoSeleccionado: TipoEjercicio = .gimnasio
     @State private var textoBusqueda: String = ""
     @State private var listaEjercicios: [Ejercicio] = [
         Ejercicio(nombre: "Ejercicio 1", descripcion: "Ejercicio para pierna", categoria: "Pierna", tipo: .gimnasio),
         Ejercicio(nombre: "Ejercicio 2", descripcion: "Ejercicio de fuerza", categoria: "Pierna", tipo: .funcional),
-        Ejercicio(nombre: "Espalda Alta", descripcion: "Ejercicio para espalda", categoria: "Espalda", tipo: .gimnasio),
+        Ejercicio(nombre: "Espalda Alta", descripcion: "Espalda y dorsal", categoria: "Espalda", tipo: .gimnasio),
         Ejercicio(nombre: "Correr", descripcion: "Cardio al aire libre", categoria: "Cardio", tipo: .cardio)
     ]
 
-    // Colores según tipo
     func colorTarjeta(_ tipo: TipoEjercicio) -> Color {
         switch tipo {
         case .gimnasio: return Color(red: 240/255, green: 248/255, blue: 255/255)
@@ -20,17 +22,14 @@ struct ListaEjerciciosView: View {
         }
     }
 
-    // Ejercicios filtrados por tipo y búsqueda
     var ejerciciosFiltrados: [String: [Ejercicio]] {
         let filtrados = listaEjercicios.filter {
             $0.tipo == tipoSeleccionado &&
             (textoBusqueda.isEmpty || $0.nombre.localizedCaseInsensitiveContains(textoBusqueda))
         }
-
         return Dictionary(grouping: filtrados) { $0.categoria }
     }
 
-    // Favoritos dentro del tipo seleccionado
     var favoritos: [Ejercicio] {
         listaEjercicios.filter { $0.tipo == tipoSeleccionado && $0.esFavorito }
     }
@@ -39,8 +38,7 @@ struct ListaEjerciciosView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-
-                    // Barra de búsqueda
+                    // Búsqueda
                     HStack {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.gray)
@@ -59,20 +57,18 @@ struct ListaEjerciciosView: View {
                     .cornerRadius(12)
                     .padding(.horizontal)
 
-                    // Selector de tipo
+                    // Selector horizontal
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
                             ForEach(TipoEjercicio.allCases, id: \.self) { tipo in
-                                Button(action: {
+                                Button {
                                     withAnimation { tipoSeleccionado = tipo }
-                                }) {
+                                } label: {
                                     Text(tipo.rawValue.capitalized)
                                         .font(.subheadline)
                                         .padding(.horizontal, 16)
                                         .padding(.vertical, 8)
-                                        .background(
-                                            tipoSeleccionado == tipo ? Color.black : Color(.systemGray5)
-                                        )
+                                        .background(tipoSeleccionado == tipo ? Color.black : Color(.systemGray5))
                                         .foregroundColor(tipoSeleccionado == tipo ? .white : .primary)
                                         .clipShape(Capsule())
                                 }
@@ -81,7 +77,7 @@ struct ListaEjerciciosView: View {
                         .padding(.horizontal)
                     }
 
-                    // FAVORITOS
+                    // Favoritos
                     if !favoritos.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("FAVORITOS")
@@ -89,14 +85,13 @@ struct ListaEjerciciosView: View {
                                 .fontWeight(.semibold)
                                 .foregroundColor(.orange)
                                 .padding(.horizontal)
-
                             ForEach(favoritos) { ejercicio in
                                 tarjetaEjercicio(ejercicio)
                             }
                         }
                     }
 
-                    // Agrupados por categoría
+                    // Lista agrupada
                     ForEach(ejerciciosFiltrados.keys.sorted(), id: \.self) { categoria in
                         VStack(alignment: .leading, spacing: 12) {
                             Text(categoria.uppercased())
@@ -111,7 +106,19 @@ struct ListaEjerciciosView: View {
                         }
                     }
 
-                    Spacer(minLength: 60)
+                    if modoSeleccion {
+                        Button("Finalizar selección") {
+                            onFinalizarSeleccion?()
+                        }
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.black)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                        .padding(.bottom, 40)
+                    }
                 }
                 .padding(.top, 12)
             }
@@ -120,7 +127,6 @@ struct ListaEjerciciosView: View {
         }
     }
 
-    // Vista individual de tarjeta de ejercicio
     @ViewBuilder
     func tarjetaEjercicio(_ ejercicio: Ejercicio) -> some View {
         ZStack(alignment: .topTrailing) {
@@ -136,17 +142,14 @@ struct ListaEjerciciosView: View {
                                 .frame(width: 24, height: 24)
                                 .foregroundColor(.gray)
                         )
-
                     VStack(alignment: .leading, spacing: 4) {
                         Text(ejercicio.nombre)
                             .font(.subheadline)
                             .fontWeight(.semibold)
-
                         Text(ejercicio.descripcion)
                             .font(.caption)
                             .foregroundColor(.gray)
                     }
-
                     Spacer()
                 }
             }
@@ -157,36 +160,35 @@ struct ListaEjerciciosView: View {
                     .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
             )
 
-            // Favorito + Añadir al post en una misma columna
             VStack(spacing: 6) {
-                Button(action: {
+                // Favorito
+                Button {
                     if let index = listaEjercicios.firstIndex(where: { $0.id == ejercicio.id }) {
                         listaEjercicios[index].esFavorito.toggle()
                     }
-                }) {
+                } label: {
                     Image(systemName: ejercicio.esFavorito ? "star.fill" : "star")
                         .foregroundColor(ejercicio.esFavorito ? .yellow : .black)
                         .padding(8)
                 }
 
-                Button(action: {
-                    if ejerciciosSeleccionados.contains(ejercicio.id) {
-                        ejerciciosSeleccionados.removeAll { $0 == ejercicio.id }
-                    } else {
-                        ejerciciosSeleccionados.append(ejercicio.id)
+                // Seleccionar si está en modo selección
+                if modoSeleccion {
+                    Button {
+                        if ejerciciosSeleccionadosBinding.contains(where: { $0.id == ejercicio.id }) {
+                            ejerciciosSeleccionadosBinding.removeAll { $0.id == ejercicio.id }
+                        } else {
+                            ejerciciosSeleccionadosBinding.append(ejercicio)
+                        }
+                    } label: {
+                        Image(systemName: ejerciciosSeleccionadosBinding.contains(where: { $0.id == ejercicio.id }) ? "checkmark.circle.fill" : "plus.circle")
+                            .font(.system(size: 20))
+                            .foregroundColor(ejerciciosSeleccionadosBinding.contains(where: { $0.id == ejercicio.id }) ? .green : .black)
                     }
-                }) {
-                    Image(systemName: ejerciciosSeleccionados.contains(ejercicio.id) ? "checkmark.circle.fill" : "plus.circle")
-                        .font(.system(size: 20))
-                        .foregroundColor(ejerciciosSeleccionados.contains(ejercicio.id) ? .green : .black)
                 }
             }
             .padding([.top, .trailing], 10)
         }
         .padding(.horizontal)
     }
-}
-
-#Preview {
-    ListaEjerciciosView()
 }

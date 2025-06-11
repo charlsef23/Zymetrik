@@ -4,8 +4,8 @@ struct CrearPostView: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var titulo: String = ""
-    @State private var nuevoEjercicio: String = ""
-    @State private var ejercicios: [String] = []
+    @State private var ejercicios: [Ejercicio] = []
+    @State private var mostrarSelector = false
 
     var onPostCreado: ((EntrenamientoPost) -> Void)? = nil
 
@@ -30,36 +30,31 @@ struct CrearPostView: View {
 
                     // Ejercicios
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Ejercicios")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
+                        HStack {
+                            Text("Ejercicios")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            Spacer()
+                            Button(action: {
+                                mostrarSelector = true
+                            }) {
+                                Label("Seleccionar", systemImage: "plus.circle")
+                                    .font(.subheadline)
+                            }
+                        }
 
-                        ForEach(ejercicios, id: \.self) { ejercicio in
+                        ForEach(ejercicios, id: \.id) { ejercicio in
                             HStack {
-                                Text("• \(ejercicio)")
+                                Text("• \(ejercicio.nombre)")
                                 Spacer()
                                 Button(action: {
-                                    ejercicios.removeAll { $0 == ejercicio }
+                                    ejercicios.removeAll { $0.id == ejercicio.id }
                                 }) {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundColor(.gray)
                                 }
                             }
                         }
-
-                        HStack {
-                            TextField("Añadir ejercicio", text: $nuevoEjercicio)
-                                .textInputAutocapitalization(.never)
-                            Button("Añadir") {
-                                if !nuevoEjercicio.trimmingCharacters(in: .whitespaces).isEmpty {
-                                    ejercicios.append(nuevoEjercicio)
-                                    nuevoEjercicio = ""
-                                }
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
                     }
 
                     // Botón publicar
@@ -78,18 +73,34 @@ struct CrearPostView: View {
             }
             .navigationTitle("Crear publicación")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $mostrarSelector) {
+                ListaEjerciciosSeleccionarView(ejerciciosSeleccionados: $ejercicios)
+            }
         }
     }
 
     private func publicarPost() {
         let nuevoPost = EntrenamientoPost(
-            usuario: "@carlos", // ← Luego cambiar por usuario real
+            usuario: "@carlos",
             fecha: Date(),
             titulo: titulo,
-            ejercicios: ejercicios
+            ejercicios: ejercicios.map { $0.nombre }
         )
 
         onPostCreado?(nuevoPost)
         dismiss()
+    }
+}
+
+struct ListaEjerciciosSeleccionarView: View {
+    @Binding var ejerciciosSeleccionados: [Ejercicio]
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        ListaEjerciciosView(
+            modoSeleccion: true,
+            ejerciciosSeleccionadosBinding: $ejerciciosSeleccionados,
+            onFinalizarSeleccion: { dismiss() }
+        )
     }
 }
