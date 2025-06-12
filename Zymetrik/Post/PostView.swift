@@ -8,6 +8,7 @@ struct PostView: View {
     @State private var likeCount = 24
     @State private var isSaved = false
     @State private var showComentarios = false
+    @State private var mostrarCompaneros = false
 
     let comentarios = [
         "¡Muy buen entrenamiento!",
@@ -17,6 +18,8 @@ struct PostView: View {
         "🔥🔥🔥"
     ]
 
+    let companerosEntrenamiento = ["@lucasfit", "@andreapower"]
+
     init(post: EntrenamientoPost) {
         self.post = post
         _ejercicioSeleccionado = State(initialValue: post.ejercicios.first ?? EjercicioPost(nombre: "N/A", series: 0, repeticionesTotales: 0, pesoTotal: 0))
@@ -25,21 +28,60 @@ struct PostView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
-            HStack {
+            HStack(spacing: 8) {
                 Circle()
                     .fill(Color.gray.opacity(0.3))
                     .frame(width: 40, height: 40)
                     .overlay(Text("👤"))
                 Text(post.usuario)
                     .fontWeight(.semibold)
+
+                if !companerosEntrenamiento.isEmpty {
+                    Button(action: {
+                        withAnimation {
+                            mostrarCompaneros.toggle()
+                        }
+                    }) {
+                        Text("+\(companerosEntrenamiento.count)")
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.05))
+                            .cornerRadius(12)
+                    }
+                }
+
                 Spacer()
+
                 Text("Hace 1min")
                     .font(.caption)
                     .foregroundColor(.gray)
             }
             .padding(.horizontal)
 
-            // Estadísticas
+            // Compañeros (mostrar en el post)
+            if mostrarCompaneros {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(companerosEntrenamiento, id: \.self) { nombre in
+                        NavigationLink(destination: UserProfileView(username: nombre)) {
+                            HStack {
+                                Image(systemName: "person.circle")
+                                    .foregroundColor(.gray)
+                                Text(nombre)
+                                    .foregroundColor(.primary)
+                                    .font(.subheadline)
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.leading, 8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            // Estadísticas del ejercicio seleccionado
             VStack(spacing: 12) {
                 Text(ejercicioSeleccionado.nombre)
                     .font(.title2)
@@ -58,7 +100,7 @@ struct PostView: View {
             .cornerRadius(16)
             .padding(.horizontal)
 
-            // Carrusel
+            // Carrusel de ejercicios
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(post.ejercicios, id: \.self) { ejercicio in
@@ -171,22 +213,4 @@ struct StatItem: View {
                 .foregroundColor(.gray)
         }
     }
-}
-
-#Preview {
-    let ejercicios = [
-        EjercicioPost(nombre: "Press banca", series: 4, repeticionesTotales: 40, pesoTotal: 320),
-        EjercicioPost(nombre: "Aperturas", series: 3, repeticionesTotales: 30, pesoTotal: 90),
-        EjercicioPost(nombre: "Fondos", series: 4, repeticionesTotales: 32, pesoTotal: 0)
-    ]
-
-    let post = EntrenamientoPost(
-        usuario: "@carlos",
-        fecha: Date(),
-        titulo: "Pecho y tríceps",
-        ejercicios: ejercicios,
-        mediaURL: nil
-    )
-
-    return PostView(post: post)
 }
