@@ -4,13 +4,15 @@ struct EntrenamientoView: View {
     @State private var selectedDate: Date = Date()
     @State private var entrenamientos: [Entrenamiento] = []
     @State private var mostrarListaEjercicios = false
+    @State private var navegarAEntrenando = false
+    @State private var ejerciciosDelDia: [Ejercicio] = []
 
     var body: some View {
         NavigationStack {
-            ZStack {
+            ZStack(alignment: .bottomTrailing) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        Text("Toca Entrenar")
+                        Text("Entrenamiento")
                             .font(.title2)
                             .fontWeight(.semibold)
                             .padding(.horizontal)
@@ -26,6 +28,23 @@ struct EntrenamientoView: View {
                             ForEach(entrenamiento.ejercicios) { ejercicio in
                                 TarjetaEjercicioView(ejercicio: ejercicio)
                             }
+
+                            // Botón "Entrenar"
+                            Button(action: {
+                                ejerciciosDelDia = entrenamiento.ejercicios
+                                navegarAEntrenando = true
+                            }) {
+                                Text("Entrenar")
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.green)
+                                    .foregroundColor(.white)
+                                    .font(.headline)
+                                    .cornerRadius(12)
+                                    .padding(.horizontal)
+                                    .padding(.bottom, 20)
+                            }
+
                         } else {
                             Text("No tienes entrenamientos para este día.")
                                 .foregroundColor(.gray)
@@ -37,10 +56,12 @@ struct EntrenamientoView: View {
                     .padding(.top)
                 }
 
-                // Botón flotante
+                // Botón flotante para añadir ejercicios
                 FloatingAddButton {
                     mostrarListaEjercicios = true
                 }
+                .padding(.trailing, 20)
+                .padding(.bottom, 40)
             }
             .sheet(isPresented: $mostrarListaEjercicios) {
                 SelectorEjerciciosEntrenamiento { seleccionados in
@@ -52,13 +73,15 @@ struct EntrenamientoView: View {
                     }
                 }
             }
+            .navigationDestination(isPresented: $navegarAEntrenando) {
+                EntrenandoView(ejercicios: ejerciciosDelDia)
+            }
             .background(Color(.systemGroupedBackground))
             .navigationBarHidden(true)
         }
     }
 }
 
-// Vista de tarjeta visual igual a la de la lista de ejercicios
 struct TarjetaEjercicioView: View {
     var ejercicio: Ejercicio
 
@@ -111,13 +134,15 @@ struct SelectorEjerciciosEntrenamiento: View {
     @State private var seleccionados: [Ejercicio] = []
 
     var body: some View {
-        ListaEjerciciosView(
-            modoSeleccion: true,
-            ejerciciosSeleccionadosBinding: $seleccionados,
-            onFinalizarSeleccion: {
-                onEjerciciosSeleccionados(seleccionados)
-                dismiss()
-            }
-        )
+        NavigationStack {
+            ListaEjerciciosView(
+                modoSeleccion: true,
+                ejerciciosSeleccionadosBinding: $seleccionados,
+                onFinalizarSeleccion: {
+                    onEjerciciosSeleccionados(seleccionados)
+                    dismiss()
+                }
+            )
+        }
     }
 }

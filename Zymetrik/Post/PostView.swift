@@ -2,6 +2,17 @@ import SwiftUI
 
 struct PostView: View {
     let post: EntrenamientoPost
+    @State private var isLiked = false
+    @State private var likeCount = 4
+    @State private var showComentarios = false
+    @State private var isSaved = false
+    @State private var comentarios: [String] = [
+        "¡Muy buen entrenamiento!",
+        "¿Cuántas repes hiciste?",
+        "Inspirador 💪",
+        "Voy a probar esta rutina",
+        "🔥🔥🔥"
+    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -32,7 +43,6 @@ struct PostView: View {
             // Scroll horizontal multimedia + ejercicios
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
-                    // Multimedia placeholder
                     Button {
                         // Acción multimedia
                     } label: {
@@ -48,12 +58,11 @@ struct PostView: View {
                                 .foregroundColor(.black)
                         }
                         .frame(width: 100, height: 80)
-                        .background(LinearGradient(colors: [.white, .gray.opacity(0.1)], startPoint: .top, endPoint: .bottom))
+                        .background(.ultraThinMaterial)
                         .cornerRadius(20)
-                        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                        .shadow(radius: 2)
                     }
 
-                    // Ejercicios
                     ForEach(post.ejercicios, id: \.self) { ejercicio in
                         Button {
                             // Acción al pulsar ejercicio
@@ -70,9 +79,9 @@ struct PostView: View {
                                     .foregroundColor(.black)
                             }
                             .frame(width: 100, height: 80)
-                            .background(LinearGradient(colors: [.white, .gray.opacity(0.1)], startPoint: .top, endPoint: .bottom))
+                            .background(.ultraThinMaterial)
                             .cornerRadius(20)
-                            .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                            .shadow(radius: 2)
                         }
                     }
                 }
@@ -80,52 +89,76 @@ struct PostView: View {
             }
 
             // Botones sociales
-            HStack(spacing: 20) {
+            HStack(spacing: 16) {
                 Button {
-                    // Acción +X
+                    isLiked.toggle()
+                    likeCount += isLiked ? 1 : -1
                 } label: {
-                    Circle()
-                        .frame(width: 28, height: 28)
-                        .overlay(
-                            Text("+4")
-                                .font(.caption)
-                        )
+                    Image(systemName: isLiked ? "heart.fill" : "heart")
+                        .foregroundColor(isLiked ? .red : .primary)
+                        .font(.system(size: 20))
                 }
 
-                Button { } label: {
-                    Image(systemName: "heart")
-                }
-
-                Button { } label: {
+                Button {
+                    showComentarios = true
+                } label: {
                     Image(systemName: "bubble.right")
+                        .font(.system(size: 20))
                 }
 
                 Spacer()
 
-                Button { } label: {
-                    Image(systemName: "bookmark")
+                Button {
+                    isSaved.toggle()
+                } label: {
+                    Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 20))
                 }
             }
             .padding(.horizontal)
-            .padding(.bottom, 10)
+
+            // Contador de me gusta
+            if likeCount > 0 {
+                Text("\(likeCount) me gusta")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal)
+            }
+
+            // Comentarios
+            if !comentarios.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(comentarios.prefix(3), id: \.self) { comentario in
+                        Text(comentario)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                    }
+
+                    if comentarios.count > 3 {
+                        Button("Ver todos los comentarios") {
+                            showComentarios = true
+                        }
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    }
+                }
+                .padding(.horizontal)
+            }
+
+            // Espacio final
+            Spacer(minLength: 4)
         }
         .background(Color.white)
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.03), radius: 4, x: 0, y: 2)
         .padding(.horizontal)
+        .sheet(isPresented: $showComentarios) {
+            ComentariosView(post: post)
+        }
     }
 
     func formatTime(_ date: Date) -> String {
-        // Para ahora solo retorna "Hace 1min"
         return "Hace 1min"
     }
 }
 
-#Preview {
-    PostView(post: EntrenamientoPost(
-        usuario: "@carlos",
-        fecha: Date(),
-        titulo: "Espalda fuerte",
-        ejercicios: ["Dominadas", "Remo con barra", "Jalón al pecho"]
-    ))
-}

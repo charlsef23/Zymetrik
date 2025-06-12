@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BuscarView: View {
     @State private var searchText = ""
+    @State private var seguidos: Set<String> = []
 
     let usuarios = ["gymbro", "entrena_con_lu", "ztrainer", "carlafit", "powerjuan", "carlosfit", "lauragym", "lucasstrong"]
 
@@ -38,7 +39,7 @@ struct BuscarView: View {
                 .padding(.horizontal)
                 .padding(.top, 8)
 
-                // 👤 Resultados sin List
+                // 👤 Resultados
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(usuariosFiltrados, id: \.self) { usuario in
@@ -60,13 +61,17 @@ struct BuscarView: View {
                                     Spacer()
 
                                     Button(action: {
-                                        // Acción seguir (futuro)
-                                    }) {
-                                        Text("Seguir")
+                                        if seguidos.contains(usuario) {
+                                            seguidos.remove(usuario)
+                                        } else {
+                                            seguidos.insert(usuario)
+                                        }
+                                    })  {
+                                        Text(seguidos.contains(usuario) ? "Siguiendo" : "Seguir")
                                             .padding(.horizontal, 14)
                                             .padding(.vertical, 6)
-                                            .background(Color(.systemGray5))
-                                            .foregroundColor(.black)
+                                            .background(seguidos.contains(usuario) ? Color(.systemGray5) : Color.black)
+                                            .foregroundColor(seguidos.contains(usuario) ? .black : .white)
                                             .cornerRadius(20)
                                     }
                                     .buttonStyle(.plain)
