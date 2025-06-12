@@ -2,17 +2,25 @@ import SwiftUI
 
 struct PostView: View {
     let post: EntrenamientoPost
+
+    @State private var ejercicioSeleccionado: EjercicioPost
     @State private var isLiked = false
-    @State private var likeCount = 4
-    @State private var showComentarios = false
+    @State private var likeCount = 24
     @State private var isSaved = false
-    @State private var comentarios: [String] = [
+    @State private var showComentarios = false
+
+    let comentarios = [
         "¡Muy buen entrenamiento!",
         "¿Cuántas repes hiciste?",
-        "Inspirador 💪",
-        "Voy a probar esta rutina",
+        "Brutal 💪",
+        "Me lo guardo!",
         "🔥🔥🔥"
     ]
+
+    init(post: EntrenamientoPost) {
+        self.post = post
+        _ejercicioSeleccionado = State(initialValue: post.ejercicios.first ?? EjercicioPost(nombre: "N/A", series: 0, repeticionesTotales: 0, pesoTotal: 0))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -25,63 +33,54 @@ struct PostView: View {
                 Text(post.usuario)
                     .fontWeight(.semibold)
                 Spacer()
-                Text(formatTime(post.fecha))
+                Text("Hace 1min")
                     .font(.caption)
                     .foregroundColor(.gray)
             }
             .padding(.horizontal)
 
-            // Imagen o estadística
-            Rectangle()
-                .fill(Color.gray.opacity(0.2))
-                .frame(height: 250)
-                .overlay(
-                    Text("Ejercicio: \(post.titulo)")
-                        .foregroundColor(.black)
-                )
+            // Estadísticas
+            VStack(spacing: 12) {
+                Text(ejercicioSeleccionado.nombre)
+                    .font(.title2)
+                    .fontWeight(.bold)
 
-            // Scroll horizontal multimedia + ejercicios
+                HStack(spacing: 24) {
+                    StatItem(title: "Series", value: "\(ejercicioSeleccionado.series)")
+                    StatItem(title: "Reps", value: "\(ejercicioSeleccionado.repeticionesTotales)")
+                    StatItem(title: "Kg", value: String(format: "%.1f", ejercicioSeleccionado.pesoTotal))
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .frame(height: 250)
+            .background(Color.black.opacity(0.05))
+            .cornerRadius(16)
+            .padding(.horizontal)
+
+            // Carrusel
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    Button {
-                        // Acción multimedia
-                    } label: {
-                        VStack(spacing: 8) {
-                            Image(systemName: "photo.stack")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 28, height: 28)
-                                .foregroundColor(.black.opacity(0.7))
-                            Text("Multimedia")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.black)
-                        }
-                        .frame(width: 100, height: 80)
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(20)
-                        .shadow(radius: 2)
-                    }
-
+                HStack(spacing: 12) {
                     ForEach(post.ejercicios, id: \.self) { ejercicio in
                         Button {
-                            // Acción al pulsar ejercicio
+                            ejercicioSeleccionado = ejercicio
                         } label: {
                             VStack(spacing: 8) {
                                 Image(systemName: "figure.strengthtraining.traditional")
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: 28, height: 28)
-                                    .foregroundColor(.black.opacity(0.7))
-                                Text(ejercicio)
+                                    .foregroundColor(.black)
+                                Text(ejercicio.nombre)
                                     .font(.caption)
-                                    .fontWeight(.medium)
+                                    .multilineTextAlignment(.center)
                                     .foregroundColor(.black)
                             }
-                            .frame(width: 100, height: 80)
-                            .background(.ultraThinMaterial)
-                            .cornerRadius(20)
-                            .shadow(radius: 2)
+                            .padding()
+                            .frame(width: 100, height: 90)
+                            .background(ejercicio == ejercicioSeleccionado ? Color.black.opacity(0.1) : Color.white)
+                            .cornerRadius(14)
+                            .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 2)
                         }
                     }
                 }
@@ -117,7 +116,7 @@ struct PostView: View {
             }
             .padding(.horizontal)
 
-            // Contador de me gusta
+            // Me gusta
             if likeCount > 0 {
                 Text("\(likeCount) me gusta")
                     .font(.subheadline)
@@ -145,20 +144,49 @@ struct PostView: View {
                 .padding(.horizontal)
             }
 
-            // Espacio final
             Spacer(minLength: 4)
         }
+        .padding(.vertical)
         .background(Color.white)
         .cornerRadius(16)
-        .shadow(color: .black.opacity(0.03), radius: 4, x: 0, y: 2)
+        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
         .padding(.horizontal)
         .sheet(isPresented: $showComentarios) {
             ComentariosView(post: post)
         }
     }
+}
 
-    func formatTime(_ date: Date) -> String {
-        return "Hace 1min"
+struct StatItem: View {
+    var title: String
+    var value: String
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.title3)
+                .fontWeight(.bold)
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.gray)
+        }
     }
 }
 
+#Preview {
+    let ejercicios = [
+        EjercicioPost(nombre: "Press banca", series: 4, repeticionesTotales: 40, pesoTotal: 320),
+        EjercicioPost(nombre: "Aperturas", series: 3, repeticionesTotales: 30, pesoTotal: 90),
+        EjercicioPost(nombre: "Fondos", series: 4, repeticionesTotales: 32, pesoTotal: 0)
+    ]
+
+    let post = EntrenamientoPost(
+        usuario: "@carlos",
+        fecha: Date(),
+        titulo: "Pecho y tríceps",
+        ejercicios: ejercicios,
+        mediaURL: nil
+    )
+
+    return PostView(post: post)
+}

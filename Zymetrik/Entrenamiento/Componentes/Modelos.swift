@@ -8,11 +8,14 @@ extension Date {
 }
 
 struct Ejercicio: Identifiable, Hashable {
-    let id = UUID()
+    var id = UUID()
     var nombre: String
     var descripcion: String
     var categoria: String
     var tipo: TipoEjercicio
+    var series: Int? = nil
+    var repeticionesTotales: Int? = nil
+    var pesoTotal: Double? = nil
     var esFavorito: Bool = false
 }
 
@@ -30,4 +33,20 @@ struct Entrenamiento: Identifiable {
     var id = UUID()
     var fecha: Date
     var ejercicios: [Ejercicio]
+}
+
+struct EjercicioPost: Hashable {
+    let nombre: String
+    let series: Int
+    let repeticionesTotales: Int
+    let pesoTotal: Double
+}
+
+struct EntrenamientoPost: Identifiable, Hashable {
+    let id = UUID()
+    var usuario: String
+    var fecha: Date
+    var titulo: String
+    var ejercicios: [EjercicioPost]
+    var mediaURL: URL? // puede ser nil
 }
