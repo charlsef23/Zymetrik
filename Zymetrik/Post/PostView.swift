@@ -10,23 +10,26 @@ struct PostView: View {
     @State private var showComentarios = false
     @State private var mostrarCompaneros = false
 
-    let comentarios = [
-        "¡Muy buen entrenamiento!",
-        "¿Cuántas repes hiciste?",
-        "Brutal 💪",
-        "Me lo guardo!",
-        "🔥🔥🔥"
-    ]
-
     let companerosEntrenamiento = ["@lucasfit", "@andreapower"]
+    let comentariosMockeados: [ComentarioMock]
 
     init(post: EntrenamientoPost) {
         self.post = post
         _ejercicioSeleccionado = State(initialValue: post.ejercicios.first ?? EjercicioPost(nombre: "N/A", series: 0, repeticionesTotales: 0, pesoTotal: 0))
+
+        self.comentariosMockeados = [
+            "¡Muy buen entrenamiento!",
+            "¿Cuántas repes hiciste?",
+            "Brutal 💪",
+            "Me lo guardo!",
+            "🔥🔥🔥"
+        ].map {
+            ComentarioMock(username: "Carlos", avatarURL: nil, content: $0, createdAt: Date(), likes: Int.random(in: 1...10))
+        }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack(spacing: 8) {
                 Circle()
@@ -129,75 +132,74 @@ struct PostView: View {
                 .padding(.horizontal)
             }
 
-            // Botones sociales
-            HStack(spacing: 16) {
-                Button {
-                    isLiked.toggle()
-                    likeCount += isLiked ? 1 : -1
-                } label: {
-                    Image(systemName: isLiked ? "heart.fill" : "heart")
-                        .foregroundColor(isLiked ? .red : .primary)
-                        .font(.system(size: 20))
-                }
-
-                Button {
-                    showComentarios = true
-                } label: {
-                    Image(systemName: "bubble.right")
-                        .font(.system(size: 20))
-                }
-
-                Spacer()
-
-                Button {
-                    isSaved.toggle()
-                } label: {
-                    Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 20))
-                }
-            }
-            .padding(.horizontal)
-
-            // Me gusta
-            if likeCount > 0 {
-                Text("\(likeCount) me gusta")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .padding(.horizontal)
-            }
-
-            // Comentarios
-            if !comentarios.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(comentarios.prefix(3), id: \.self) { comentario in
-                        Text(comentario)
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
+                HStack(spacing: 16) {
+                    Button {
+                        isLiked.toggle()
+                        likeCount += isLiked ? 1 : -1
+                    } label: {
+                        Image(systemName: isLiked ? "heart.fill" : "heart")
+                            .foregroundColor(isLiked ? .red : .primary)
+                            .font(.system(size: 20))
                     }
 
-                    if comentarios.count > 3 {
-                        Button("Ver todos los comentarios") {
-                            showComentarios = true
-                        }
-                        .font(.caption)
-                        .foregroundColor(.gray)
+                    Button {
+                        showComentarios = true
+                    } label: {
+                        Image(systemName: "bubble.right")
+                            .font(.system(size: 20))
+                    }
+
+                    Spacer()
+
+                    Button {
+                        isSaved.toggle()
+                    } label: {
+                        Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
+                            .font(.system(size: 20))
                     }
                 }
                 .padding(.horizontal)
-            }
 
-            Spacer(minLength: 4)
-        }
-        .padding(.vertical)
-        .background(Color.white)
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-        .padding(.horizontal)
-        .sheet(isPresented: $showComentarios) {
-            ComentariosView(post: post)
+                // Me gusta
+                if likeCount > 0 {
+                    Text("\(likeCount) me gusta")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal)
+                }
+
+                // Comentarios rápidos (vistazo)
+                if !comentariosMockeados.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(comentariosMockeados.prefix(3)) { comentario in
+                            Text(comentario.content)
+                                .font(.subheadline)
+                                .foregroundColor(.primary)
+                        }
+
+                        if comentariosMockeados.count > 3 {
+                            Button("Ver todos los comentarios") {
+                                showComentarios = true
+                            }
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+
+                Spacer(minLength: 4)
+            }
+            .padding(.vertical)
+            .background(Color.white)
+            .cornerRadius(16)
+            .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+            .padding(.horizontal)
+            .sheet(isPresented: $showComentarios) {
+                ComentariosSheetView(comentarios: comentariosMockeados, isPresented: $showComentarios)
+            }
         }
     }
-}
 
 struct StatItem: View {
     var title: String

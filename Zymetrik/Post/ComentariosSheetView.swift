@@ -16,22 +16,25 @@ struct ComentariosSheetView: View {
     @FocusState private var campoEnfocado: Bool
 
     @State private var comentariosInternos: [ComentarioMock] = []
+    @State private var likedComentarios: Set<UUID> = []
+    @State private var respuestaA: ComentarioMock?
 
     var body: some View {
         VStack(spacing: 0) {
-            let topBar = Capsule()
+            // Top bar
+            Capsule()
                 .fill(Color.gray.opacity(0.3))
                 .frame(width: 40, height: 5)
                 .padding(.top, 8)
 
-            let title = Text("Comentarios")
+            Text("Comentarios")
                 .font(.headline)
                 .fontWeight(.semibold)
                 .padding(.vertical, 12)
 
-            let divider = Divider()
+            Divider()
 
-            let comentariosList = ScrollViewReader { proxy in
+            ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 20) {
                         ForEach(comentariosInternos) { comentario in
@@ -52,17 +55,20 @@ struct ComentariosSheetView: View {
                                         .font(.body)
                                         .foregroundColor(.primary)
 
-                                    Button("Responder") {}
-                                        .font(.caption)
-                                        .foregroundColor(.black)
+                                    Button("Responder") {
+                                        respuestaA = comentario
+                                        campoEnfocado = true
+                                    }
+                                    .font(.caption)
+                                    .foregroundColor(.black)
                                 }
 
                                 VStack(spacing: 6) {
                                     Button {
-                                        // Acción futura
+                                        toggleLike(for: comentario)
                                     } label: {
-                                        Image(systemName: "heart")
-                                            .foregroundColor(.black)
+                                        Image(systemName: likedComentarios.contains(comentario.id) ? "heart.fill" : "heart")
+                                            .foregroundColor(likedComentarios.contains(comentario.id) ? .red : .black)
                                     }
 
                                     Text("\(comentario.likes)")
@@ -76,32 +82,34 @@ struct ComentariosSheetView: View {
                     }
                     .padding(.top, 4)
                 }
-                .onChange(of: comentariosInternos) { _, nuevosComentarios in
+                .onChange(of: comentariosInternos) { _, nuevos in
                     withAnimation {
-                        if let ultimo = nuevosComentarios.last {
+                        if let ultimo = nuevos.last {
                             proxy.scrollTo(ultimo.id, anchor: .bottom)
                         }
                     }
                 }
             }
 
-            let inputField = HStack {
-                TextField("Comentario...", text: $nuevoComentario)
+            HStack {
+                TextField(respuestaA != nil ? "Responder a @\(respuestaA!.username)..." : "Comentario...", text: $nuevoComentario)
                     .padding(10)
                     .background(Color(.systemGray6))
                     .cornerRadius(10)
                     .focused($campoEnfocado)
 
                 Button {
+                    let contenidoFinal = respuestaA != nil ? "@\(respuestaA!.username) \(nuevoComentario)" : nuevoComentario
                     let nuevo = ComentarioMock(
                         username: "Tú",
                         avatarURL: nil,
-                        content: nuevoComentario,
+                        content: contenidoFinal,
                         createdAt: Date(),
                         likes: 0
                     )
                     comentariosInternos.append(nuevo)
                     nuevoComentario = ""
+                    respuestaA = nil
                     campoEnfocado = false
                 } label: {
                     Image(systemName: "paperplane.fill")
@@ -117,18 +125,23 @@ struct ComentariosSheetView: View {
             .padding(.horizontal)
             .padding(.vertical, 12)
             .background(Color.white)
-
-            topBar
-            title
-            divider
-            comentariosList
-            inputField
         }
         .onAppear {
             comentariosInternos = comentarios
         }
         .background(Color.white)
         .cornerRadius(20)
+    }
+
+    func toggleLike(for comentario: ComentarioMock) {
+        guard let index = comentariosInternos.firstIndex(where: { $0.id == comentario.id }) else { return }
+        if likedComentarios.contains(comentario.id) {
+            likedComentarios.remove(comentario.id)
+            comentariosInternos[index].likes -= 1
+        } else {
+            likedComentarios.insert(comentario.id)
+            comentariosInternos[index].likes += 1
+        }
     }
 
     func avatarView(url: String?, username: String) -> some View {
@@ -159,4 +172,3 @@ struct ComentariosSheetView: View {
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
-
