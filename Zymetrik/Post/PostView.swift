@@ -6,9 +6,11 @@ struct PostView: View {
     @State private var ejercicioSeleccionado: EjercicioPost
     @State private var isLiked = false
     @State private var likeCount = 24
-    @State private var isSaved = false
     @State private var showComentarios = false
     @State private var mostrarCompaneros = false
+    @State private var mostrarSeleccionCarpeta = false
+
+    @ObservedObject var guardados = GuardadosManager.shared
 
     let companerosEntrenamiento = ["@lucasfit", "@andreapower"]
     let comentariosMockeados: [ComentarioMock]
@@ -29,7 +31,7 @@ struct PostView: View {
     }
 
     var body: some View {
-            VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack(spacing: 8) {
                 Circle()
@@ -38,12 +40,11 @@ struct PostView: View {
                     .overlay(Text("👤"))
                 Text(post.usuario)
                     .fontWeight(.semibold)
+                    .foregroundColor(.black)
 
                 if !companerosEntrenamiento.isEmpty {
                     Button(action: {
-                        withAnimation {
-                            mostrarCompaneros.toggle()
-                        }
+                        withAnimation { mostrarCompaneros.toggle() }
                     }) {
                         Text("+\(companerosEntrenamiento.count)")
                             .font(.caption)
@@ -62,7 +63,7 @@ struct PostView: View {
             }
             .padding(.horizontal)
 
-            // Compañeros (mostrar en el post)
+            // Compañeros
             if mostrarCompaneros {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(companerosEntrenamiento, id: \.self) { nombre in
@@ -84,11 +85,12 @@ struct PostView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
-            // Estadísticas del ejercicio seleccionado
+            // Estadísticas
             VStack(spacing: 12) {
                 Text(ejercicioSeleccionado.nombre)
                     .font(.title2)
                     .fontWeight(.bold)
+                    .foregroundColor(.black)
 
                 HStack(spacing: 24) {
                     StatItem(title: "Series", value: "\(ejercicioSeleccionado.series)")
@@ -132,74 +134,100 @@ struct PostView: View {
                 .padding(.horizontal)
             }
 
-                HStack(spacing: 16) {
-                    Button {
-                        isLiked.toggle()
-                        likeCount += isLiked ? 1 : -1
-                    } label: {
-                        Image(systemName: isLiked ? "heart.fill" : "heart")
-                            .foregroundColor(isLiked ? .red : .primary)
-                            .font(.system(size: 20))
+            // Botones
+            HStack(spacing: 16) {
+                Button {
+                    isLiked.toggle()
+                    likeCount += isLiked ? 1 : -1
+                } label: {
+                    Image(systemName: isLiked ? "heart.fill" : "heart")
+                        .foregroundColor(isLiked ? .red : .primary)
+                        .font(.system(size: 20))
+                }
+
+                Button {
+                    showComentarios = true
+                } label: {
+                    Image(systemName: "bubble.right")
+                        .font(.system(size: 20))
+                }
+
+                Button {
+                    sharePost()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 20))
+                }
+
+                Spacer()
+
+                Button {
+                    guardados.toggle(post: post)
+                } label: {
+                    Image(systemName: guardados.contiene(post) ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 20))
+                }
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                        mostrarSeleccionCarpeta = true
+                    }
+                )
+            }
+            .foregroundColor(.primary)
+            .padding(.horizontal)
+
+            if likeCount > 0 {
+                Text("\(likeCount) me gusta")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.black)
+                    .padding(.horizontal)
+            }
+
+            if !comentariosMockeados.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(comentariosMockeados.prefix(3)) { comentario in
+                        Text(comentario.content)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
                     }
 
-                    Button {
-                        showComentarios = true
-                    } label: {
-                        Image(systemName: "bubble.right")
-                            .font(.system(size: 20))
-                    }
-
-                    Spacer()
-
-                    Button {
-                        isSaved.toggle()
-                    } label: {
-                        Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
-                            .font(.system(size: 20))
+                    if comentariosMockeados.count > 3 {
+                        Button("Ver todos los comentarios") {
+                            showComentarios = true
+                        }
+                        .font(.caption)
+                        .foregroundColor(.gray)
                     }
                 }
                 .padding(.horizontal)
-
-                // Me gusta
-                if likeCount > 0 {
-                    Text("\(likeCount) me gusta")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal)
-                }
-
-                // Comentarios rápidos (vistazo)
-                if !comentariosMockeados.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(comentariosMockeados.prefix(3)) { comentario in
-                            Text(comentario.content)
-                                .font(.subheadline)
-                                .foregroundColor(.primary)
-                        }
-
-                        if comentariosMockeados.count > 3 {
-                            Button("Ver todos los comentarios") {
-                                showComentarios = true
-                            }
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-
-                Spacer(minLength: 4)
             }
-            .padding(.vertical)
-            .background(Color.white)
-            .cornerRadius(16)
-            .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-            .padding(.horizontal)
-            .sheet(isPresented: $showComentarios) {
-                ComentariosSheetView(comentarios: comentariosMockeados, isPresented: $showComentarios)
-            }
+
+            Spacer(minLength: 4)
+        }
+        .padding(.vertical)
+        .background(Color.white)
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+        .padding(.horizontal)
+        .sheet(isPresented: $showComentarios) {
+            ComentariosSheetView(comentarios: comentariosMockeados, isPresented: $showComentarios)
+        }
+        .sheet(isPresented: $mostrarSeleccionCarpeta) {
+            SeleccionCarpetaView(post: post, isPresented: $mostrarSeleccionCarpeta)
         }
     }
+
+    private func sharePost() {
+        let mensaje = "¡Mira este entrenamiento de \(post.usuario)! 💪"
+        let activityVC = UIActivityViewController(activityItems: [mensaje], applicationActivities: nil)
+
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = windowScene.windows.first?.rootViewController {
+            rootVC.present(activityVC, animated: true)
+        }
+    }
+}
 
 struct StatItem: View {
     var title: String
@@ -210,6 +238,7 @@ struct StatItem: View {
             Text(value)
                 .font(.title3)
                 .fontWeight(.bold)
+                .foregroundColor(.black)
             Text(title)
                 .font(.caption)
                 .foregroundColor(.gray)

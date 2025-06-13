@@ -6,66 +6,90 @@ struct Alerta: Identifiable {
     let usuario: String
     let mensaje: String
     let hora: String
+
+    var fotoPerfilURL: String {
+        "https://api.dicebear.com/7.x/initials/svg?seed=\(usuario)"
+    }
 }
 
-enum TipoAlerta {
-    case solicitud, meGusta, comentario, compartido
+enum TipoAlerta: String, CaseIterable {
+    case solicitud, meGusta, comentario
 
     var icono: String {
         switch self {
         case .solicitud: return "person.crop.circle.badge.plus"
-        case .meGusta: return "hand.thumbsup.fill"
+        case .meGusta: return "heart.fill"
         case .comentario: return "text.bubble.fill"
-        case .compartido: return "arrowshape.turn.up.right.fill"
         }
     }
 
     var color: Color {
         switch self {
         case .solicitud: return .blue
-        case .meGusta: return .green
+        case .meGusta: return .red
         case .comentario: return .orange
-        case .compartido: return .purple
+        }
+    }
+
+    var titulo: String {
+        switch self {
+        case .solicitud: return "Solicitudes"
+        case .meGusta: return "Me gustas"
+        case .comentario: return "Comentarios"
         }
     }
 }
 
 struct AlertasView: View {
-    // Ejemplo de notificaciones (luego se conectará a Supabase)
     @State private var alertas: [Alerta] = [
         Alerta(tipo: .solicitud, usuario: "luciafit", mensaje: "quiere seguirte", hora: "Hace 2 min"),
-        Alerta(tipo: .meGusta, usuario: "alejandroGym", mensaje: "le dio fuerza a tu entrenamiento", hora: "Hace 10 min"),
+        Alerta(tipo: .meGusta, usuario: "alejandroGym", mensaje: "le dio me gusta a tu entrenamiento", hora: "Hace 10 min"),
         Alerta(tipo: .comentario, usuario: "marta.run", mensaje: "comentó: “brutal sesión 🔥”", hora: "Hace 20 min"),
-        Alerta(tipo: .compartido, usuario: "davidpro", mensaje: "compartió tu entrenamiento", hora: "Hace 1 h")
+        Alerta(tipo: .meGusta, usuario: "sara.power", mensaje: "le dio me gusta a tu foto", hora: "Hace 3 h")
     ]
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
-                ForEach(alertas) { alerta in
-                    alertaRow(alerta)
-                    Divider()
-                        .padding(.leading, 60)
+            LazyVStack(alignment: .leading, spacing: 12) {
+                ForEach(TipoAlerta.allCases, id: \.self) { tipo in
+                    let alertasTipo = alertas.filter { $0.tipo == tipo }
+                    if !alertasTipo.isEmpty {
+                        Text(tipo.titulo)
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        ForEach(alertasTipo) { alerta in
+                            alertaRow(alerta)
+                        }
+                    }
                 }
             }
+            .padding(.top)
         }
         .navigationTitle("Alertas")
     }
 
-    @ViewBuilder
     private func alertaRow(_ alerta: Alerta) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Circle()
-                .fill(alerta.tipo.color.opacity(0.2))
-                .frame(width: 40, height: 40)
-                .overlay(
-                    Image(systemName: alerta.tipo.icono)
-                        .foregroundColor(alerta.tipo.color)
-                )
+            AsyncImage(url: URL(string: alerta.fotoPerfilURL)) { image in
+                image.resizable()
+            } placeholder: {
+                Circle().fill(Color.gray.opacity(0.3))
+            }
+            .frame(width: 48, height: 48)
+            .clipShape(Circle())
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("@\(alerta.usuario) \(alerta.mensaje)")
-                    .font(.body)
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: alerta.tipo.icono)
+                        .foregroundColor(alerta.tipo.color)
+                        .font(.subheadline)
+
+                    Text("@\(alerta.usuario) \(alerta.mensaje)")
+                        .font(.body)
+                        .lineLimit(2)
+                }
+
                 Text(alerta.hora)
                     .font(.caption)
                     .foregroundColor(.gray)
@@ -80,11 +104,12 @@ struct AlertasView: View {
                 .font(.caption)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(.blue)
+                .background(Color.blue)
                 .foregroundColor(.white)
                 .clipShape(Capsule())
             }
         }
-        .padding()
+        .padding(.horizontal)
+        .padding(.vertical, 8)
     }
 }
