@@ -137,7 +137,7 @@ struct PerfilView: View {
                     }
 
                     if selectedTab == .entrenamientos {
-                        PerfilEntrenamientosView()
+                        Text("PerfilEntrenamientosView()")
                     } else if selectedTab == .estadisticas {
                         PerfilEstadisticasView()
                     } else {

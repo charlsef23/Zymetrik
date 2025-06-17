@@ -75,19 +75,26 @@ struct ListaSeguidoresView: View {
     }
     
     func cargarSeguidores() async {
+        guard let userID = try? await SupabaseManager.shared.client.auth.session.user.id.uuidString else {
+            print("❌ No se pudo obtener el userID")
+            return
+        }
+        
         do {
-            guard let userID = SupabaseManager.shared.client.auth.session?.user.id.uuidString else { return }
-            
             let response = try await SupabaseManager.shared.client
-                .rpc("get_followers_usernames", params: ["user_id": userID])
+                .rpc("get_follower_usernames",
+                     params: ["user_id": userID])
                 .execute()
             
-            let jsonArray = try JSONSerialization.jsonObject(with: response.data) as? [[String: Any]]
-            self.seguidores = jsonArray?.compactMap { $0["username"] as? String } ?? []
+            // 3. Parsear el JSON y extraer el array de usernames
+            if let jsonArray = try? JSONSerialization
+                .jsonObject(with: response.data) as? [[String: Any]] {
+                self.seguidores = jsonArray.compactMap { $0["username"] as? String }
+            }
         } catch {
             print("❌ Error al cargar seguidores: \(error)")
         }
-        
+
         isLoading = false
     }
 }

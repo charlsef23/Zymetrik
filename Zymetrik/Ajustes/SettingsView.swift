@@ -35,7 +35,7 @@ struct SettingsView: View {
                     // SECCIONES
                     VStack(spacing: 24) {
                         settingsCard(title: "Zymetrik", items: [
-                            ("bookmark.fill", "Guardado", AnyView(GuardadosView())),
+                            ("bookmark.fill", "Guardado", AnyView(Text("GuardadosView()"))),
                             ("bell.fill", "Notificaciones", AnyView(Text("NotificacionesView()")))
                         ])
 
