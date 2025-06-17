@@ -1,4 +1,13 @@
 import SwiftUI
+import Supabase
+
+struct PerfilActualizado: Codable {
+    let nombre: String
+    let username: String
+    let presentacion: String
+    let enlaces: String
+    let avatar_url: String?
+}
 
 struct EditarPerfilView: View {
     @Environment(\.dismiss) var dismiss
@@ -10,13 +19,12 @@ struct EditarPerfilView: View {
     @Binding var imagenPerfil: Image?
 
     @State private var mostrarSelectorFoto = false
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-
-                    // Foto editable
                     VStack(spacing: 8) {
                         ZStack(alignment: .bottomTrailing) {
                             imagenPerfil?
@@ -45,20 +53,16 @@ struct EditarPerfilView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 24)
 
-                    // Secciones
                     VStack(spacing: 1) {
                         editableRow("Nombre", value: nombre) {
                             EditarCampoNombreView(nombre: $nombre)
                         }
-
                         editableRow("Nombre de usuario", value: username) {
                             EditarCampoUsernameView(username: $username)
                         }
-
                         editableRow("Presentación", value: presentacion) {
                             EditarCampoPresentacionView(presentacion: $presentacion)
                         }
-
                         editableRow("Enlaces", value: enlaces.isEmpty ? "Añadir enlaces" : enlaces) {
                             EditarCampoEnlacesView(enlaces: $enlaces)
                         }
@@ -75,10 +79,16 @@ struct EditarPerfilView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar") {
-                        dismiss()
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Guardar") {
+                            Task {
+                                await guardarCambios()
+                            }
+                        }
+                        .fontWeight(.semibold)
                     }
-                    .fontWeight(.semibold)
                 }
             }
             .sheet(isPresented: $mostrarSelectorFoto) {
@@ -106,5 +116,75 @@ struct EditarPerfilView: View {
         }
         .buttonStyle(.plain)
         .background(Color.white)
+    }
+
+    func guardarCambios() async {
+        isSaving = true
+        do {
+            let session = try await SupabaseManager.shared.client.auth.session
+            let userID = session.user.id.uuidString
+
+            var avatarURL: String? = nil
+
+            // Subir imagen de perfil si existe
+            if let imagenPerfil = imagenPerfil,
+               let uiImage = convertImage(imagenPerfil),
+               let imageData = uiImage.jpegData(compressionQuality: 0.8) {
+
+                let fileName = "avatar_\(userID).jpg"
+                let storagePath = "usuarios/\(fileName)" // ← Asegúrate de que esto coincida con la ruta pública
+                let urlPublica = "https://rmpgmdokzwfqdzqmrqmj.supabase.co/storage/v1/object/public/avatars/\(storagePath)"
+
+                // Subida real al bucket
+                _ = try await SupabaseManager.shared.client
+                    .storage
+                    .from("avatars")
+                    .upload(storagePath, data: imageData, options: FileOptions(contentType: "image/jpeg", upsert: true))
+
+                avatarURL = urlPublica
+            }
+
+            // Enviar datos actualizados
+            let datos = PerfilActualizado(
+                nombre: nombre,
+                username: username,
+                presentacion: presentacion,
+                enlaces: enlaces,
+                avatar_url: avatarURL ?? "" // 👈 así nunca es nil
+            )
+
+            let response = try await SupabaseManager.shared.client
+                .from("profiles")
+                .update(datos)
+                .eq("id", value: userID)
+                .select()
+                .single()
+                .execute()
+
+            print("✅ Perfil actualizado: \(response)")
+
+            DispatchQueue.main.async {
+                dismiss()
+            }
+
+        } catch {
+            print("❌ Error al guardar perfil: \(error)")
+        }
+        isSaving = false
+    }
+}
+
+func convertImage(_ image: Image?) -> UIImage? {
+    guard let image = image else { return nil }
+    let controller = UIHostingController(rootView: image)
+    let view = controller.view
+
+    let targetSize = CGSize(width: 200, height: 200)
+    view?.bounds = CGRect(origin: .zero, size: targetSize)
+    view?.backgroundColor = .clear
+
+    let renderer = UIGraphicsImageRenderer(size: targetSize)
+    return renderer.image { _ in
+        view?.drawHierarchy(in: view!.bounds, afterScreenUpdates: true)
     }
 }

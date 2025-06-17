@@ -2,35 +2,27 @@ import SwiftUI
 
 struct ListaSeguidoresView: View {
     @State private var searchText = ""
-
-    let seguidores = ["andrea_fit", "juanperez", "fitgirl", "iron_mario", "luzpower"]
-
-    @State private var seguidos: Set<String> = []
-
+    @State private var seguidores: [String] = []
+    @State private var isLoading = true
+    
     var seguidoresFiltrados: [String] {
         searchText.isEmpty ? seguidores : seguidores.filter {
             $0.localizedCaseInsensitiveContains(searchText)
         }
     }
-
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 🔍 Barra de búsqueda
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.gray)
-
                     TextField("Buscar seguidores", text: $searchText)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
-
                     if !searchText.isEmpty {
-                        Button(action: {
-                            searchText = ""
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
+                        Button { searchText = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
                         }
                     }
                 }
@@ -39,60 +31,63 @@ struct ListaSeguidoresView: View {
                 .cornerRadius(12)
                 .padding(.horizontal)
                 .padding(.top, 8)
-
-                // 📋 Lista personalizada
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(seguidoresFiltrados, id: \.self) { usuario in
-                            NavigationLink(destination: UserProfileView(username: usuario)) {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "person.circle.fill")
-                                        .resizable()
-                                        .frame(width: 44, height: 44)
-                                        .foregroundColor(.gray)
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(usuario)
-                                            .font(.headline)
-                                        Text("Ver perfil")
-                                            .font(.caption)
+                
+                if isLoading {
+                    ProgressView()
+                        .padding()
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(seguidoresFiltrados, id: \.self) { username in
+                                NavigationLink(destination: UserProfileView(username: username)) {
+                                    HStack(spacing: 14) {
+                                        Image(systemName: "person.circle.fill")
+                                            .resizable()
+                                            .frame(width: 44, height: 44)
                                             .foregroundColor(.gray)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(username)
+                                                .font(.headline)
+                                            Text("Ver perfil")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                        
+                                        Spacer()
                                     }
-
-                                    Spacer()
-
-                                    Button(action: {
-                                        toggleSeguido(usuario)
-                                    }) {
-                                        Text(seguidos.contains(usuario) ? "Siguiendo" : "Seguir")
-                                            .padding(.horizontal, 14)
-                                            .padding(.vertical, 6)
-                                            .background(seguidos.contains(usuario) ? Color(.systemGray5) : Color.black)
-                                            .foregroundColor(seguidos.contains(usuario) ? .black : .white)
-                                            .cornerRadius(20)
-                                    }
-                                    .buttonStyle(.plain)
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal)
                                 }
-                                .padding(.vertical, 12)
-                                .padding(.horizontal)
+                                .buttonStyle(.plain)
+                                
+                                Divider().padding(.leading, 72)
                             }
-                            .buttonStyle(.plain)
-
-                            Divider()
-                                .padding(.leading, 72)
                         }
                     }
                 }
             }
             .navigationTitle("Seguidores")
+            .onAppear {
+                Task { await cargarSeguidores() }
+            }
         }
     }
-
-    private func toggleSeguido(_ usuario: String) {
-        if seguidos.contains(usuario) {
-            seguidos.remove(usuario)
-        } else {
-            seguidos.insert(usuario)
+    
+    func cargarSeguidores() async {
+        do {
+            guard let userID = SupabaseManager.shared.client.auth.session?.user.id.uuidString else { return }
+            
+            let response = try await SupabaseManager.shared.client
+                .rpc("get_followers_usernames", params: ["user_id": userID])
+                .execute()
+            
+            let jsonArray = try JSONSerialization.jsonObject(with: response.data) as? [[String: Any]]
+            self.seguidores = jsonArray?.compactMap { $0["username"] as? String } ?? []
+        } catch {
+            print("❌ Error al cargar seguidores: \(error)")
         }
+        
+        isLoading = false
     }
 }

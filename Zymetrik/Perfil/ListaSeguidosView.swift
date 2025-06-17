@@ -2,35 +2,27 @@ import SwiftUI
 
 struct ListaSeguidosView: View {
     @State private var searchText = ""
-
-    let seguidosOriginales = ["gymbro", "entrena_con_lu", "ztrainer", "carlafit", "powerjuan"]
-
-    @State private var seguidosVisibles: [String] = ["gymbro", "entrena_con_lu", "ztrainer", "carlafit", "powerjuan"]
-    @State private var seguidos: Set<String> = ["gymbro", "entrena_con_lu", "ztrainer", "carlafit", "powerjuan"]
-    @State private var temporizadores: [String: Timer] = [:]
-
+    @State private var seguidos: [String] = []
+    @State private var isLoading = true
+    
     var seguidosFiltrados: [String] {
-        searchText.isEmpty ? seguidosVisibles : seguidosVisibles.filter {
+        searchText.isEmpty ? seguidos : seguidos.filter {
             $0.localizedCaseInsensitiveContains(searchText)
         }
     }
-
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 🔍 Barra de búsqueda
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.gray)
-
                     TextField("Buscar seguidos", text: $searchText)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
-
                     if !searchText.isEmpty {
-                        Button(action: { searchText = "" }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
+                        Button { searchText = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
                         }
                     }
                 }
@@ -39,82 +31,64 @@ struct ListaSeguidosView: View {
                 .cornerRadius(12)
                 .padding(.horizontal)
                 .padding(.top, 8)
-
-                // 📋 Lista personalizada
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(seguidosFiltrados, id: \.self) { usuario in
-                            NavigationLink(destination: UserProfileView(username: usuario)) {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "person.circle.fill")
-                                        .resizable()
-                                        .frame(width: 44, height: 44)
-                                        .foregroundColor(.gray)
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(usuario)
-                                            .font(.headline)
-                                        Text("Ver perfil")
-                                            .font(.caption)
+                
+                if isLoading {
+                    ProgressView()
+                        .padding()
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(seguidosFiltrados, id: \.self) { username in
+                                NavigationLink(destination: UserProfileView(username: username)) {
+                                    HStack(spacing: 14) {
+                                        Image(systemName: "person.circle.fill")
+                                            .resizable()
+                                            .frame(width: 44, height: 44)
                                             .foregroundColor(.gray)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(username)
+                                                .font(.headline)
+                                            Text("Ver perfil")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                        
+                                        Spacer()
                                     }
-
-                                    Spacer()
-
-                                    Button(action: {
-                                        toggleSeguido(usuario)
-                                    }) {
-                                        Text(seguidos.contains(usuario) ? "Siguiendo" : "Seguir")
-                                            .padding(.horizontal, 14)
-                                            .padding(.vertical, 6)
-                                            .background(seguidos.contains(usuario) ? Color(.systemGray5) : Color.black)
-                                            .foregroundColor(seguidos.contains(usuario) ? .black : .white)
-                                            .cornerRadius(20)
-                                    }
-                                    .buttonStyle(.plain)
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal)
                                 }
-                                .padding(.vertical, 12)
-                                .padding(.horizontal)
+                                .buttonStyle(.plain)
+                                
+                                Divider().padding(.leading, 72)
                             }
-                            .buttonStyle(.plain)
-
-                            Divider()
-                                .padding(.leading, 72)
                         }
                     }
                 }
             }
             .navigationTitle("Seguidos")
+            .onAppear {
+                Task { await cargarSeguidos() }
+            }
         }
     }
+    
+    func cargarSeguidos() async {
+        guard let userID = try? await SupabaseManager.shared.client.auth.session.user.id.uuidString else { return }
 
-    private func toggleSeguido(_ usuario: String) {
-        if seguidos.contains(usuario) {
-            // Se deja de seguir → mantener temporalmente
-            seguidos.remove(usuario)
+        do {
+            let response = try await SupabaseManager.shared.client
+                .rpc("get_following_usernames", params: ["user_id": userID])
+                .execute()
 
-            // Si ya hay un temporizador, cancelarlo
-            temporizadores[usuario]?.invalidate()
-
-            // Crear uno nuevo para eliminar después de 3 segundos
-            let timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
-                if !seguidos.contains(usuario) {
-                    seguidosVisibles.removeAll { $0 == usuario }
-                }
-                temporizadores.removeValue(forKey: usuario)
+            if let jsonArray = try? JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] {
+                self.seguidos = jsonArray.compactMap { $0["username"] as? String }
             }
-
-            temporizadores[usuario] = timer
-
-        } else {
-            // Se vuelve a seguir antes de que desaparezca
-            seguidos.insert(usuario)
-            temporizadores[usuario]?.invalidate()
-            temporizadores.removeValue(forKey: usuario)
-
-            if !seguidosVisibles.contains(usuario) {
-                seguidosVisibles.append(usuario)
-            }
+        } catch {
+            print("❌ Error al cargar seguidos: \(error)")
         }
+
+        isLoading = false
     }
 }

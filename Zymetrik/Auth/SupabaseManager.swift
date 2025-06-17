@@ -8,8 +8,8 @@ class SupabaseManager {
 
     private init() {
         self.client = SupabaseClient(
-            supabaseURL: URL(string: "https://eolcdkdqsoxkiaxmdgrv.supabase.co")!,
-            supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVvbGNka2Rxc294a2lheG1kZ3J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY2OTkxNzEsImV4cCI6MjA2MjI3NTE3MX0.bCXrVgjqQKWsNM3yqn7fDHa1fYJ1SlJ5Wi-LNh9ZRRE"
+            supabaseURL: URL(string: "https://rmpgmdokzwfqdzqmrqmj.supabase.co")!,
+            supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJtcGdtZG9rendmcWR6cW1ycW1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk0NzAyNzEsImV4cCI6MjA2NTA0NjI3MX0.5m7-BeL3D35qxjHE-lRnxe7AfaQhn2mheuP7-EqcEl8"
         )
     }
 }

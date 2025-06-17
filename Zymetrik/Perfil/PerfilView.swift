@@ -1,15 +1,19 @@
 import SwiftUI
+import Supabase
 
 struct PerfilView: View {
     @State private var selectedTab: PerfilTab = .entrenamientos
     @State private var showAjustes = false
     @State private var showEditarPerfil = false
 
-    @State private var nombre = "Carlitos"
-    @State private var username = "carlosesteve23"
-    @State private var presentacion = "👨🏻‍💻 Apple Developer · SwiftUI "
+    @State private var nombre = "Cargando..."
+    @State private var username = "..."
+    @State private var presentacion = ""
     @State private var enlaces = ""
     @State private var imagenPerfil: Image? = Image(systemName: "person.circle.fill")
+
+    @State private var seguidoresCount: Int = 0
+    @State private var siguiendoCount: Int = 0
 
     let esVerificado = true
 
@@ -17,22 +21,18 @@ struct PerfilView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Título y engranaje
                     HStack {
                         HStack(spacing: 6) {
                             Text(username)
                                 .font(.title)
                                 .fontWeight(.bold)
-
                             if esVerificado {
                                 Image(systemName: "checkmark.seal.fill")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(.black)
                                     .font(.system(size: 20))
                             }
                         }
-
                         Spacer()
-
                         Button {
                             showAjustes = true
                         } label: {
@@ -43,7 +43,6 @@ struct PerfilView: View {
                     }
                     .padding(.horizontal)
 
-                    // Avatar + datos
                     VStack(spacing: 12) {
                         imagenPerfil?
                             .resizable()
@@ -55,10 +54,9 @@ struct PerfilView: View {
                             Text(nombre)
                                 .font(.title3)
                                 .fontWeight(.semibold)
-
                             if esVerificado {
                                 Image(systemName: "checkmark.seal.fill")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(.black)
                                     .font(.system(size: 16))
                             }
                         }
@@ -96,7 +94,6 @@ struct PerfilView: View {
                             }
                         }
 
-                        // Estadísticas
                         HStack {
                             Spacer()
                             VStack {
@@ -106,14 +103,14 @@ struct PerfilView: View {
                             Spacer()
                             NavigationLink(destination: ListaSeguidoresView()) {
                                 VStack {
-                                    Text("910").font(.headline)
+                                    Text("\(seguidoresCount)").font(.headline)
                                     Text("Seguidores").font(.caption).foregroundColor(.secondary)
                                 }
                             }
                             Spacer()
                             NavigationLink(destination: ListaSeguidosView()) {
                                 VStack {
-                                    Text("562").font(.headline)
+                                    Text("\(siguiendoCount)").font(.headline)
                                     Text("Siguiendo").font(.caption).foregroundColor(.secondary)
                                 }
                             }
@@ -121,7 +118,6 @@ struct PerfilView: View {
                         }
                     }
 
-                    // Tabs
                     HStack {
                         ForEach(PerfilTab.allCases, id: \.self) { tab in
                             Button {
@@ -140,7 +136,6 @@ struct PerfilView: View {
                         }
                     }
 
-                    // Contenido del tab
                     if selectedTab == .entrenamientos {
                         PerfilEntrenamientosView()
                     } else if selectedTab == .estadisticas {
@@ -163,6 +158,89 @@ struct PerfilView: View {
             .sheet(isPresented: $showAjustes) {
                 SettingsView()
             }
+            .task {
+                await cargarDatosIniciales()
+                await cargarContadoresSeguidores()
+            }
+        }
+    }
+
+    // MARK: - Cargar datos iniciales
+    func cargarDatosIniciales() async {
+        do {
+            _ = try await SupabaseManager.shared.client.auth.session
+            await cargarPerfilDesdeSupabase()
+        } catch {
+            print("❌ Error al obtener sesión: \(error)")
+        }
+    }
+
+    // MARK: - Cargar perfil desde Supabase
+    func cargarPerfilDesdeSupabase() async {
+        do {
+            let session = try await SupabaseManager.shared.client.auth.session
+            let userID = session.user.id.uuidString
+
+            let response = try await SupabaseManager.shared.client
+                .from("profiles")
+                .select()
+                .eq("id", value: userID)
+                .single()
+                .execute()
+
+            let raw = response.data
+            guard let json = try? JSONSerialization.jsonObject(with: raw, options: []) as? [String: Any] else {
+                print("❌ No se pudo decodificar la respuesta")
+                return
+            }
+
+            if let nombre = json["nombre"] as? String {
+                self.nombre = nombre
+            }
+            if let usernameDB = json["username"] as? String {
+                self.username = usernameDB
+            }
+            if let presentacion = json["presentacion"] as? String {
+                self.presentacion = presentacion
+            }
+            if let enlaces = json["enlaces"] as? String {
+                self.enlaces = enlaces
+            }
+
+            if let avatar = json["avatar_url"] as? String,
+               let url = URL(string: avatar),
+               let imageData = try? Data(contentsOf: url),
+               let uiImage = UIImage(data: imageData) {
+                self.imagenPerfil = Image(uiImage: uiImage)
+            }
+
+        } catch {
+            print("❌ Error al cargar perfil: \(error)")
+        }
+    }
+
+    // MARK: - Cargar seguidores y siguiendo
+    func cargarContadoresSeguidores() async {
+        do {
+            let session = try await SupabaseManager.shared.client.auth.session
+            let userID = session.user.id.uuidString
+
+            let seguidoresResponse = try await SupabaseManager.shared.client
+                .from("followers")
+                .select("follower_id", count: .exact)
+                .eq("followed_id", value: userID)
+                .execute()
+            seguidoresCount = seguidoresResponse.count ?? 0
+
+            let siguiendoResponse = try await SupabaseManager.shared.client
+                .from("followers")
+                .select("followed_id", count: .exact)
+                .eq("follower_id", value: userID)
+                .execute()
+            siguiendoCount = siguiendoResponse.count ?? 0
+
+        } catch {
+            print("❌ Error al cargar contadores: \(error)")
         }
     }
 }

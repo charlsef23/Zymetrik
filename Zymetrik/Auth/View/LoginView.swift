@@ -1,8 +1,13 @@
 import SwiftUI
+import Supabase
 
 struct LoginView: View {
+    var onSuccess: (() -> Void)? = nil  // <- NUEVO
+
     @State private var email = ""
     @State private var password = ""
+    @State private var errorMessage: String?
+    @State private var isLoading = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -34,7 +39,7 @@ struct LoginView: View {
                 HStack {
                     Spacer()
                     Button(action: {
-                        // Acción recuperar contraseña
+                        // Acción recuperar contraseña (opcional)
                     }) {
                         Text("¿Olvidaste tu contraseña?")
                             .font(.footnote)
@@ -43,26 +48,35 @@ struct LoginView: View {
                 }
             }
 
+            if let errorMessage = errorMessage {
+                Text(errorMessage)
+                    .foregroundColor(.red)
+                    .font(.footnote)
+            }
+
             VStack(spacing: 14) {
                 Button(action: {
-                    // Acción iniciar sesión
+                    Task {
+                        await iniciarSesion()
+                    }
                 }) {
-                    Text("Entrar")
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 45)
-                        .background(Color.white)
-                        .foregroundColor(.black)
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.black, lineWidth: 1)
-                        )
+                    if isLoading {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 45)
+                    } else {
+                        Text("Entrar")
+                            .fontWeight(.medium)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 45)
+                            .background(Color.white)
+                            .foregroundColor(.black)
+                            .cornerRadius(12)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.black, lineWidth: 1)
+                            )
+                    }
                 }
-
-                SignInWithAppleButtonView()
-                    .frame(height: 45)
-                    .cornerRadius(12)
             }
 
             Spacer()
@@ -70,8 +84,26 @@ struct LoginView: View {
         .padding()
         .background(Color(.systemBackground))
     }
-}
 
-#Preview {
-    LoginView()
+    // MARK: - Inicio de sesión
+    func iniciarSesion() async {
+        errorMessage = nil
+        isLoading = true
+
+        do {
+            _ = try await SupabaseManager.shared.client.auth
+                .signIn(email: email, password: password)
+
+            print("✅ Sesión iniciada correctamente")
+            DispatchQueue.main.async {
+                onSuccess?()  // <- NAVEGAR A MainTabView
+            }
+
+        } catch {
+            errorMessage = "Error: \(error.localizedDescription)"
+            print("❌ Error al iniciar sesión: \(error)")
+        }
+
+        isLoading = false
+    }
 }

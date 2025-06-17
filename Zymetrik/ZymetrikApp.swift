@@ -4,7 +4,7 @@ import SwiftUI
 struct ZymetrikApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
         }
     }
 }

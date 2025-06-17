@@ -51,7 +51,7 @@ struct PlanesSuscripcionView: View {
                     onTap: {
                         selectedPlan = "Zymetrik Pro"
                     },
-                    backgroundColor: Color.yellow.opacity(0.8)
+                    backgroundColor: Color.red.opacity(0.8)
                 )
 
                 // PLAN PREMIUM
