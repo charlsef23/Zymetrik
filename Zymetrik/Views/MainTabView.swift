@@ -8,6 +8,11 @@ struct MainTabView: View {
                 .tabItem {
                     Image(systemName: "magnifyingglass")
                 }
+            
+            EntrenamientoView()
+                .tabItem {
+                    Image(systemName: "magnifyingglass")
+                }
 
             PerfilView()
                 .tabItem {
