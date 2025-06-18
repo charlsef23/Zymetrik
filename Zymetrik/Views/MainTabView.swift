@@ -4,6 +4,11 @@ struct MainTabView: View {
     var body: some View {
         TabView {
 
+            InicioView()
+                .tabItem {
+                    Image(systemName: "house")
+                }
+            
             BuscarView()
                 .tabItem {
                     Image(systemName: "magnifyingglass")
@@ -11,7 +16,7 @@ struct MainTabView: View {
             
             EntrenamientoView()
                 .tabItem {
-                    Image(systemName: "magnifyingglass")
+                    Image(systemName: "dumbbell")
                 }
 
             PerfilView()

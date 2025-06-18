@@ -5,10 +5,10 @@ struct SupabaseService {
     static let shared = SupabaseService()
     let client = SupabaseManager.shared.client
     
+    // 🚀 FUNCION EXISTENTE
     func guardarEntrenamiento(fecha: Date, ejercicios: [Ejercicio]) async throws {
         let user = try await client.auth.session.user
         let userId = user.id
-
         
         let fechaISO = fecha.formatted(.iso8601)
         let entrenamientoId = UUID()
@@ -38,4 +38,23 @@ struct SupabaseService {
             .execute()
     }
     
+    func fetchEntrenamientoPost(id: UUID) async throws -> EntrenamientoPost {
+        try await client
+            .from("entrenamiento_posts_view")
+            .select()
+            .eq("post_id", value: id)
+            .single()
+            .execute()
+            .value
+    }
+    
+    func fetchFeedPosts() async throws -> [EntrenamientoPost] {
+        try await client
+            .from("entrenamiento_posts_view")
+            .select()
+            .order("fecha", ascending: false)
+            .limit(20)
+            .execute()
+            .value
+    }
 }

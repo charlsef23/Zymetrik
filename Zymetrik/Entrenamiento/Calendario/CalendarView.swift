@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CalendarView: View {
     @Binding var selectedDate: Date
-    @State private var isMonthlyView: Bool = true
+    @Binding var isMonthlyView: Bool
     @State private var currentMonth: Date = Date()
 
     private let calendar = Calendar(identifier: .gregorian)
@@ -42,7 +42,6 @@ struct CalendarView: View {
     // MARK: - Vista mensual
     var monthlyGrid: some View {
         VStack(spacing: 8) {
-            // Encabezado mes + flechas
             HStack {
                 Button {
                     changeMonth(by: -1)
@@ -71,7 +70,6 @@ struct CalendarView: View {
             }
             .padding(.horizontal)
 
-            // Días de la semana
             let daysOfWeek = ["L", "M", "X", "J", "V", "S", "D"]
             HStack {
                 ForEach(daysOfWeek, id: \.self) { day in
@@ -83,7 +81,6 @@ struct CalendarView: View {
             }
             .padding(.horizontal)
 
-            // Cuadrícula de días
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
                 ForEach(datesInMonth(), id: \.self) { date in
                     dayButton(for: date, isSameMonth: calendar.isDate(date, equalTo: currentMonth, toGranularity: .month))
@@ -93,7 +90,7 @@ struct CalendarView: View {
         }
     }
 
-    // MARK: - Vista semanal con scroll horizontal
+    // MARK: - Vista semanal
     var weeklyScroll: some View {
         let days = weekDates()
 
@@ -114,7 +111,7 @@ struct CalendarView: View {
         }
     }
 
-    // MARK: - Botón de día
+    // MARK: - Botón día
     func dayButton(for date: Date, isSameMonth: Bool) -> some View {
         let isToday = calendar.isDateInToday(date)
         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
@@ -133,8 +130,8 @@ struct CalendarView: View {
                 )
                 .background(
                     isSelected
-                    ? AnyView(Circle().fill(Color.black))
-                    : AnyView(Color.clear)
+                        ? AnyView(Circle().fill(Color.black))
+                        : AnyView(Color.clear)
                 )
                 .overlay(
                     Circle()
@@ -144,7 +141,6 @@ struct CalendarView: View {
     }
 
     // MARK: - Helpers
-
     func changeMonth(by value: Int) {
         if let newDate = calendar.date(byAdding: .month, value: value, to: currentMonth) {
             currentMonth = newDate

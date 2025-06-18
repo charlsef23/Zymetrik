@@ -101,6 +101,7 @@ struct ListaEjerciciosView: View {
                                             VStack(alignment: .leading, spacing: 4) {
                                                 Text(ejercicio.nombre)
                                                     .font(.headline)
+                                                    .foregroundColor(.black)
                                                 Text(ejercicio.descripcion)
                                                     .font(.subheadline)
                                                     .foregroundColor(.secondary)
@@ -132,18 +133,32 @@ struct ListaEjerciciosView: View {
             .navigationTitle("Seleccionar ejercicios")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar") {
+                    Button {
                         let elegidos = ejercicios.filter { seleccionados.contains($0.id) }
 
+                        guard !elegidos.isEmpty else {
+                            print("⚠️ Nada seleccionado")
+                            return
+                        }
+
+                        // Primero: actualiza la vista padre
+                        onGuardar(elegidos)
+
+                        // Segundo: cierra la hoja inmediatamente
+                        isPresented = false
+
+                        // Tercero: intenta guardar en Supabase (esto puede fallar y no afecta la interfaz)
                         Task {
                             do {
                                 try await SupabaseService.shared.guardarEntrenamiento(fecha: fecha, ejercicios: elegidos)
-                                onGuardar(elegidos)
-                                isPresented = false // <- Esto cierra la vista
+                                print("✅ Entrenamiento guardado en Supabase")
                             } catch {
-                                print("❌ Error al guardar entrenamiento:", error)
+                                print("❌ Error Supabase (NO bloquea la vista):", error)
                             }
                         }
+                    } label: {
+                        Text("añadir")
+                            .foregroundColor(.black) // ← TEXTO NEGRO
                     }
                 }
             }
