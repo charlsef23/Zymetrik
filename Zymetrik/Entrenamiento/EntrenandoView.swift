@@ -6,6 +6,9 @@ struct EntrenandoView: View {
     @State private var tiempo: Int = 0
     @State private var timerActivo = false
     @State private var temporizador: Timer?
+    
+    @Environment(\.dismiss) var dismiss
+    @Environment(\.calendar) var calendar
 
     // Formatters
     let intFormatter: NumberFormatter = {
@@ -188,8 +191,19 @@ struct EntrenandoView: View {
                 Button(action: {
                     temporizador?.invalidate()
                     timerActivo = false
-                    print("✅ Entrenamiento finalizado")
-                    // Aquí irá la lógica real de publicación/post en el futuro
+
+                    Task {
+                        do {
+                            try await SupabaseService.shared.publicarEntrenamiento(
+                                fecha: Date(),
+                                ejercicios: ejercicios,
+                                setsPorEjercicio: setsPorEjercicio
+                            )
+                            dismiss() // Cierra EntrenandoView
+                        } catch {
+                            print("❌ Error al publicar entrenamiento:", error)
+                        }
+                    }
                 }) {
                     Text("Publicar entrenamiento")
                         .font(.headline)

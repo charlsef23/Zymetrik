@@ -14,8 +14,12 @@ struct InicioView: View {
                         .font(.largeTitle.bold())
                     Spacer()
                     HStack(spacing: 20) {
-                        Image(systemName: "bell.fill")
-                        Image(systemName: "paperplane.fill")
+                        NavigationLink(destination: AlertasView()) {
+                            Image(systemName: "bell.fill")
+                        }
+                        NavigationLink(destination: MensajesView()) {
+                            Image(systemName: "paperplane.fill")
+                        }
                     }
                     .font(.title2)
                 }
@@ -82,3 +86,4 @@ struct InicioView: View {
         }
     }
 }
+

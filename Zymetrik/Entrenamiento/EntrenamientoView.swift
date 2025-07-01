@@ -7,6 +7,7 @@ struct EntrenamientoView: View {
     @State private var mostrarLista = false
     @State private var isMonthlyView: Bool = false  // Empieza en vista semanal
 
+
     var body: some View {
         NavigationStack {
             VStack {
