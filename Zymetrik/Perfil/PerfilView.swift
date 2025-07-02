@@ -2,6 +2,7 @@ import SwiftUI
 import Supabase
 
 struct PerfilView: View {
+    @State private var userID: String = ""
     @State private var selectedTab: PerfilTab = .entrenamientos
     @State private var showAjustes = false
     @State private var showEditarPerfil = false
@@ -22,6 +23,7 @@ struct PerfilView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    // Header
                     HStack {
                         HStack(spacing: 6) {
                             Text(username)
@@ -44,6 +46,7 @@ struct PerfilView: View {
                     }
                     .padding(.horizontal)
 
+                    // Avatar + nombre + presentación
                     VStack(spacing: 12) {
                         imagenPerfil?
                             .resizable()
@@ -67,6 +70,7 @@ struct PerfilView: View {
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
 
+                        // Botones de acción
                         HStack {
                             Button {
                                 showEditarPerfil = true
@@ -95,6 +99,7 @@ struct PerfilView: View {
                             }
                         }
 
+                        // Contadores
                         HStack {
                             Spacer()
                             VStack {
@@ -102,14 +107,14 @@ struct PerfilView: View {
                                 Text("Entrenos").font(.caption).foregroundColor(.secondary)
                             }
                             Spacer()
-                            NavigationLink(destination: ListaSeguidoresView()) {
+                            NavigationLink(destination: ListaSeguidoresView(userID: userID)) {
                                 VStack {
                                     Text("\(seguidoresCount)").font(.headline)
                                     Text("Seguidores").font(.caption).foregroundColor(.secondary)
                                 }
                             }
                             Spacer()
-                            NavigationLink(destination: ListaSeguidosView()) {
+                            NavigationLink(destination: ListaSeguidosView(userID: userID)) {
                                 VStack {
                                     Text("\(siguiendoCount)").font(.headline)
                                     Text("Siguiendo").font(.caption).foregroundColor(.secondary)
@@ -119,6 +124,7 @@ struct PerfilView: View {
                         }
                     }
 
+                    // Tabs
                     HStack {
                         ForEach(PerfilTab.allCases, id: \.self) { tab in
                             Button {
@@ -137,8 +143,9 @@ struct PerfilView: View {
                         }
                     }
 
+                    // Contenido por tab
                     if selectedTab == .entrenamientos {
-                        Text("PerfilEntrenamientosView()")
+                        PerfilEntrenamientosView(profileID: nil)
                     } else if selectedTab == .estadisticas {
                         PerfilEstadisticasView()
                     } else {
@@ -182,6 +189,7 @@ struct PerfilView: View {
         do {
             let session = try await SupabaseManager.shared.client.auth.session
             let userID = session.user.id.uuidString
+            self.userID = userID // <- guarda para usarlo en NavigationLink
 
             let response = try await SupabaseManager.shared.client
                 .from("profiles")
@@ -245,7 +253,7 @@ struct PerfilView: View {
             print("❌ Error al cargar contadores: \(error)")
         }
     }
-    
+
     // MARK: - Cargar número de posts
     func cargarNumeroDePosts() async {
         do {

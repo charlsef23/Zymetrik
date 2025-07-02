@@ -29,6 +29,7 @@ struct NuevoComentario: Encodable {
 struct PostLike: Decodable {
     let post_id: UUID
     let profile_id: UUID
+    let liked_at: Date?
 }
 
 enum CountOption: String {

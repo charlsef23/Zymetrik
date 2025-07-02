@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ListaSeguidoresView: View {
+    let userID: String
+    
     @State private var searchText = ""
     @State private var seguidores: [String] = []
     @State private var isLoading = true
@@ -75,20 +77,12 @@ struct ListaSeguidoresView: View {
     }
     
     func cargarSeguidores() async {
-        guard let userID = try? await SupabaseManager.shared.client.auth.session.user.id.uuidString else {
-            print("❌ No se pudo obtener el userID")
-            return
-        }
-        
         do {
             let response = try await SupabaseManager.shared.client
-                .rpc("get_follower_usernames",
-                     params: ["user_id": userID])
+                .rpc("get_follower_usernames", params: ["user_id": userID])
                 .execute()
-            
-            // 3. Parsear el JSON y extraer el array de usernames
-            if let jsonArray = try? JSONSerialization
-                .jsonObject(with: response.data) as? [[String: Any]] {
+
+            if let jsonArray = try? JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] {
                 self.seguidores = jsonArray.compactMap { $0["username"] as? String }
             }
         } catch {

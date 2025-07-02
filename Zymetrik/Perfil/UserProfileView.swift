@@ -15,6 +15,7 @@ struct UserProfileView: View {
     @State private var showFollowers = false
     @State private var showFollowing = false
     
+    @State private var numeroDePosts = 0
     @State private var seguidoresCount = 0
     @State private var seguidosCount = 0
     @State private var profileUserID: String = ""
@@ -54,14 +55,14 @@ struct UserProfileView: View {
                 HStack {
                     Spacer()
                     VStack {
-                        Text("24")
+                        Text("\(numeroDePosts)")
                             .font(.headline)
                         Text("Entrenos")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     Spacer()
-                    Button { showFollowers = true } label: {
+                    NavigationLink(destination: ListaSeguidoresView(userID: profileUserID)) {
                         VStack {
                             Text("\(seguidoresCount)")
                                 .font(.headline)
@@ -71,7 +72,7 @@ struct UserProfileView: View {
                         }
                     }
                     Spacer()
-                    Button { showFollowing = true } label: {
+                    NavigationLink(destination: ListaSeguidosView(userID: profileUserID)) {
                         VStack {
                             Text("\(seguidosCount)")
                                 .font(.headline)
@@ -122,7 +123,7 @@ struct UserProfileView: View {
                 Group {
                     switch selectedTab {
                     case .entrenamientos:
-                        Text("📋 Lista de entrenamientos (conectado más adelante)")
+                        PerfilEntrenamientosView(profileID: profileUserID)
                     case .estadisticas:
                         RoundedRectangle(cornerRadius: 12)
                             .fill(Color(.systemGray6))
@@ -142,6 +143,7 @@ struct UserProfileView: View {
                 await cargarPerfil()
                 await verificarEstadoDeSeguimiento()
                 await contarSeguidoresYSeguidos()
+                await contarPosts()
             }
         }
     }
@@ -261,21 +263,42 @@ struct UserProfileView: View {
     // MARK: - Contar seguidores y seguidos
     func contarSeguidoresYSeguidos() async {
         do {
+            // Contar SEGUIDORES (quién sigue a este usuario)
             let seguidoresResp = try await SupabaseManager.shared.client
                 .from("followers")
-                .select("id", count: .exact)
+                .select("follower_id", count: .exact)
                 .eq("followed_id", value: profileUserID)
                 .execute()
             seguidoresCount = seguidoresResp.count ?? 0
 
+            // Contar SEGUIDOS (a quién sigue este usuario)
             let seguidosResp = try await SupabaseManager.shared.client
                 .from("followers")
-                .select("id", count: .exact)
+                .select("followed_id", count: .exact)
                 .eq("follower_id", value: profileUserID)
                 .execute()
             seguidosCount = seguidosResp.count ?? 0
+
         } catch {
-            print("❌ Error al contar seguidores: \(error)")
+            print("❌ Error al contar seguidores/seguidos: \(error)")
+        }
+    }
+    
+    // MARK: - Contar posts subidos por el usuario
+    func contarPosts() async {
+        guard !profileUserID.isEmpty else { return }
+
+        do {
+            let response = try await SupabaseManager.shared.client
+                .from("posts")
+                .select("id", count: .exact)
+                .eq("profile_id", value: profileUserID)
+                .execute()
+            
+            numeroDePosts = response.count ?? 0
+        } catch {
+            print("❌ Error al contar posts: \(error.localizedDescription)")
+            numeroDePosts = 0
         }
     }
 }

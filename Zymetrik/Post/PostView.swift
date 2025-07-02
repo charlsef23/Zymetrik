@@ -174,8 +174,12 @@ struct PostView: View {
                 .eq("profile_id", value: userId.uuidString)
                 .execute()
 
-            let likes = try response.decodedList(to: PostLike.self)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601WithFractionalSeconds
+
+            let likes = try decoder.decode([PostLike].self, from: response.data)
             self.leDioLike = !likes.isEmpty
+
         } catch {
             print("❌ Error comprobando like: \(error.localizedDescription)")
             self.leDioLike = false
@@ -188,28 +192,23 @@ struct PostView: View {
             let userId = session.user.id
 
             if leDioLike {
-                // ❌ Eliminar el like si existe
                 _ = try await SupabaseManager.shared.client
                     .from("post_likes")
                     .delete()
                     .eq("post_id", value: postID.uuidString)
                     .eq("profile_id", value: userId.uuidString)
                     .execute()
-
                 leDioLike = false
             } else {
-                // ✅ Intentar insertar solo si no existe
                 let nuevoLike = NuevoLike(post_id: postID, profile_id: userId)
-
                 do {
                     _ = try await SupabaseManager.shared.client
                         .from("post_likes")
-                        .insert(nuevoLike, returning: .minimal)
+                        .upsert(nuevoLike, onConflict: "post_id, profile_id", returning: .minimal)
                         .execute()
-
                     leDioLike = true
                 } catch {
-                    print("⚠️ No se pudo insertar like (probablemente ya existe): \(error.localizedDescription)")
+                    print("⚠️ Error al insertar like: \(error.localizedDescription)")
                 }
             }
 
@@ -228,11 +227,7 @@ struct PostView: View {
                 .eq("post_id", value: postID)
                 .execute()
 
-            if let count = response.count {
-                self.numLikes = count
-            } else {
-                self.numLikes = 0
-            }
+            self.numLikes = response.count ?? 0
         } catch {
             print("❌ Error al cargar número de likes: \(error)")
             self.numLikes = 0

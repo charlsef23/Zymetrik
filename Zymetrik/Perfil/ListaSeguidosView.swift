@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ListaSeguidosView: View {
+    let userID: String
+    
     @State private var searchText = ""
     @State private var seguidos: [String] = []
     @State private var isLoading = true
@@ -75,8 +77,6 @@ struct ListaSeguidosView: View {
     }
     
     func cargarSeguidos() async {
-        guard let userID = try? await SupabaseManager.shared.client.auth.session.user.id.uuidString else { return }
-
         do {
             let response = try await SupabaseManager.shared.client
                 .rpc("get_following_usernames", params: ["user_id": userID])
