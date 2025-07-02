@@ -12,6 +12,7 @@ struct PerfilView: View {
     @State private var enlaces = ""
     @State private var imagenPerfil: Image? = Image(systemName: "person.circle.fill")
 
+    @State private var numeroDePosts: Int = 0
     @State private var seguidoresCount: Int = 0
     @State private var siguiendoCount: Int = 0
 
@@ -97,7 +98,7 @@ struct PerfilView: View {
                         HStack {
                             Spacer()
                             VStack {
-                                Text("12").font(.headline)
+                                Text("\(numeroDePosts)").font(.headline)
                                 Text("Entrenos").font(.caption).foregroundColor(.secondary)
                             }
                             Spacer()
@@ -161,6 +162,7 @@ struct PerfilView: View {
             .task {
                 await cargarDatosIniciales()
                 await cargarContadoresSeguidores()
+                await cargarNumeroDePosts()
             }
         }
     }
@@ -241,6 +243,24 @@ struct PerfilView: View {
 
         } catch {
             print("❌ Error al cargar contadores: \(error)")
+        }
+    }
+    
+    // MARK: - Cargar número de posts
+    func cargarNumeroDePosts() async {
+        do {
+            let session = try await SupabaseManager.shared.client.auth.session
+            let userID = session.user.id.uuidString
+
+            let response = try await SupabaseManager.shared.client
+                .from("posts")
+                .select("id", count: .exact)
+                .eq("profile_id", value: userID)
+                .execute()
+
+            numeroDePosts = response.count ?? 0
+        } catch {
+            print("❌ Error al contar posts: \(error)")
         }
     }
 }

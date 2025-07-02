@@ -145,6 +145,22 @@ extension PostgrestResponse {
     }
 }
 
+extension PostgrestResponse {
+    func decodedList<U: Decodable>(to type: U.Type) throws -> [U] {
+        guard let array = self.value as? [Any],
+              JSONSerialization.isValidJSONObject(array) else {
+            throw NSError(domain: "PostgrestResponse.decodedList", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "El valor no es un array JSON válido: \(type)"
+            ])
+        }
+
+        let data = try JSONSerialization.data(withJSONObject: array, options: [])
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode([U].self, from: data)
+    }
+}
+
 extension SupabaseService {
     func fetchChatPreviews() async throws -> [ChatPreview] {
         let userID = try await client.auth.session.user.id.uuidString

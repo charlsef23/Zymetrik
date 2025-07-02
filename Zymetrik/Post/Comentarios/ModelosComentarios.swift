@@ -1,0 +1,43 @@
+import SwiftUI
+
+struct Comentario: Identifiable, Decodable {
+    let id: UUID
+    let post_id: UUID
+    let profile_id: UUID
+    let contenido: String
+    let creado_en: Date
+    let comentario_padre_id: UUID?
+    let profiles: Profile?
+
+    struct Profile: Decodable {
+        let username: String
+    }
+
+    var username: String {
+        profiles?.username ?? "usuario"
+    }
+}
+
+struct NuevoComentario: Encodable {
+    let post_id: UUID
+    let profile_id: UUID
+    let contenido: String
+    let comentario_padre_id: UUID?
+}
+
+
+struct PostLike: Decodable {
+    let post_id: UUID
+    let profile_id: UUID
+}
+
+enum CountOption: String {
+    case exact
+    case planned
+    case estimated
+}
+
+struct NuevoLike: Encodable {
+    let post_id: UUID
+    let profile_id: UUID
+}
