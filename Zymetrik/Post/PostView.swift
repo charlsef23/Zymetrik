@@ -15,7 +15,6 @@ struct PostView: View {
         Group {
             if let post = post, let ejercicio = ejercicioSeleccionado {
                 VStack(alignment: .leading, spacing: 24) {
-
                     // Header
                     HStack {
                         Image(systemName: "person.crop.circle")
@@ -68,8 +67,7 @@ struct PostView: View {
                                     }
                                     .padding()
                                     .background(
-                                        ejercicioItem.id == ejercicio.id ?
-                                            Color(UIColor.systemGray5) : Color.white
+                                        ejercicioItem.id == ejercicio.id ? Color(UIColor.systemGray5) : Color.white
                                     )
                                     .cornerRadius(12)
                                     .overlay(
@@ -171,11 +169,11 @@ struct PostView: View {
                 .from("post_likes")
                 .select("*")
                 .eq("post_id", value: postID.uuidString)
-                .eq("profile_id", value: userId.uuidString)
+                .eq("autor_id", value: userId.uuidString)
                 .execute()
 
             let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601WithFractionalSeconds
+            decoder.dateDecodingStrategy = .iso8601
 
             let likes = try decoder.decode([PostLike].self, from: response.data)
             self.leDioLike = !likes.isEmpty
@@ -196,29 +194,24 @@ struct PostView: View {
                     .from("post_likes")
                     .delete()
                     .eq("post_id", value: postID.uuidString)
-                    .eq("profile_id", value: userId.uuidString)
+                    .eq("autor_id", value: userId.uuidString)
                     .execute()
                 leDioLike = false
             } else {
-                let nuevoLike = NuevoLike(post_id: postID, profile_id: userId)
-                do {
-                    _ = try await SupabaseManager.shared.client
-                        .from("post_likes")
-                        .upsert(nuevoLike, onConflict: "post_id, profile_id", returning: .minimal)
-                        .execute()
-                    leDioLike = true
-                } catch {
-                    print("⚠️ Error al insertar like: \(error.localizedDescription)")
-                }
+                let nuevoLike = NuevoLike(post_id: postID, autor_id: userId)
+                _ = try await SupabaseManager.shared.client
+                    .from("post_likes")
+                    .upsert(nuevoLike, onConflict: "post_id, autor_id", returning: .minimal)
+                    .execute()
+                leDioLike = true
             }
 
             await cargarNumeroDeLikes()
-
         } catch {
             print("❌ Error general toggleLike: \(error.localizedDescription)")
         }
     }
-    
+
     func cargarNumeroDeLikes() async {
         do {
             let response = try await SupabaseManager.shared.client
@@ -234,14 +227,3 @@ struct PostView: View {
         }
     }
 }
-
-    func statView(title: String, value: String) -> some View {
-        VStack {
-            Text(value)
-                .font(.title3.bold())
-            Text(title)
-                .font(.caption)
-        }
-    }
-
-

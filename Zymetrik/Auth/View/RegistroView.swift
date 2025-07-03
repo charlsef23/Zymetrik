@@ -100,7 +100,7 @@ struct RegistroView: View {
         do {
             // Verificar si el nombre de usuario ya existe
             let response = try await SupabaseManager.shared.client
-                .from("profiles")
+                .from("perfil")
                 .select()
                 .eq("username", value: username)
                 .execute()
@@ -131,7 +131,7 @@ struct RegistroView: View {
             
             // Insertar en la tabla "profiles"
             try await SupabaseManager.shared.client
-                .from("profiles")
+                .from("perfil")
                 .insert([
                     "id": userID.uuidString,
                     "username": username,

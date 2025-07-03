@@ -154,7 +154,7 @@ struct EditarPerfilView: View {
             )
 
             let response = try await SupabaseManager.shared.client
-                .from("profiles")
+                .from("perfil")
                 .update(datos)
                 .eq("id", value: userID)
                 .select()

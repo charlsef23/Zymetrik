@@ -3,32 +3,31 @@ import SwiftUI
 struct Comentario: Identifiable, Decodable {
     let id: UUID
     let post_id: UUID
-    let profile_id: UUID
+    let autor_id: UUID
     let contenido: String
     let creado_en: Date
     let comentario_padre_id: UUID?
-    let profiles: Profile?
+    let perfil: Perfil?
 
-    struct Profile: Decodable {
+    struct Perfil: Decodable {
         let username: String
     }
 
     var username: String {
-        profiles?.username ?? "usuario"
+        perfil?.username ?? "usuario"
     }
 }
 
 struct NuevoComentario: Encodable {
     let post_id: UUID
-    let profile_id: UUID
+    let autor_id: UUID
     let contenido: String
     let comentario_padre_id: UUID?
 }
 
-
 struct PostLike: Decodable {
     let post_id: UUID
-    let profile_id: UUID
+    let autor_id: UUID
     let liked_at: Date?
 }
 
@@ -40,5 +39,5 @@ enum CountOption: String {
 
 struct NuevoLike: Encodable {
     let post_id: UUID
-    let profile_id: UUID
+    let autor_id: UUID
 }

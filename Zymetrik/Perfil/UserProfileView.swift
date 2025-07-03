@@ -152,7 +152,7 @@ struct UserProfileView: View {
     func cargarPerfil() async {
         do {
             let response = try await SupabaseManager.shared.client
-                .from("profiles")
+                .from("perfil")
                 .select()
                 .eq("username", value: username)
                 .single()
@@ -292,7 +292,7 @@ struct UserProfileView: View {
             let response = try await SupabaseManager.shared.client
                 .from("posts")
                 .select("id", count: .exact)
-                .eq("profile_id", value: profileUserID)
+                .eq("autor_id", value: profileUserID)
                 .execute()
             
             numeroDePosts = response.count ?? 0

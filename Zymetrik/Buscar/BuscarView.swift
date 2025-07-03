@@ -1,93 +1,95 @@
 import SwiftUI
+import Supabase
 
 struct BuscarView: View {
     @State private var searchText = ""
-    @State private var seguidos: Set<String> = []
-
-    let usuarios = ["gymbro", "entrena_con_lu", "ztrainer", "carlafit", "powerjuan", "carlosfit", "lauragym", "lucasstrong"]
-
-    var usuariosFiltrados: [String] {
-        searchText.isEmpty ? usuarios : usuarios.filter {
-            $0.localizedCaseInsensitiveContains(searchText)
-        }
-    }
+    @State private var resultados: [Perfil] = []
+    @State private var seguidos: Set<UUID> = []
+    @State private var cargando = false
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 🔍 Barra de búsqueda
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
+                barraBusqueda
 
-                    TextField("Buscar usuarios", text: $searchText)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-
-                    if !searchText.isEmpty {
-                        Button(action: {
-                            searchText = ""
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
-                        }
-                    }
-                }
-                .padding(10)
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
-                .padding(.horizontal)
-                .padding(.top, 8)
-
-                // 👤 Resultados
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(usuariosFiltrados, id: \.self) { usuario in
-                            NavigationLink(destination: UserProfileView(username: usuario)) {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "person.circle.fill")
-                                        .resizable()
-                                        .frame(width: 44, height: 44)
-                                        .foregroundColor(.gray)
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(usuario)
-                                            .font(.headline)
-                                        Text("Ver perfil")
-                                            .font(.caption)
-                                            .foregroundColor(.gray)
-                                    }
-
-                                    Spacer()
-
-                                    Button(action: {
-                                        if seguidos.contains(usuario) {
-                                            seguidos.remove(usuario)
-                                        } else {
-                                            seguidos.insert(usuario)
-                                        }
-                                    })  {
-                                        Text(seguidos.contains(usuario) ? "Siguiendo" : "Seguir")
-                                            .padding(.horizontal, 14)
-                                            .padding(.vertical, 6)
-                                            .background(seguidos.contains(usuario) ? Color(.systemGray5) : Color.black)
-                                            .foregroundColor(seguidos.contains(usuario) ? .black : .white)
-                                            .cornerRadius(20)
+                ScrollViewReader { _ in
+                    ScrollView {
+                        if cargando {
+                            ProgressView().padding(.top, 32)
+                        } else {
+                            LazyVStack(spacing: 0) {
+                                ForEach(resultados) { perfil in
+                                    NavigationLink(destination: UserProfileView(username: perfil.username)) {
+                                        UsuarioRowView(perfil: perfil, seguidos: $seguidos)
                                     }
                                     .buttonStyle(.plain)
-                                }
-                                .padding(.vertical, 12)
-                                .padding(.horizontal)
-                            }
-                            .buttonStyle(.plain)
 
-                            Divider()
-                                .padding(.leading, 72)
+                                    Divider().padding(.leading, 72)
+                                }
+                            }
+                            .padding(.top, 8)
                         }
                     }
                 }
             }
             .navigationTitle("Buscar")
         }
+    }
+
+    var barraBusqueda: some View {
+        HStack {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.gray)
+
+            TextField("Buscar usuarios", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+                .focused($searchFocused)
+                .onAppear { searchFocused = true }
+                .onChange(of: searchText) {
+                    Task { await buscarUsuarios() }
+                }
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                    resultados = []
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .padding(.horizontal)
+        .padding(.top, 8)
+    }
+
+    func buscarUsuarios() async {
+        guard !searchText.isEmpty else {
+            resultados = []
+            return
+        }
+
+        do {
+            cargando = true
+
+            let response = try await SupabaseManager.shared.client
+                .from("perfil")
+                .select("id, username, nombre, avatar_url")
+                .ilike("username", pattern: "%\(searchText)%")
+                .order("username")
+                .limit(20)
+                .execute()
+
+            resultados = try response.decodedList(to: Perfil.self)
+        } catch {
+            print("❌ Error al buscar usuarios:", error)
+        }
+
+        cargando = false
     }
 }

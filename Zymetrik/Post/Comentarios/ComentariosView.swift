@@ -82,7 +82,7 @@ struct ComentariosView: View {
         do {
             let response = try await SupabaseManager.shared.client
                 .from("comentarios")
-                .select("*, profiles(username)")
+                .select("*, perfil(username)")
                 .eq("post_id", value: postID)
                 .order("creado_en", ascending: true)
                 .execute()
@@ -102,7 +102,7 @@ struct ComentariosView: View {
 
             let nuevo = NuevoComentario(
                 post_id: postID,
-                profile_id: session.user.id,
+                autor_id: session.user.id,
                 contenido: nuevoComentario,
                 comentario_padre_id: respondiendoA?.id
             )
@@ -120,5 +120,3 @@ struct ComentariosView: View {
         }
     }
 }
-
-

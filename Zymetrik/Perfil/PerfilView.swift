@@ -192,7 +192,7 @@ struct PerfilView: View {
             self.userID = userID // <- guarda para usarlo en NavigationLink
 
             let response = try await SupabaseManager.shared.client
-                .from("profiles")
+                .from("perfil")
                 .select()
                 .eq("id", value: userID)
                 .single()
@@ -263,7 +263,7 @@ struct PerfilView: View {
             let response = try await SupabaseManager.shared.client
                 .from("posts")
                 .select("id", count: .exact)
-                .eq("profile_id", value: userID)
+                .eq("autor_id", value: userID)
                 .execute()
 
             numeroDePosts = response.count ?? 0

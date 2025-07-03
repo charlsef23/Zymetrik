@@ -45,23 +45,26 @@ struct PerfilEntrenamientosView: View {
             let response = try await SupabaseManager.shared.client
                 .from("posts")
                 .select("id")
-                .eq("profile_id", value: currentID)
+                .eq("autor_id", value: currentID)
                 .order("fecha", ascending: false)
                 .execute()
 
-            guard let array = try JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] else {
-                self.error = "Error al leer posts"
+            // 🔍 Manejo seguro del JSON para evitar errores de tipo
+            guard let jsonArray = try JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] else {
+                self.error = "Error al leer los datos"
+                self.cargando = false
                 return
             }
 
-            self.posts = array.compactMap { dict in
-                if let idString = dict["id"] as? String {
-                    return UUID(uuidString: idString)
+            self.posts = jsonArray.compactMap { dict in
+                if let idStr = dict["id"] as? String {
+                    return UUID(uuidString: idStr)
                 }
                 return nil
             }
 
             self.cargando = false
+
         } catch {
             self.error = "Error al cargar posts: \(error.localizedDescription)"
             self.cargando = false
