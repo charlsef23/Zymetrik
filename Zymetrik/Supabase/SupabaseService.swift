@@ -8,7 +8,7 @@ struct SupabaseService {
     // Feed de posts
     func fetchEntrenamientoPost(id: UUID) async throws -> EntrenamientoPost {
         try await client
-            .from("entrenamiento_posts_view")
+            .from("posts")
             .select()
             .eq("post_id", value: id)
             .single()
@@ -18,7 +18,7 @@ struct SupabaseService {
 
     func fetchFeedPosts() async throws -> [EntrenamientoPost] {
         try await client
-            .from("entrenamiento_posts_view")
+            .from("posts")
             .select()
             .order("fecha", ascending: false)
             .limit(20)
@@ -187,12 +187,13 @@ struct ChatMiembro: Decodable {
     let chat_id: String
 }
 
-struct Perfil: Identifiable, Decodable {
+struct Perfil: Identifiable, Codable, Equatable {
     let id: UUID
     let username: String
     let nombre: String
     let avatar_url: String?
 }
+
 
 struct MensajeDB: Decodable {
     let id: String

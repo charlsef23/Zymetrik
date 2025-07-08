@@ -123,7 +123,11 @@ struct UserProfileView: View {
                 Group {
                     switch selectedTab {
                     case .entrenamientos:
-                        PerfilEntrenamientosView(profileID: profileUserID)
+                        if !profileUserID.isEmpty {
+                            PerfilEntrenamientosView(profileID: profileUserID)
+                        } else {
+                            ProgressView().padding()
+                        }
                     case .estadisticas:
                         RoundedRectangle(cornerRadius: 12)
                             .fill(Color(.systemGray6))
@@ -173,7 +177,7 @@ struct UserProfileView: View {
         isLoading = false
     }
     
-    // MARK: - Verificar estado de seguimiento
+    // ✅ CORREGIDO: Verificar estado de seguimiento correctamente
     func verificarEstadoDeSeguimiento() async {
         guard let currentUserID = try? await SupabaseManager.shared.client.auth.session.user.id.uuidString else { return }
 
@@ -185,49 +189,10 @@ struct UserProfileView: View {
                 .eq("followed_id", value: profileUserID)
                 .execute()
 
-            let json = try JSONSerialization.jsonObject(with: response.data) as? [String: Any]
-            isFollowing = json != nil
+            let jsonArray = try JSONSerialization.jsonObject(with: response.data) as? [[String: Any]]
+            isFollowing = (jsonArray?.isEmpty == false)
         } catch {
             print("❌ Error al verificar seguimiento: \(error)")
-        }
-    }
-
-    // MARK: - Seguir usuario
-    func seguirUsuario() async {
-        guard let currentUserID = try? await SupabaseManager.shared.client.auth.session.user.id.uuidString else { return }
-
-        let insertData: [String: String] = [
-            "follower_id": currentUserID,
-            "followed_id": profileUserID
-        ]
-
-        do {
-            _ = try await SupabaseManager.shared.client
-                .from("followers")
-                .insert(insertData)
-                .execute()
-
-            isFollowing = true
-        } catch {
-            print("❌ Error al seguir usuario: \(error)")
-        }
-    }
-
-    // MARK: - Dejar de seguir
-    func dejarDeSeguirUsuario() async {
-        guard let currentUserID = try? await SupabaseManager.shared.client.auth.session.user.id.uuidString else { return }
-
-        do {
-            _ = try await SupabaseManager.shared.client
-                .from("followers")
-                .delete()
-                .eq("follower_id", value: currentUserID)
-                .eq("followed_id", value: profileUserID)
-                .execute()
-
-            isFollowing = false
-        } catch {
-            print("❌ Error al dejar de seguir: \(error)")
         }
     }
 
