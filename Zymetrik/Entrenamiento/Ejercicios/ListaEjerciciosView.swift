@@ -62,15 +62,37 @@ struct ListaEjerciciosView: View {
     func fetchEjercicios() {
         Task {
             do {
-                let response: [Ejercicio] = try await SupabaseManager.shared.client
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                async let allEjercicios: [Ejercicio] = SupabaseManager.shared.client
                     .from("ejercicios")
                     .select()
                     .execute()
-                    .value
-                ejercicios = response
+                    .decodedList(to: Ejercicio.self)
+
+                async let favoritos: [FavoritoID] = SupabaseManager.shared.client
+                    .from("ejercicios_favoritos")
+                    .select("ejercicio_id")
+                    .eq("autor_id", value: userId)
+                    .execute()
+                    .decodedList(to: FavoritoID.self)
+
+                let (todos, favoritosIDs) = try await (allEjercicios, favoritos)
+                let favs = favoritosIDs.map(\.ejercicio_id)
+
+                ejercicios = todos.map { ejercicio in
+                    var copy = ejercicio
+                    copy.esFavorito = favs.contains(ejercicio.id)
+                    return copy
+                }
+
             } catch {
-                print("❌ Error al cargar ejercicios:", error)
+                print("❌ Error al cargar ejercicios o favoritos:", error)
             }
         }
+    }
+
+    struct FavoritoID: Decodable {
+        let ejercicio_id: UUID
     }
 }

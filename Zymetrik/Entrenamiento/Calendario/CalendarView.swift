@@ -4,37 +4,40 @@ struct CalendarView: View {
     @Binding var selectedDate: Date
     @Binding var isMonthlyView: Bool
     @State private var currentMonth: Date = Date()
-
+    @State private var currentWeekIndex: Int = 500  // Punto inicial
     private let calendar = Calendar(identifier: .gregorian)
 
     var body: some View {
         VStack(spacing: 16) {
-            // Encabezado con selector de vista
+            // Encabezado
             HStack {
                 Text("Selecciona el día")
                     .font(.subheadline)
                     .foregroundColor(.primary)
-
+                
                 Spacer()
-
+                
                 Button {
                     isMonthlyView.toggle()
                 } label: {
-                    Label(isMonthlyView ? "Vista semanal" : "Vista mensual", systemImage: "chevron.down")
-                        .font(.caption)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(Color(.systemGray5))
-                        .clipShape(Capsule())
+                    Label(
+                        isMonthlyView ? "Vista semanal" : "Vista mensual",
+                        systemImage: isMonthlyView ? "chevron.up" : "chevron.down"
+                    )
+                    .font(.caption)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .background(Color(.systemGray5))
+                    .clipShape(Capsule())
                 }
             }
             .padding(.horizontal)
-
+            
             // Calendario
             if isMonthlyView {
                 monthlyGrid
             } else {
-                weeklyScroll
+                weeklySwipeView
             }
         }
     }
@@ -51,14 +54,14 @@ struct CalendarView: View {
                         .background(Color(.systemGray5))
                         .clipShape(Circle())
                 }
-
+                
                 Spacer()
-
+                
                 Text(currentMonth.formatted(.dateTime.month(.wide).year()))
                     .font(.headline)
-
+                
                 Spacer()
-
+                
                 Button {
                     changeMonth(by: 1)
                 } label: {
@@ -69,7 +72,7 @@ struct CalendarView: View {
                 }
             }
             .padding(.horizontal)
-
+            
             let daysOfWeek = ["L", "M", "X", "J", "V", "S", "D"]
             HStack {
                 ForEach(daysOfWeek, id: \.self) { day in
@@ -80,7 +83,7 @@ struct CalendarView: View {
                 }
             }
             .padding(.horizontal)
-
+            
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
                 ForEach(datesInMonth(), id: \.self) { date in
                     dayButton(for: date, isSameMonth: calendar.isDate(date, equalTo: currentMonth, toGranularity: .month))
@@ -90,25 +93,31 @@ struct CalendarView: View {
         }
     }
 
-    // MARK: - Vista semanal
-    var weeklyScroll: some View {
-        let days = weekDates()
-
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(days, id: \.self) { date in
-                    VStack(spacing: 4) {
-                        Text(weekdayLetter(for: date))
-                            .font(.caption2)
-                            .foregroundColor(.gray)
-
-                        dayButton(for: date, isSameMonth: true)
+    // MARK: - Vista semanal con swipe horizontal
+    var weeklySwipeView: some View {
+        TabView(selection: $currentWeekIndex) {
+            ForEach(0..<1000, id: \.self) { index in
+                let startOfWeek = getStartOfWeek(for: index - 500)
+                let weekDays = (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: startOfWeek) }
+                
+                HStack(spacing: 8) {
+                    ForEach(weekDays, id: \.self) { date in
+                        VStack(spacing: 4) {
+                            Text(weekdayLetter(for: date))
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            
+                            dayButton(for: date, isSameMonth: true)
+                        }
+                        .frame(width: 44)
                     }
-                    .frame(width: 44)
                 }
+                .padding(.horizontal)
+                .tag(index)
             }
-            .padding(.horizontal)
         }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .frame(height: 70)
     }
 
     // MARK: - Botón día
@@ -116,7 +125,7 @@ struct CalendarView: View {
         let isToday = calendar.isDateInToday(date)
         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
         let isPast = date < calendar.startOfDay(for: Date())
-
+        
         return Button {
             selectedDate = date
         } label: {
@@ -125,22 +134,32 @@ struct CalendarView: View {
                 .frame(width: 32, height: 32)
                 .foregroundColor(
                     isSelected
-                        ? .white
-                        : (isPast ? Color.gray.opacity(0.4) : (isSameMonth ? .primary : .gray.opacity(0.2)))
+                    ? .white
+                    : (isPast ? Color.gray.opacity(0.4) : (isSameMonth ? .primary : .gray.opacity(0.2)))
                 )
                 .background(
                     isSelected
-                        ? AnyView(Circle().fill(Color.black))
-                        : AnyView(Color.clear)
+                    ? AnyView(Circle().fill(Color.black))
+                    : AnyView(Color.clear)
                 )
                 .overlay(
                     Circle()
-                        .stroke(isToday && !isSelected ? Color.red : .clear, lineWidth: 1.5)
+                        .stroke(isToday && !isSelected ? Color.gray.opacity(0.5) : .clear, lineWidth: 1.5)
                 )
         }
     }
 
     // MARK: - Helpers
+
+    func getStartOfWeek(for offset: Int) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.firstWeekday = 2 // lunes
+
+        let today = Date()
+        let baseWeek = calendar.dateInterval(of: .weekOfYear, for: today)!.start
+        return calendar.date(byAdding: .weekOfYear, value: offset, to: baseWeek)!
+    }
+
     func changeMonth(by value: Int) {
         if let newDate = calendar.date(byAdding: .month, value: value, to: currentMonth) {
             currentMonth = newDate
@@ -160,17 +179,11 @@ struct CalendarView: View {
         }
     }
 
-    func weekDates() -> [Date] {
-        let weekday = calendar.component(.weekday, from: selectedDate)
-        let offset = ((weekday + 5) % 7) * -1
-        let startOfWeek = calendar.date(byAdding: .day, value: offset, to: selectedDate)!
-
-        return (0..<14).compactMap { calendar.date(byAdding: .day, value: $0, to: startOfWeek) }
-    }
-
     func weekdayLetter(for date: Date) -> String {
+        let letters = ["L", "M", "X", "J", "V", "S", "D"]
         let weekday = calendar.component(.weekday, from: date)
-        let letters = ["D", "L", "M", "X", "J", "V", "S"]
-        return letters[(weekday + 5) % 7]
+        // Convertir weekday de domingo=1 a índice con lunes=0
+        let adjustedIndex = (weekday + 5) % 7
+        return letters[adjustedIndex]
     }
 }

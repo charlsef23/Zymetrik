@@ -215,6 +215,8 @@ struct Ejercicio: Identifiable, Codable {
     let categoria: String
     let tipo: String
     let imagen_url: String?
+
+    var esFavorito: Bool = false 
 }
 
 struct Entrenamiento: Identifiable {
