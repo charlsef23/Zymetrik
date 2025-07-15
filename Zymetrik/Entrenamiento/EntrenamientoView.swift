@@ -4,27 +4,51 @@ struct EntrenamientoView: View {
     @State private var fechaSeleccionada: Date = Date()
     @State private var ejerciciosPorDia: [Date: [Ejercicio]] = [:]
     @State private var mostrarLista = false
-    @State private var isMonthlyView: Bool = false  // Empieza en vista semanal
 
     var body: some View {
         NavigationStack {
-            VStack {
-                CalendarView(selectedDate: $fechaSeleccionada, isMonthlyView: $isMonthlyView)
+            VStack(alignment: .leading) {
+                // Header con día y fecha completa
+                HStack {
+                    Text(fechaSeleccionada.formatted(.dateTime.weekday(.wide)).capitalized)
+                        .font(.title.bold())
+
+                    if Calendar.current.isDateInToday(fechaSeleccionada) {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 10, height: 10)
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(fechaSeleccionada.formatted(.dateTime.month(.wide).day()))
+                            .font(.subheadline)
+                        Text(fechaSeleccionada.formatted(.dateTime.year()))
+                            .font(.subheadline)
+                    }
+                }
+                .padding(.horizontal)
+
+                CalendarView(
+                    selectedDate: $fechaSeleccionada,
+                    ejerciciosPorDia: ejerciciosPorDia
+                )
 
                 if let ejercicios = ejerciciosPorDia[fechaSeleccionada.stripTime()], !ejercicios.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Ejercicios del \(fechaSeleccionada.formatted(.dateTime.day().month().year()))")
-                            .font(.headline)
-                            .padding(.horizontal)
-
                         ForEach(ejercicios) { ejercicio in
                             EjercicioResumenView(ejercicio: ejercicio)
                         }
                     }
                 } else {
-                    Text("No hay ejercicios para esta fecha")
-                        .foregroundColor(.secondary)
-                        .padding()
+                    HStack {
+                        Spacer()
+                        Text("No hay ejercicios para esta fecha")
+                            .foregroundColor(.secondary)
+                            .padding()
+                        Spacer()
+                    }
                 }
 
                 Spacer()
@@ -43,7 +67,7 @@ struct EntrenamientoView: View {
                     }
                 }
             }
-            .navigationTitle("Entrenamiento")
+            .navigationBarHidden(true)
             .overlay(
                 VStack {
                     Spacer()

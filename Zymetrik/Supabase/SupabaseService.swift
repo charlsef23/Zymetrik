@@ -312,3 +312,15 @@ extension Date {
         return formatter.localizedString(for: self, relativeTo: Date())
     }
 }
+
+extension SupabaseService {
+    func eliminarPost(postID: UUID) async throws {
+        _ = try await client
+            .from("posts")
+            .delete()
+            .eq("id", value: postID.uuidString)
+            .execute()
+
+        print("✅ Post eliminado correctamente en Supabase")
+    }
+}
