@@ -4,7 +4,7 @@ import Supabase
 struct PerfilEntrenamientosView: View {
     let profileID: String? // nil para el perfil actual
 
-    @State private var posts: [UUID] = []
+    @State private var posts: [Post] = []
     @State private var cargando = true
     @State private var error: String?
 
@@ -21,8 +21,8 @@ struct PerfilEntrenamientosView: View {
                     .padding()
             } else {
                 LazyVStack(spacing: 24) {
-                    ForEach(posts, id: \.self) { postID in
-                        PostView(postID: postID)
+                    ForEach(posts) { post in
+                        PostView(post: post)
                     }
                 }
                 .padding(.horizontal)
@@ -44,25 +44,14 @@ struct PerfilEntrenamientosView: View {
 
             let response = try await SupabaseManager.shared.client
                 .from("posts")
-                .select("id")
+                .select("""
+                    id, fecha, autor_id, avatar_url, username, nombre, contenido
+                """)
                 .eq("autor_id", value: currentID)
                 .order("fecha", ascending: false)
                 .execute()
 
-            // 🔍 Manejo seguro del JSON para evitar errores de tipo
-            guard let jsonArray = try JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] else {
-                self.error = "Error al leer los datos"
-                self.cargando = false
-                return
-            }
-
-            self.posts = jsonArray.compactMap { dict in
-                if let idStr = dict["id"] as? String {
-                    return UUID(uuidString: idStr)
-                }
-                return nil
-            }
-
+            self.posts = try response.decodedList(to: Post.self)
             self.cargando = false
 
         } catch {

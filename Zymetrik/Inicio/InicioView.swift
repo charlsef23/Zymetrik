@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct InicioView: View {
-    @State private var posts: [EntrenamientoPost] = []
+    @State private var posts: [Post] = []
     @State private var seleccion = "Para ti"
     @State private var cargando = true
 
@@ -58,7 +58,7 @@ struct InicioView: View {
                     ScrollView {
                         VStack(spacing: 24) {
                             ForEach(posts) { post in
-                                PostView(postID: post.id)
+                                PostView(post: post)
                             }
                         }
                         .padding(.top)
@@ -77,7 +77,7 @@ struct InicioView: View {
         Task {
             do {
                 cargando = true
-                posts = try await SupabaseService.shared.fetchFeedPosts()
+                posts = try await SupabaseService.shared.fetchPosts()
                 cargando = false
             } catch {
                 print("Error al cargar feed: \(error)")
@@ -86,4 +86,3 @@ struct InicioView: View {
         }
     }
 }
-

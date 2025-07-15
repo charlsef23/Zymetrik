@@ -6,24 +6,24 @@ struct SupabaseService {
     let client = SupabaseManager.shared.client
 
     // Feed de posts
-    func fetchEntrenamientoPost(id: UUID) async throws -> EntrenamientoPost {
-        try await client
+    func fetchPosts(id: UUID? = nil, limit: Int = 20) async throws -> [Post] {
+        var query = client
             .from("posts")
-            .select()
-            .eq("post_id", value: id)
-            .single()
-            .execute()
-            .value
-    }
+            .select("""
+                id, fecha, autor_id, avatar_url, username, nombre, contenido
+            """, head: false)
 
-    func fetchFeedPosts() async throws -> [EntrenamientoPost] {
-        try await client
-            .from("posts")
-            .select()
+        if let id = id {
+            query = query.eq("id", value: id.uuidString)
+        }
+
+        // Aplica transformaciones en la llamada final, sin reasignar
+        let response = try await query
             .order("fecha", ascending: false)
-            .limit(20)
+            .limit(limit)
             .execute()
-            .value
+
+        return try response.decodedList(to: Post.self)
     }
 
     // Chat
@@ -133,56 +133,105 @@ struct SupabaseService {
         )
     }
 
-    // Entrenamientos
+    // Publicar Entrenamiento directo en posts
     func publicarEntrenamiento(fecha: Date, ejercicios: [Ejercicio], setsPorEjercicio: [UUID: [SetRegistro]]) async throws {
         let user = try await client.auth.session.user
         let userId = user.id
-        let entrenamientoId = UUID()
         let fechaISO = fecha.formatted(.iso8601)
 
-        let entrenamiento = NuevoEntrenamiento(id: entrenamientoId, autor_id: userId, fecha: fechaISO)
-        try await client.from("entrenamientos").insert(entrenamiento).execute()
+        print("📌 Preparando publicación directa sin tabla entrenamiento")
 
-        let relaciones = ejercicios.map {
-            EjercicioEnEntrenamiento(id: UUID(), entrenamiento_id: entrenamientoId, ejercicio_id: $0.id)
+        var ejerciciosContenido: [EjercicioPostContenido] = []
+
+        for ejercicio in ejercicios {
+            let sets = setsPorEjercicio[ejercicio.id]?.map {
+                SetPost(repeticiones: $0.repeticiones, peso: $0.peso)
+            } ?? []
+
+            let ejercicioContenido = EjercicioPostContenido(
+                id: ejercicio.id,
+                nombre: ejercicio.nombre,
+                descripcion: ejercicio.descripcion,
+                categoria: ejercicio.categoria,
+                tipo: ejercicio.tipo,
+                imagen_url: ejercicio.imagen_url,
+                sets: sets
+            )
+
+            ejerciciosContenido.append(ejercicioContenido)
         }
-        try await client.from("ejercicios_en_entrenamiento").insert(relaciones).execute()
 
-        var sets: [NuevoSet] = []
-        for (ejercicioID, setsEjercicio) in setsPorEjercicio {
-            for (index, set) in setsEjercicio.enumerated() {
-                sets.append(NuevoSet(
-                    id: UUID(),
-                    entrenamiento_id: entrenamientoId,
-                    ejercicio_id: ejercicioID,
-                    repeticiones: set.repeticiones,
-                    peso: set.peso,
-                    orden: index + 1
-                ))
-            }
-        }
-        try await client.from("sets").insert(sets).execute()
-
-        let postId = UUID()
         let perfil = try await client
             .from("perfil")
-            .select("avatar_url")
+            .select("id, username, avatar_url")
             .eq("id", value: userId.uuidString)
             .single()
             .execute()
             .decoded(to: Perfil.self)
 
-        let post = [
-            "id": postId.uuidString,
-            "entrenamiento_id": entrenamientoId.uuidString,
-            "autor_id": userId.uuidString,
-            "avatar_url": perfil.avatar_url ?? ""
-        ]
-        try await client.from("posts").insert(post).execute()
+        let post = PostNuevo(
+            id: UUID(),
+            autor_id: userId,
+            fecha: fechaISO,
+            avatar_url: perfil.avatar_url,
+            username: perfil.username,
+            contenido: ejerciciosContenido
+        )
+
+        try await client
+            .from("posts")
+            .insert(post)
+            .execute()
+
+        print("✅ Publicación realizada con ejercicios y sets en contenido JSONB")
     }
 }
 
-// MARK: - Modelos
+struct PostNuevo: Encodable {
+    let id: UUID
+    let autor_id: UUID
+    let fecha: String
+    let avatar_url: String?
+    let username: String
+    let contenido: [EjercicioPostContenido]
+}
+struct Post: Identifiable, Decodable {
+    let id: UUID
+    let fecha: Date
+    let autor_id: UUID
+    let avatar_url: String?
+    let username: String
+    let contenido: [EjercicioPostContenido]
+}
+
+struct EjercicioPostContenido: Identifiable, Codable {
+    let id: UUID
+    let nombre: String
+    let descripcion: String
+    let categoria: String
+    let tipo: String
+    let imagen_url: String?
+    let sets: [SetPost]
+
+    var totalSeries: Int {
+        sets.count
+    }
+
+    var totalRepeticiones: Int {
+        sets.reduce(0) { $0 + $1.repeticiones }
+    }
+
+    var totalPeso: Double {
+        sets.reduce(0) { $0 + $1.peso }
+    }
+}
+
+struct SetPost: Codable {
+    let repeticiones: Int
+    let peso: Double
+}
+
+// Otros modelos existentes
 struct ChatMiembro: Decodable {
     let chat_id: String
 }
@@ -193,7 +242,6 @@ struct Perfil: Identifiable, Codable, Equatable {
     let nombre: String
     let avatar_url: String?
 }
-
 
 struct MensajeDB: Decodable {
     let id: String
@@ -216,24 +264,11 @@ struct Ejercicio: Identifiable, Codable {
     let tipo: String
     let imagen_url: String?
 
-    var esFavorito: Bool = false 
-}
+    var esFavorito: Bool = false
 
-struct Entrenamiento: Identifiable {
-    let id: UUID
-    let fecha: Date
-}
-
-struct NuevoEntrenamiento: Encodable {
-    let id: UUID
-    let autor_id: UUID
-    let fecha: String
-}
-
-struct EjercicioEnEntrenamiento: Encodable {
-    let id: UUID
-    let entrenamiento_id: UUID
-    let ejercicio_id: UUID
+    enum CodingKeys: String, CodingKey {
+        case id, nombre, descripcion, categoria, tipo, imagen_url
+    }
 }
 
 class SetRegistro: Identifiable, ObservableObject {
@@ -250,44 +285,12 @@ class SetRegistro: Identifiable, ObservableObject {
     }
 }
 
-struct NuevoSet: Encodable {
-    let id: UUID
-    let entrenamiento_id: UUID
-    let ejercicio_id: UUID
-    let repeticiones: Int
-    let peso: Double
-    let orden: Int
-}
-
-struct EntrenamientoPost: Identifiable, Decodable {
-    let id: UUID
-    let fecha: Date
-    let user_id: UUID
-    let username: String
-    let avatar_url: String?
-    let ejercicios: [EjercicioPost]
-
-    enum CodingKeys: String, CodingKey {
-        case id = "post_id"
-        case fecha, user_id, username, avatar_url, ejercicios
-    }
-}
-
-struct EjercicioPost: Identifiable, Decodable {
-    let id: UUID
-    let nombre: String
-    let series: Int
-    let repeticiones: Int
-    let peso_total: Double
-}
-
 enum PerfilTab: String, CaseIterable {
     case entrenamientos = "Entrenos"
     case estadisticas = "Estadísticas"
     case logros = "Logros"
 }
-
-// MARK: - Helpers
+// Helpers
 extension PostgrestResponse {
     func decoded<U: Decodable>(to type: U.Type) throws -> U {
         let decoder = JSONDecoder()
