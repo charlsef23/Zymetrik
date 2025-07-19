@@ -10,7 +10,7 @@ struct SupabaseService {
         var query = client
             .from("posts")
             .select("""
-                id, fecha, autor_id, avatar_url, username, nombre, contenido
+                id, fecha, autor_id, avatar_url, username, contenido
             """, head: false)
 
         if let id = id {
@@ -28,7 +28,7 @@ struct SupabaseService {
 
     // Chat
     func fetchChatPreviews() async throws -> [ChatPreview] {
-        let userID = try await client.auth.session.user.id.uuidString
+        let userID = try await client.auth.session.user.id.uuidString 
 
         let response = try await client
             .from("chat_miembros")
@@ -163,7 +163,7 @@ struct SupabaseService {
 
         let perfil = try await client
             .from("perfil")
-            .select("id, username, avatar_url")
+            .select("id, username, nombre, avatar_url")
             .eq("id", value: userId.uuidString)
             .single()
             .execute()

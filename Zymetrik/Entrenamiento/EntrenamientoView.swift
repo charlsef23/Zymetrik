@@ -36,10 +36,13 @@ struct EntrenamientoView: View {
                 )
 
                 if let ejercicios = ejerciciosPorDia[fechaSeleccionada.stripTime()], !ejercicios.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(ejercicios) { ejercicio in
-                            EjercicioResumenView(ejercicio: ejercicio)
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(ejercicios) { ejercicio in
+                                EjercicioResumenView(ejercicio: ejercicio)
+                            }
                         }
+                        .padding(.horizontal)
                     }
                 } else {
                     HStack {

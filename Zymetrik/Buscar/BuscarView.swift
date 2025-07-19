@@ -13,6 +13,7 @@ struct BuscarView: View {
     @State private var navegar = false
 
     @State private var historial: [Perfil] = []
+    @State private var cargarHistorialTask: Task<Void, Never>? = nil
 
     var body: some View {
         NavigationStack {
@@ -22,7 +23,7 @@ struct BuscarView: View {
                 if !historial.isEmpty && searchText.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack {
-                            ForEach(historial, id: \.id) { perfil in
+                            ForEach(historial, id: \ .id) { perfil in
                                 Button {
                                     perfilSeleccionado = perfil
                                     navegar = true
@@ -97,7 +98,7 @@ struct BuscarView: View {
                 do {
                     let session = try await SupabaseManager.shared.client.auth.session
                     self.userID = session.user.id
-                    await cargarHistorialDesdeSupabase()
+                    cargarHistorial()
                 } catch {
                     print("❌ Error al obtener sesión:", error)
                 }
@@ -171,7 +172,6 @@ struct BuscarView: View {
 
             resultados = try response.decodedList(to: Perfil.self)
 
-            // Cargar seguidos
             let seguidoresResponse = try await SupabaseManager.shared.client
                 .from("followers")
                 .select("followed_id")
@@ -188,6 +188,13 @@ struct BuscarView: View {
         }
 
         cargando = false
+    }
+
+    func cargarHistorial() {
+        cargarHistorialTask?.cancel()
+        cargarHistorialTask = Task {
+            await cargarHistorialDesdeSupabase()
+        }
     }
 
     func cargarHistorialDesdeSupabase() async {
@@ -232,7 +239,6 @@ struct BuscarView: View {
             print("❌ Error al guardar historial:", error)
         }
     }
-
 
     func eliminarHistorialDesdeSupabase() async {
         guard let session = try? await SupabaseManager.shared.client.auth.session else { return }

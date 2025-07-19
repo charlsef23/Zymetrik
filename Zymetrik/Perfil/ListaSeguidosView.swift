@@ -79,7 +79,7 @@ struct ListaSeguidosView: View {
     func cargarSeguidos() async {
         do {
             let response = try await SupabaseManager.shared.client
-                .rpc("get_following_usernames", params: ["user_id": userID])
+                .rpc("get_following_usernames", params: ["p_user_id": userID]) // ✅ parámetro corregido
                 .execute()
 
             if let jsonArray = try? JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] {

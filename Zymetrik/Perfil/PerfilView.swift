@@ -11,7 +11,7 @@ struct PerfilView: View {
     @State private var username = "..."
     @State private var presentacion = ""
     @State private var enlaces = ""
-    @State private var imagenPerfil: Image? = Image(systemName: "person.circle.fill")
+    @State private var imagenPerfilURL: String? = nil
 
     @State private var numeroDePosts: Int = 0
     @State private var seguidoresCount: Int = 0
@@ -48,11 +48,26 @@ struct PerfilView: View {
 
                     // Avatar + nombre + presentación
                     VStack(spacing: 12) {
-                        imagenPerfil?
-                            .resizable()
-                            .frame(width: 84, height: 84)
-                            .clipShape(Circle())
-                            .foregroundColor(.gray)
+                        if let urlString = imagenPerfilURL, let url = URL(string: urlString) {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .empty:
+                                    ProgressView()
+                                        .frame(width: 84, height: 84)
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .frame(width: 84, height: 84)
+                                        .clipShape(Circle())
+                                case .failure:
+                                    defaultAvatar
+                                @unknown default:
+                                    defaultAvatar
+                                }
+                            }
+                        } else {
+                            defaultAvatar
+                        }
 
                         HStack(spacing: 6) {
                             Text(nombre)
@@ -86,7 +101,7 @@ struct PerfilView: View {
                             }
 
                             NavigationLink(
-                                destination: ShareProfileView(username: username, profileImage: imagenPerfil ?? Image(systemName: "person"))
+                                destination: ShareProfileView(username: username, profileImage: Image(systemName: "person"))
                             ) {
                                 Text("Compartir")
                                     .font(.subheadline)
@@ -160,18 +175,24 @@ struct PerfilView: View {
                     username: $username,
                     presentacion: $presentacion,
                     enlaces: $enlaces,
-                    imagenPerfil: $imagenPerfil
+                    imagenPerfilURL: $imagenPerfilURL
                 )
             }
             .sheet(isPresented: $showAjustes) {
                 SettingsView()
             }
             .task {
-                await cargarDatosIniciales()
-                await cargarContadoresSeguidores()
-                await cargarNumeroDePosts()
+                await cargarDatosCompletos()
             }
         }
+    }
+
+    private var defaultAvatar: some View {
+        Image(systemName: "person.circle.fill")
+            .resizable()
+            .frame(width: 84, height: 84)
+            .clipShape(Circle())
+            .foregroundColor(.gray)
     }
 
     // MARK: - Cargar datos iniciales
@@ -189,7 +210,7 @@ struct PerfilView: View {
         do {
             let session = try await SupabaseManager.shared.client.auth.session
             let userID = session.user.id.uuidString
-            self.userID = userID // <- guarda para usarlo en NavigationLink
+            self.userID = userID
 
             let response = try await SupabaseManager.shared.client
                 .from("perfil")
@@ -204,25 +225,11 @@ struct PerfilView: View {
                 return
             }
 
-            if let nombre = json["nombre"] as? String {
-                self.nombre = nombre
-            }
-            if let usernameDB = json["username"] as? String {
-                self.username = usernameDB
-            }
-            if let presentacion = json["presentacion"] as? String {
-                self.presentacion = presentacion
-            }
-            if let enlaces = json["enlaces"] as? String {
-                self.enlaces = enlaces
-            }
-
-            if let avatar = json["avatar_url"] as? String,
-               let url = URL(string: avatar),
-               let imageData = try? Data(contentsOf: url),
-               let uiImage = UIImage(data: imageData) {
-                self.imagenPerfil = Image(uiImage: uiImage)
-            }
+            self.nombre = json["nombre"] as? String ?? ""
+            self.username = json["username"] as? String ?? ""
+            self.presentacion = json["presentacion"] as? String ?? ""
+            self.enlaces = json["enlaces"] as? String ?? ""
+            self.imagenPerfilURL = json["avatar_url"] as? String
 
         } catch {
             print("❌ Error al cargar perfil: \(error)")
@@ -269,6 +276,13 @@ struct PerfilView: View {
             numeroDePosts = response.count ?? 0
         } catch {
             print("❌ Error al contar posts: \(error)")
+        }
+    }
+    func cargarDatosCompletos() async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await cargarDatosIniciales() }
+            group.addTask { await cargarContadoresSeguidores() }
+            group.addTask { await cargarNumeroDePosts() }
         }
     }
 }

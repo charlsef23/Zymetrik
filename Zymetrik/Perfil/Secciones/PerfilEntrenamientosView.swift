@@ -45,7 +45,7 @@ struct PerfilEntrenamientosView: View {
             let response = try await SupabaseManager.shared.client
                 .from("posts")
                 .select("""
-                    id, fecha, autor_id, avatar_url, username, nombre, contenido
+                    id, fecha, autor_id, avatar_url, username, contenido
                 """)
                 .eq("autor_id", value: currentID)
                 .order("fecha", ascending: false)
