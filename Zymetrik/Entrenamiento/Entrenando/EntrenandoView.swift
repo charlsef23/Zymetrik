@@ -9,6 +9,9 @@ struct EntrenandoView: View {
     @State private var timerActivo = false
     @State private var temporizador: Timer?
 
+    @State private var mostrarLogro = false
+    @State private var logroDesbloqueado: LogroConEstado?
+
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
@@ -32,7 +35,7 @@ struct EntrenandoView: View {
                                 }
                             )
                         }
-                        Spacer(minLength: 120) // espacio para que no tape el reloj al hacer scroll
+                        Spacer(minLength: 120)
                     }
                     .padding(.top, 60)
                 }
@@ -51,6 +54,13 @@ struct EntrenandoView: View {
             .padding()
         }
         .navigationBarHidden(true)
+        .fullScreenCover(isPresented: $mostrarLogro) {
+            if let logro = logroDesbloqueado {
+                LogroDesbloqueadoView(logro: logro) {
+                    mostrarLogro = false
+                }
+            }
+        }
     }
 
     private func publicarEntrenamiento() {
@@ -64,6 +74,16 @@ struct EntrenandoView: View {
                     ejercicios: ejercicios,
                     setsPorEjercicio: setsPorEjercicio
                 )
+
+                await SupabaseService.shared.analizarYDesbloquearLogros()
+
+                // Comprobar si se ha desbloqueado alguno recientemente
+                let logros = try await SupabaseService.shared.fetchLogrosCompletos()
+                if let nuevo = logros.filter({ $0.desbloqueado && ($0.fecha?.isInLast(seconds: 5) ?? false) }).first {
+                    logroDesbloqueado = nuevo
+                    mostrarLogro = true
+                }
+
                 dismiss()
             } catch {
                 print("❌ Error al publicar entrenamiento:", error)

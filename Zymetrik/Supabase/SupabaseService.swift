@@ -185,6 +185,7 @@ struct SupabaseService {
 
         print("✅ Publicación realizada con ejercicios y sets en contenido JSONB")
     }
+    
 }
 
 struct PostNuevo: Encodable {
@@ -234,6 +235,12 @@ struct SetPost: Codable {
 // Otros modelos existentes
 struct ChatMiembro: Decodable {
     let chat_id: String
+}
+
+struct SesionEjercicio: Identifiable {
+    let id = UUID()
+    let fecha: Date
+    let pesoTotal: Double
 }
 
 struct Perfil: Identifiable, Codable, Equatable {
@@ -322,5 +329,36 @@ extension SupabaseService {
             .execute()
 
         print("✅ Post eliminado correctamente en Supabase")
+    }
+}
+
+extension SupabaseService {
+    func obtenerSesionesPara(ejercicioID: UUID) async throws -> [SesionEjercicio] {
+        let response = try await client
+            .from("posts")
+            .select("fecha, contenido", head: false)
+            .order("fecha", ascending: true)
+            .execute()
+
+        struct PostConContenido: Decodable {
+            let fecha: Date
+            let contenido: [EjercicioPostContenido]
+        }
+
+        let posts = try response.decodedList(to: PostConContenido.self)
+
+        // Filtra por el ejercicio y agrupa por fecha
+        let sesiones: [SesionEjercicio] = posts.compactMap { post in
+            guard let ejercicio = post.contenido.first(where: { $0.id == ejercicioID }) else {
+                return nil
+            }
+
+            return SesionEjercicio(
+                fecha: post.fecha,
+                pesoTotal: ejercicio.totalPeso
+            )
+        }
+
+        return sesiones
     }
 }
