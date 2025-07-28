@@ -64,4 +64,5 @@ struct PerfilEstadisticasView: View {
             cargando = false
         }
     }
+    
 }
