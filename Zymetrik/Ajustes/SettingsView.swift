@@ -6,114 +6,188 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
-                    // PERFIL
-                    HStack(spacing: 16) {
-                        Image("foto_perfil")
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 60, height: 60)
-                            .clipShape(Circle())
+                VStack(spacing: 20) {
+                    // MARK: - Zymetrik
+                    SettingsSectionCard(
+                        title: "Zymetrik",
+                        items: [
+                            .init(icon: "bookmark.fill", tint: .blue, title: "Guardado", destination: AnyView(Text("GuardadosView()"))),
+                            .init(icon: "bell.fill", tint: .orange, title: "Notificaciones", destination: AnyView(Text("NotificacionesView()")))
+                        ]
+                    )
 
-                        VStack(alignment: .leading) {
-                            Text("Carlos Esteve")
-                                .font(.headline)
-                            Button("Compartir perfil") {
-                                mostrarShare = true
-                            }
-                            .font(.caption)
-                            .foregroundColor(.black)
-                        }
+                    // MARK: - Privacidad
+                    SettingsSectionCard(
+                        title: "Quién puede ver tu contenido",
+                        items: [
+                            .init(icon: "lock.fill", tint: .purple, title: "Privacidad de la cuenta", trailing: "Privada", destination: AnyView(Text("PrivacidadView()"))),
+                            .init(icon: "hand.raised.fill", tint: .red, title: "Cuentas bloqueadas", trailing: "4", destination: AnyView(CuentasBloqueadasView()))
+                        ]
+                    )
 
-                        Spacer()
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(16)
-                    .padding(.horizontal)
+                    // MARK: - Interacciones
+                    SettingsSectionCard(
+                        title: "Cómo pueden interactuar contigo los demás",
+                        items: [
+                            .init(icon: "message.fill", tint: .green, title: "Mensajes", destination: AnyView(Text("MensajesView()")))
+                        ]
+                    )
 
-                    // SECCIONES
-                    VStack(spacing: 24) {
-                        settingsCard(title: "Zymetrik", items: [
-                            ("bookmark.fill", "Guardado", AnyView(Text("GuardadosView()"))),
-                            ("bell.fill", "Notificaciones", AnyView(Text("NotificacionesView()")))
-                        ])
+                    // MARK: - Soporte
+                    SettingsSectionCard(
+                        title: "Soporte",
+                        items: [
+                            .init(icon: "envelope.fill", tint: .teal, title: "Enviar feedback", destination: AnyView(Text("FeedbackView()"))),
+                            .init(icon: "questionmark.circle.fill", tint: .indigo, title: "Contactar con soporte", destination: AnyView(Text("SoporteView()"))),
+                            .init(icon: "book.fill", tint: .brown, title: "FAQ", destination: AnyView(Text("FAQView()")))
+                        ]
+                    )
 
-                        settingsCard(title: "Quién puede ver tu contenido", items: [
-                            ("lock.fill", "Privacidad de la cuenta", AnyView(Text("PrivacidadView()")), "Privada"),
-                            ("hand.raised.fill", "Cuentas bloqueadas", AnyView(CuentasBloqueadasView()), "4")
-                        ])
-
-                        settingsCard(title: "Cómo pueden interactuar contigo los demás", items: [
-                            ("message.fill", "Mensajes", AnyView(Text("MensajesView()")))
-                        ])
-
-                        settingsCard(title: "Soporte", items: [
-                            ("envelope.fill", "Enviar feedback", AnyView(Text("FeedbackView()"))),
-                            ("questionmark.circle.fill", "Contactar con soporte", AnyView(Text("SoporteView()"))),
-                            ("book.fill", "FAQ", AnyView(Text("FAQView()")))
-                        ])
-
-                        settingsCard(title: "Cuenta", items: [
-                            ("rectangle.portrait.and.arrow.forward", "Cerrar sesión", AnyView(Text("CerrarSesionView()"))),
-                            ("trash.fill", "Eliminar cuenta", AnyView(Text("EliminarCuentaView()")))
-                        ])
-                    }
-                    .padding(.horizontal)
-                    .foregroundColor(.black)
+                    // MARK: - Cuenta
+                    SettingsSectionCard(
+                        title: "Cuenta",
+                        items: [
+                            .init(icon: "rectangle.portrait.and.arrow.forward", tint: .gray, title: "Cerrar sesión", destination: AnyView(Text("CerrarSesionView()"))),
+                            .init(icon: "trash.fill", tint: .red, title: "Eliminar cuenta", destination: AnyView(Text("EliminarCuentaView()")))
+                        ]
+                    )
                 }
-                .padding(.top)
+                .padding(.vertical, 16)
+                .padding(.horizontal)
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Configuración")
             .sheet(isPresented: $mostrarShare) {
                 ShareProfileView(username: "carlos", profileImage: Image("foto_perfil"))
             }
         }
     }
+}
 
-    @ViewBuilder
-    func settingsCard(title: String, items: [(String, String, AnyView, String?)]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+// MARK: - Models
+
+struct SettingsItem: Identifiable {
+    let id = UUID()
+    let icon: String
+    let tint: Color
+    let title: String
+    var trailing: String? = nil
+    let destination: AnyView
+}
+
+// MARK: - Components
+
+struct SettingsSectionCard: View {
+    let title: String
+    let items: [SettingsItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.caption)
-                .foregroundColor(.gray)
-                .padding(.bottom, 8)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 2)
 
             VStack(spacing: 0) {
-                ForEach(0..<items.count, id: \.self) { i in
+                ForEach(items.indices, id: \.self) { i in
                     let item = items[i]
-                    NavigationLink(destination: item.2) {
-                        HStack {
-                            Image(systemName: item.0)
-                                .foregroundColor(.black)
-                                .frame(width: 24)
-                            Text(item.1)
-                            Spacer()
-                            if let value = item.3 {
-                                Text(value)
-                                    .foregroundColor(.gray)
-                                    .font(.caption)
-                            }
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundColor(.black)
-                        }
-                        .padding(.vertical, 12)
+                    NavigationLink {
+                        item.destination
+                    } label: {
+                        SettingsRow(
+                            icon: item.icon,
+                            tint: item.tint,
+                            title: item.title,
+                            trailing: item.trailing,
+                            isFirst: i == 0,
+                            isLast: i == items.count - 1
+                        )
                     }
+                    .buttonStyle(.plain)
 
                     if i < items.count - 1 {
-                        Divider()
+                        Divider().padding(.leading, 56)
                     }
                 }
             }
-            .background(.white)
-            .cornerRadius(12)
-            .shadow(color: Color.black.opacity(0.02), radius: 1, x: 0, y: 1)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.black.opacity(0.04))
+            )
+            .shadow(color: .black.opacity(0.04), radius: 12, x: 0, y: 6)
         }
     }
+}
 
-    // Overload para items sin valor
-    func settingsCard(title: String, items: [(String, String, AnyView)]) -> some View {
-        settingsCard(title: title, items: items.map { ($0.0, $0.1, $0.2, nil) })
+struct SettingsRow: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let trailing: String?
+    let isFirst: Bool
+    let isLast: Bool
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(tint.opacity(0.15))
+                    .frame(width: 32, height: 32)
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(tint)
+            }
+            .accessibilityHidden(true)
+
+            Text(title)
+                .foregroundStyle(.primary)
+
+            Spacer(minLength: 8)
+
+            if let trailing {
+                Text(trailing)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .clipShape(RoundedCorner(radius: 16, corners: roundedCorners))
+    }
+
+    private var roundedCorners: UIRectCorner {
+        switch (isFirst, isLast) {
+        case (true, true): return [.allCorners]
+        case (true, false): return [.topLeft, .topRight]
+        case (false, true): return [.bottomLeft, .bottomRight]
+        default: return []
+        }
     }
 }
+
+// MARK: - Helpers
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = 12
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
+    }
+}
+
+
