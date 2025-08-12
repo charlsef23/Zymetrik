@@ -17,7 +17,7 @@ struct InicioView: View {
                         NavigationLink(destination: AlertasView()) {
                             Image(systemName: "bell.fill")
                         }
-                        NavigationLink(destination: MensajesView()) {
+                        NavigationLink(destination: DMInboxView()) {
                             Image(systemName: "paperplane.fill")
                         }
                     }
