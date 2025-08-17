@@ -3,29 +3,54 @@ import Supabase
 
 @MainActor
 struct RootView: View {
-    @StateObject private var planStore = TrainingPlanStore()   // ✅ instancia única para toda la app
+    // Estado de sesión
     @State private var isLoggedIn = false
     @State private var isCheckingSession = true
+
+    // Splash / prefetch
+    @StateObject private var appState = AppState()
+    @StateObject private var contentStore = ContentStore.shared
+
+    // Tu store global para planes
+    @StateObject private var planStore = TrainingPlanStore()
 
     var body: some View {
         Group {
             if isCheckingSession {
-                ProgressView("Cargando...")
-            } else if isLoggedIn {
-                MainTabView()
+                ProgressView("Cargando…")
+            } else if !isLoggedIn {
+                // No autenticado → onboarding/login
+                WelcomeView(onLogin: {
+                    // Tras login, pasamos a logged-in y dejamos que Splash arranque
+                    self.isLoggedIn = true
+                    appState.phase = .loading(progress: 0, message: "Preparando…")
+                })
             } else {
-                WelcomeView(onLogin: { self.isLoggedIn = true })
+                // Autenticado → Splash + contenido
+                switch appState.phase {
+                case .loading, .error:
+                    SplashView() // corre SplashController.start automáticamente en .task
+                case .ready:
+                    MainTabView()
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                }
             }
         }
-        .environmentObject(planStore) // ✅ disponible para EntrenamientoView y cualquier hijo
-        .task {                        // ✅ estilo SwiftUI en lugar de onAppear + DispatchQueue
+        // Env objects disponibles para toda la app
+        .environmentObject(appState)
+        .environmentObject(contentStore)
+        .environmentObject(planStore)
+        .task {
             await checkSession()
+            // Si ya hay sesión al abrir la app, dispara el splash inmediatamente
+            if isLoggedIn {
+                appState.phase = .loading(progress: 0, message: "Preparando…")
+            }
         }
     }
 
     private func checkSession() async {
         let session = try? await SupabaseManager.shared.client.auth.session
-        // Ya estamos en @MainActor, podemos mutar @State directamente
         self.isLoggedIn = (session != nil)
         self.isCheckingSession = false
     }
