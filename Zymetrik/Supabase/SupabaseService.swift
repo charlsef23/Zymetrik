@@ -354,3 +354,139 @@ extension SupabaseService {
         }
     }
 }
+
+extension SupabaseService {
+
+    /// Devuelve true si el usuario actual ya ha dado like a `postID`.
+    func didLike(postID: UUID) async throws -> Bool {
+        let userId = try await client.auth.session.user.id
+        // Buscamos 1 fila como máximo: si hay, ya dio like.
+        let res = try await client
+            .from("post_likes")
+            .select("post_id", head: false) // necesitamos cuerpo para contar filas devueltas
+            .eq("post_id", value: postID.uuidString)
+            .eq("autor_id", value: userId.uuidString)
+            .limit(1)
+            .execute()
+
+        struct Row: Decodable { let post_id: UUID }
+        let rows = try res.decodedList(to: Row.self)
+        return !rows.isEmpty
+    }
+
+    /// Cuenta los likes de un post. Usa count exacto en cabecera (rápido).
+    func countLikes(postID: UUID) async throws -> Int {
+        let res = try await client
+            .from("post_likes")
+            .select("post_id", head: true, count: .exact)
+            .eq("post_id", value: postID.uuidString)
+            .execute()
+        return res.count ?? 0
+    }
+
+    /// Fija el estado de like (true = like, false = quitar like).
+    func setLike(postID: UUID, like: Bool) async throws {
+        let userId = try await client.auth.session.user.id
+
+        if like {
+            // Insert idempotente: si ya existe PK (post_id, autor_id), se ignora con upsert onConflict.
+            _ = try await client
+                .from("post_likes")
+                .upsert([
+                    "post_id": postID.uuidString,
+                    "autor_id": userId.uuidString
+                ], onConflict: "post_id,autor_id")
+                .execute()
+        } else {
+            _ = try await client
+                .from("post_likes")
+                .delete()
+                .eq("post_id", value: postID.uuidString)
+                .eq("autor_id", value: userId.uuidString)
+                .execute()
+        }
+    }
+
+    /// Cambia el like y devuelve el estado final.
+    @discardableResult
+    func toggleLike(postID: UUID, currentlyLiked: Bool) async throws -> Bool {
+        try await setLike(postID: postID, like: !currentlyLiked)
+        return !currentlyLiked
+    }
+}
+
+extension SupabaseService {
+
+    /// Devuelve true si el usuario actual ya guardó `postID`.
+    func didSave(postID: UUID) async throws -> Bool {
+        let userId = try await client.auth.session.user.id
+        let res = try await client
+            .from("post_guardados")
+            .select("post_id", head: false)
+            .eq("post_id", value: postID.uuidString)
+            .eq("autor_id", value: userId.uuidString)
+            .limit(1)
+            .execute()
+
+        struct Row: Decodable { let post_id: UUID }
+        let rows = try res.decodedList(to: Row.self)
+        return !rows.isEmpty
+    }
+
+    /// Fija el estado de guardado (true = guardar, false = quitar).
+    func setSaved(postID: UUID, saved: Bool) async throws {
+        let userId = try await client.auth.session.user.id
+
+        if saved {
+            _ = try await client
+                .from("post_guardados")
+                .upsert([
+                    "post_id": postID.uuidString,
+                    "autor_id": userId.uuidString
+                ], onConflict: "post_id,autor_id")
+                .execute()
+        } else {
+            _ = try await client
+                .from("post_guardados")
+                .delete()
+                .eq("post_id", value: postID.uuidString)
+                .eq("autor_id", value: userId.uuidString)
+                .execute()
+        }
+    }
+
+    /// Cambia el guardado y devuelve el estado final.
+    @discardableResult
+    func toggleSaved(postID: UUID, currentlySaved: Bool) async throws -> Bool {
+        try await setSaved(postID: postID, saved: !currentlySaved)
+        return !currentlySaved
+    }
+
+    /// Devuelve los posts guardados por el usuario actual.
+    func fetchSavedPosts() async throws -> [Post] {
+        let userId = try await client.auth.session.user.id
+
+        // Traemos filas de post_guardados con el post embebido
+        let res = try await client
+            .from("post_guardados")
+            .select("""
+                post_id,
+                posts (
+                    id, fecha, autor_id, avatar_url, username, contenido
+                )
+            """, head: false)
+            .eq("autor_id", value: userId.uuidString)
+            .execute()
+
+        struct SavedRow: Decodable {
+            let post_id: UUID
+            let posts: Post
+        }
+
+        let rows = try res.decodedList(to: SavedRow.self)
+        // Ordenamos localmente por fecha descendente del post
+        return rows
+            .map { $0.posts }
+            .sorted { $0.fecha > $1.fecha }
+    }
+}

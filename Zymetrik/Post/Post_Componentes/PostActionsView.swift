@@ -7,6 +7,7 @@ struct PostActionsView: View {
     @Binding var mostrarComentarios: Bool
 
     let toggleLike: () async -> Void
+    let toggleSave: () async -> Void   // 👈 NUEVO
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -27,7 +28,7 @@ struct PostActionsView: View {
                 Spacer()
 
                 Button {
-                    guardado.toggle()
+                    Task { await toggleSave() }   // 👈 usar acción async
                 } label: {
                     Image(systemName: guardado ? "bookmark.fill" : "bookmark")
                 }

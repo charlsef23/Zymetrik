@@ -11,7 +11,7 @@ struct SettingsView: View {
                     SettingsSectionCard(
                         title: "Zymetrik",
                         items: [
-                            .init(icon: "bookmark.fill", tint: .blue, title: "Guardado", destination: AnyView(Text("GuardadosView()"))),
+                            .init(icon: "bookmark.fill", tint: .blue, title: "Guardados", destination: AnyView(GuardadosView())),
                             .init(icon: "bell.fill", tint: .orange, title: "Notificaciones", destination: AnyView(Text("NotificacionesView()")))
                         ]
                     )
