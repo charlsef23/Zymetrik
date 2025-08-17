@@ -1,8 +1,26 @@
 import SwiftUI
 
+// Si YA tienes esta struct en otro archivo, elimina esta duplicada.
+struct TotalesComparativa {
+    let series: Int
+    let reps: Int
+    let kg: Double
+    let kgPorSerie: Double?
+    let repsPorSerie: Double?
+
+    init(series: Int, reps: Int, kg: Double, kgPorSerie: Double? = nil, repsPorSerie: Double? = nil) {
+        self.series = series
+        self.reps = reps
+        self.kg = kg
+        self.kgPorSerie = kgPorSerie
+        self.repsPorSerie = repsPorSerie
+    }
+}
+
+// MARK: - Vista principal (estadísticas: cuadrados más grandes, mismo tamaño de números)
+
 struct EjercicioEstadisticasView: View {
     let ejercicio: EjercicioPostContenido
-    /// Opcional: pasa los totales anteriores para mostrar tendencia (por ejemplo, la sesión pasada)
     let comparativaAnterior: TotalesComparativa?
 
     init(ejercicio: EjercicioPostContenido, comparativaAnterior: TotalesComparativa? = nil) {
@@ -21,67 +39,75 @@ struct EjercicioEstadisticasView: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Título
-            Text(ejercicio.nombre)
-                .font(.system(.headline, design: .rounded))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 22) {
+            HeaderRow(title: ejercicio.nombre, subtitle: "Estadísticas")
 
-            // Grilla de stats
+            // 3 cuadrados más grandes (sin aumentar tipografías)
             LazyVGrid(columns: [
-                GridItem(.flexible(), spacing: 12),
-                GridItem(.flexible(), spacing: 12)
-            ], spacing: 12) {
-                StatCard(
+                GridItem(.flexible(), spacing: 16),
+                GridItem(.flexible(), spacing: 16),
+                GridItem(.flexible(), spacing: 16)
+            ], spacing: 16) {
+                StatTile(
                     title: "Series",
                     icon: "square.grid.2x2.fill",
                     value: "\(ejercicio.totalSeries)",
-                    color: .blue,
+                    tint: .blue,
                     delta: delta(for: .series)
                 )
-                StatCard(
+                StatTile(
                     title: "Reps",
                     icon: "number.circle.fill",
                     value: "\(ejercicio.totalRepeticiones)",
-                    color: .green,
+                    tint: .green,
                     delta: delta(for: .reps)
                 )
-                StatCard(
+                StatTile(
                     title: "Kg",
                     icon: "scalemass.fill",
                     value: ejercicio.totalPeso.formatted(.number.precision(.fractionLength(1))),
-                    color: .orange,
+                    tint: .orange,
                     delta: delta(for: .kg)
                 )
-                StatCard(
-                    title: "Kg/Set",
-                    icon: "dumbbell.fill",
+            }
+
+            HStack(spacing: 14) {
+                StatCapsule(
+                    title: "Kg/set",
                     value: kgPorSerie.formatted(.number.precision(.fractionLength(1))),
-                    color: .pink,
-                    delta: deltaMediaActualVsAnterior(actual: kgPorSerie, anterior: comparativaAnterior?.kgPorSerie)
+                    tint: .pink,
+                    delta: deltaMediaActualVsAnterior(
+                        actual: kgPorSerie,
+                        anterior: comparativaAnterior?.kgPorSerie ?? inferPrevKgPerSet()
+                    )
                 )
-                StatCard(
-                    title: "Reps/Set",
-                    icon: "repeat.circle.fill",
+                StatCapsule(
+                    title: "Reps/set",
                     value: repsPorSerie.formatted(.number.precision(.fractionLength(1))),
-                    color: .mint,
-                    delta: deltaMediaActualVsAnterior(actual: repsPorSerie, anterior: comparativaAnterior?.repsPorSerie)
+                    tint: .mint,
+                    delta: deltaMediaActualVsAnterior(
+                        actual: repsPorSerie,
+                        anterior: comparativaAnterior?.repsPorSerie ?? inferPrevRepsPerSet()
+                    )
                 )
+                Spacer(minLength: 0)
             }
         }
-        .padding(16)
+        .padding(22)
         .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color(.systemGray6))
+            RoundedRectangle(cornerRadius: 22)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22)
+                        .stroke(.white.opacity(0.08), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.1), radius: 18, x: 0, y: 8)
         )
-        .padding(.horizontal)
-        // Accesibilidad
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Estadísticas de \(ejercicio.nombre)")
     }
 
-    // MARK: - Deltas
+    // MARK: - Deltas & helpers
 
     enum Campo { case series, reps, kg }
 
@@ -97,9 +123,19 @@ struct EjercicioEstadisticasView: View {
         }
     }
 
+    private func inferPrevKgPerSet() -> Double? {
+        guard let c = comparativaAnterior, c.series > 0 else { return nil }
+        return c.kg / Double(c.series)
+    }
+
+    private func inferPrevRepsPerSet() -> Double? {
+        guard let c = comparativaAnterior, c.series > 0 else { return nil }
+        return Double(c.reps) / Double(c.series)
+    }
+
     private func deltaMediaActualVsAnterior(actual: Double, anterior: Double?) -> Double? {
         guard let anterior else { return nil }
-        return porcentajeCambio(actual: actual, anterior: anterior)
+        return ((actual - anterior) / anterior) * 100.0
     }
 
     private func porcentajeCambio(actual: Double, anterior: Double) -> Double? {
@@ -108,97 +144,136 @@ struct EjercicioEstadisticasView: View {
     }
 }
 
-// MARK: - Soporte comparativas
+// MARK: - Componentes UI
 
-struct TotalesComparativa {
-    let series: Int
-    let reps: Int
-    let kg: Double
-    /// Derivados (opcional): si los pasas, mostramos delta en medias
-    let kgPorSerie: Double?
-    let repsPorSerie: Double?
+private struct HeaderRow: View {
+    let title: String
+    let subtitle: String
 
-    init(series: Int, reps: Int, kg: Double, kgPorSerie: Double? = nil, repsPorSerie: Double? = nil) {
-        self.series = series
-        self.reps = reps
-        self.kg = kg
-        self.kgPorSerie = kgPorSerie
-        self.repsPorSerie = repsPorSerie
+    var body: some View {
+        HStack(spacing: 14) {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.accentColor.opacity(0.9), Color.accentColor.opacity(0.35)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 54, height: 54)
+                .overlay(
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .foregroundColor(.white)
+                        .font(.system(size: 22, weight: .bold))
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(.title3, design: .rounded).weight(.semibold))
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
     }
 }
 
-// MARK: - Componente de stat
-
-private struct StatCard: View {
+private struct StatTile: View {
     let title: String
     let icon: String
     let value: String
-    let color: Color
-    /// Delta en %, si existe (positivo ↑, negativo ↓)
+    let tint: Color
     let delta: Double?
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(color.opacity(0.15))
-                    .frame(width: 36, height: 36)
-                Image(systemName: icon)
-                    .imageScale(.medium)
-                    .foregroundStyle(color)
+        VStack(spacing: 8) {
+            HStack {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(tint.opacity(0.15))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: icon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(tint)
+                }
+                Spacer()
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(.caption, design: .rounded))
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.primary)
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 8)
+
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            // 🔸 Números: MISMO tamaño que antes (no los cambio)
+            Text(value)
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .monospacedDigit()
+
             if let delta {
-                DeltaPill(delta: delta)
-                    .accessibilityLabel(deltaAccLabel(delta))
+                MiniDelta(delta: delta).padding(.top, 6)
             }
         }
-        .padding(12)
+        // 🔹 Más grande por contenedor (no por tipografía)
+        .frame(maxWidth: .infinity, minHeight: 130)
+        .padding(18)
         .background(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: 20)
                 .fill(Color(.secondarySystemBackground))
         )
-    }
-
-    private func deltaAccLabel(_ d: Double) -> String {
-        let dir = d > 0 ? "subida" : (d < 0 ? "bajada" : "sin cambios")
-        let pct = abs(d).formatted(.number.precision(.fractionLength(1)))
-        return "Tendencia: \(dir) \(pct) por ciento"
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(.white.opacity(0.06), lineWidth: 1)
+        )
     }
 }
 
-private struct DeltaPill: View {
-    let delta: Double
+private struct StatCapsule: View {
+    let title: String
+    let value: String
+    let tint: Color
+    let delta: Double?
 
     var body: some View {
-        let up = delta > 0
-        let same = abs(delta) < 0.05 // ~0%
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.callout.weight(.semibold)) // igual que la versión anterior "más grande"
+                .monospacedDigit()
+            if let delta {
+                MiniDelta(delta: delta)
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .background(Capsule().fill(tint.opacity(0.12)))
+        .overlay(Capsule().stroke(tint.opacity(0.2), lineWidth: 1))
+    }
+}
+
+private struct MiniDelta: View {
+    let delta: Double
+    var up: Bool { delta > 0 }
+    var same: Bool { abs(delta) < 0.05 }
+
+    var body: some View {
         let icon = same ? "arrow.right" : (up ? "arrow.up" : "arrow.down")
         let sign = same ? "" : (up ? "+" : "−")
         let text = same ? "0%" : "\(sign)\(abs(delta).formatted(.number.precision(.fractionLength(1))))%"
 
         return HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.caption2)
+            Image(systemName: icon).font(.system(size: 11, weight: .bold))
             Text(text)
-                .font(.caption2)
-                .fontWeight(.semibold)
+                .font(.system(size: 12, weight: .bold))
+                .monospacedDigit()
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(
-            Capsule().fill((up ? Color.green : (same ? .gray : .red)).opacity(0.15))
+            Capsule().fill((up ? Color.green : (same ? Color.gray : Color.red)).opacity(0.2))
         )
+        .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 0.5))
         .foregroundStyle(up ? Color.green : (same ? .secondary : .red))
     }
 }
