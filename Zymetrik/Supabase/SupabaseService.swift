@@ -272,3 +272,85 @@ extension SupabaseService {
         return res.ejercicios
     }
 }
+
+// MARK: - Favoritos (fetch, toggle, set)
+extension SupabaseService {
+
+    /// Devuelve todos los ejercicios con la marca `esFavorito` ya calculada para el usuario actual.
+    func fetchEjerciciosConFavoritos() async throws -> [Ejercicio] {
+        let client = self.client
+        let userId = try await client.auth.session.user.id
+
+        struct FavoritoID: Decodable { let ejercicio_id: UUID }
+
+        async let ejerciciosReq: [Ejercicio] = client
+            .from("ejercicios")
+            .select()
+            .execute()
+            .decodedList(to: Ejercicio.self)
+
+        async let favoritosReq: [FavoritoID] = client
+            .from("ejercicios_favoritos")
+            .select("ejercicio_id")
+            .eq("autor_id", value: userId)
+            .execute()
+            .decodedList(to: FavoritoID.self)
+
+        let (ejercicios, favoritos) = try await (ejerciciosReq, favoritosReq)
+        let favs = Set(favoritos.map(\.ejercicio_id))
+
+        // Marca local esFavorito sin tocar la tabla ejercicios
+        return ejercicios.map { e in
+            var copy = e
+            copy.esFavorito = favs.contains(e.id)
+            return copy
+        }
+    }
+
+    /// Devuelve solo los IDs de ejercicios favoritos del usuario actual.
+    func fetchFavoritosIDs() async throws -> Set<UUID> {
+        let client = self.client
+        let userId = try await client.auth.session.user.id
+
+        struct FavoritoID: Decodable { let ejercicio_id: UUID }
+
+        let rows: [FavoritoID] = try await client
+            .from("ejercicios_favoritos")
+            .select("ejercicio_id")
+            .eq("autor_id", value: userId)
+            .execute()
+            .decodedList(to: FavoritoID.self)
+
+        return Set(rows.map(\.ejercicio_id))
+    }
+
+    /// Cambia el estado de favorito de un ejercicio. Devuelve el estado final.
+    @discardableResult
+    func toggleFavorito(ejercicioID: UUID, currentlyFavorito: Bool) async throws -> Bool {
+        try await setFavorito(ejercicioID: ejercicioID, favorito: !currentlyFavorito)
+        return !currentlyFavorito
+    }
+
+    /// Fija el estado de favorito (true = inserta, false = borra).
+    func setFavorito(ejercicioID: UUID, favorito: Bool) async throws {
+        let client = self.client
+        let userId = try await client.auth.session.user.id
+
+        if favorito {
+            _ = try await client
+                .from("ejercicios_favoritos")
+                .insert([
+                    "autor_id": userId.uuidString,
+                    "ejercicio_id": ejercicioID.uuidString
+                ])
+                .execute()
+        } else {
+            _ = try await client
+                .from("ejercicios_favoritos")
+                .delete()
+                .eq("autor_id", value: userId)
+                .eq("ejercicio_id", value: ejercicioID)
+                .execute()
+        }
+    }
+}

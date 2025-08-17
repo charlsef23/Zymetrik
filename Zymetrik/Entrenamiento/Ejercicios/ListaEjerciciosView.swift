@@ -1,4 +1,5 @@
 import SwiftUI
+import Supabase
 
 struct ListaEjerciciosView: View {
     let fecha: Date
@@ -8,12 +9,21 @@ struct ListaEjerciciosView: View {
     @State private var ejercicios: [Ejercicio] = []
     @State private var tipoSeleccionado: String = "Gimnasio"
     @State private var seleccionados: Set<UUID> = []
+    @State private var cargando = false
 
-    private let tipos = ["Gimnasio", "Cardio", "Funcional"]
+    // ⬅️ Añadimos "Favoritos"
+    private let tipos = ["Gimnasio", "Cardio", "Funcional", "Favoritos"]
     @Namespace private var tipoAnimacion
 
+    // Agrupa por categoría con lógica especial para "Favoritos"
     var ejerciciosFiltradosPorTipo: [String: [Ejercicio]] {
-        Dictionary(grouping: ejercicios.filter { $0.tipo == tipoSeleccionado }) { $0.categoria }
+        let base: [Ejercicio]
+        if tipoSeleccionado == "Favoritos" {
+            base = ejercicios.filter { $0.esFavorito }
+        } else {
+            base = ejercicios.filter { $0.tipo == tipoSeleccionado }
+        }
+        return Dictionary(grouping: base) { $0.categoria }
     }
 
     var body: some View {
@@ -25,11 +35,24 @@ struct ListaEjerciciosView: View {
                         tipoSeleccionado: $tipoSeleccionado,
                         tipoAnimacion: tipoAnimacion
                     )
-                    EjerciciosAgrupadosView(
-                        ejerciciosFiltradosPorTipo: ejerciciosFiltradosPorTipo,
-                        tipoSeleccionado: tipoSeleccionado,
-                        seleccionados: $seleccionados
-                    )
+
+                    if cargando {
+                        ProgressView("Cargando ejercicios...")
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 24)
+                    } else {
+                        EjerciciosAgrupadosView(
+                            ejerciciosFiltradosPorTipo: ejerciciosFiltradosPorTipo,
+                            tipoSeleccionado: tipoSeleccionado,
+                            seleccionados: $seleccionados,
+                            isFavorito: { id in
+                                ejercicios.first(where: { $0.id == id })?.esFavorito ?? false
+                            },
+                            onToggleFavorito: { id in
+                                toggleFavorito(ejercicioID: id)
+                            }
+                        )
+                    }
                 }
                 .padding(.bottom, 40)
             }
@@ -37,20 +60,19 @@ struct ListaEjerciciosView: View {
             .ignoresSafeArea(edges: .bottom)
             .navigationTitle("Seleccionar ejercicios")
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancelar") { isPresented = false }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         let elegidos = ejercicios.filter { seleccionados.contains($0.id) }
-                        guard !elegidos.isEmpty else {
-                            print("⚠️ Nada seleccionado")
-                            return
-                        }
-
+                        guard !elegidos.isEmpty else { return }
                         onGuardar(elegidos)
                         isPresented = false
                     } label: {
-                        Text("añadir")
-                            .foregroundColor(.black)
+                        Text("Añadir").fontWeight(.semibold)
                     }
+                    .disabled(seleccionados.isEmpty)
                 }
             }
             .onAppear {
@@ -59,41 +81,30 @@ struct ListaEjerciciosView: View {
         }
     }
 
+    // MARK: - Data
     func fetchEjercicios() {
         Task {
             do {
-                let userId = try await SupabaseManager.shared.client.auth.session.user.id
-
-                async let allEjercicios: [Ejercicio] = SupabaseManager.shared.client
-                    .from("ejercicios").select().execute()
-                    .decodedList(to: Ejercicio.self)
-
-                async let favoritos: [FavoritoID] = SupabaseManager.shared.client
-                    .from("ejercicios_favoritos")
-                    .select("ejercicio_id")
-                    .eq("autor_id", value: userId)
-                    .execute()
-                    .decodedList(to: FavoritoID.self)
-
-                let (todos, favoritosIDs) = try await (allEjercicios, favoritos)
-                let favs = Set(favoritosIDs.map(\.ejercicio_id))
-
-                // ✅ muta @State en Main
-                await MainActor.run {
-                    self.ejercicios = todos.map { e in
-                        var copy = e
-                        copy.esFavorito = favs.contains(e.id)
-                        return copy
-                    }
-                }
+                let items = try await SupabaseService.shared.fetchEjerciciosConFavoritos()
+                await MainActor.run { self.ejercicios = items }
             } catch {
-                print("❌ Error al cargar ejercicios o favoritos:", error)
+                print("❌ Error al cargar ejercicios:", error)
             }
         }
     }
 
-
-    struct FavoritoID: Decodable {
-        let ejercicio_id: UUID
+    // MARK: - Helpers
+    func toggleFavorito(ejercicioID: UUID) {
+        guard let idx = ejercicios.firstIndex(where: { $0.id == ejercicioID }) else { return }
+        ejercicios[idx].esFavorito.toggle()
+        let target = ejercicios[idx].esFavorito
+        Task {
+            do {
+                try await SupabaseService.shared.setFavorito(ejercicioID: ejercicioID, favorito: target)
+            } catch {
+                await MainActor.run { ejercicios[idx].esFavorito.toggle() }
+                print("❌ Error al togglear favorito:", error)
+            }
+        }
     }
 }
