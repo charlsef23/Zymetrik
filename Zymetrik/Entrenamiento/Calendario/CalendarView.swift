@@ -18,6 +18,7 @@ struct CalendarView: View {
                         let isToday = calendar.isDateInToday(date)
                         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
                         let isPast = date < calendar.startOfDay(for: Date())
+                        let tieneEjercicios = (ejerciciosPorDia[date.stripTime()]?.isEmpty == false)
 
                         VStack(spacing: 6) {
                             Text("\(calendar.component(.day, from: date))")
@@ -27,13 +28,18 @@ struct CalendarView: View {
                             Text(weekdayShort(for: date))
                                 .font(.caption)
                                 .foregroundColor(isToday ? .red : (isPast ? .gray : .black))
+
+                            if tieneEjercicios {
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 6, height: 6)
+                            }
                         }
                         .frame(width: 44, height: 60)
                         .background(isSelected ? Color.gray.opacity(0.2) : Color.clear)
                         .cornerRadius(8)
-                        .onTapGesture {
-                            selectedDate = date
-                        }
+                        .contentShape(Rectangle()) // mejora el tap
+                        .onTapGesture { selectedDate = date }
                     }
                 }
                 .padding(.horizontal)
@@ -59,5 +65,13 @@ struct CalendarView: View {
         formatter.locale = Locale(identifier: "es_ES")
         formatter.dateFormat = "EEE"
         return formatter.string(from: date).capitalized
+    }
+}
+
+// Asegúrate de tener este helper en el módulo:
+extension Date {
+    func stripTime() -> Date {
+        let comps = Calendar.current.dateComponents([.year, .month, .day], from: self)
+        return Calendar.current.date(from: comps)!
     }
 }

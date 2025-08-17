@@ -41,9 +41,11 @@ struct EjercicioResumenView: View {
             Spacer()
         }
         .padding()
-        .background(Color.white)
+        .background(Color.white) // si usas modo oscuro, considera Color(.systemBackground)
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
-        .padding(.horizontal)
+        // ⬇️ En List mejor sin padding horizontal extra
+        //.padding(.horizontal)
     }
 }
+

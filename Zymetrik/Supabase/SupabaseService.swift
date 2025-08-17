@@ -231,3 +231,44 @@ extension SupabaseService {
         }
     }
 }
+
+extension SupabaseService {
+    func upsertPlan(fecha: Date, ejercicios: [Ejercicio]) async throws {
+        let user = try await client.auth.session.user
+        let userId = user.id
+
+        struct PlanRow: Encodable {
+            let autor_id: UUID
+            let fecha: String   // yyyy-MM-dd
+            let ejercicios: [Ejercicio]
+        }
+
+        let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
+        let row = PlanRow(autor_id: userId, fecha: df.string(from: fecha.stripTime()), ejercicios: ejercicios)
+
+        try await client
+            .from("entrenamientos_planeados")
+            .upsert(row, onConflict: "autor_id,fecha")
+            .execute()
+    }
+
+    func fetchPlan(fecha: Date) async throws -> [Ejercicio] {
+        let user = try await client.auth.session.user
+        let userId = user.id
+        let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
+        let day = df.string(from: fecha.stripTime())
+
+        struct PlanRowDec: Decodable { let ejercicios: [Ejercicio] }
+
+        let res = try await client
+            .from("entrenamientos_planeados")
+            .select("ejercicios")
+            .eq("autor_id", value: userId.uuidString)
+            .eq("fecha", value: day)
+            .single()
+            .execute()
+            .decoded(to: PlanRowDec.self)
+
+        return res.ejercicios
+    }
+}

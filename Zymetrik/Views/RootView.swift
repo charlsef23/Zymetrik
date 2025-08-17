@@ -1,7 +1,9 @@
 import SwiftUI
 import Supabase
 
+@MainActor
 struct RootView: View {
+    @StateObject private var planStore = TrainingPlanStore()   // ✅ instancia única para toda la app
     @State private var isLoggedIn = false
     @State private var isCheckingSession = true
 
@@ -12,23 +14,19 @@ struct RootView: View {
             } else if isLoggedIn {
                 MainTabView()
             } else {
-                WelcomeView(onLogin: {
-                    self.isLoggedIn = true
-                })
+                WelcomeView(onLogin: { self.isLoggedIn = true })
             }
         }
-        .onAppear {
-            Task {
-                await checkSession()
-            }
+        .environmentObject(planStore) // ✅ disponible para EntrenamientoView y cualquier hijo
+        .task {                        // ✅ estilo SwiftUI en lugar de onAppear + DispatchQueue
+            await checkSession()
         }
     }
 
-    func checkSession() async {
+    private func checkSession() async {
         let session = try? await SupabaseManager.shared.client.auth.session
-        DispatchQueue.main.async {
-            self.isLoggedIn = session != nil
-            self.isCheckingSession = false
-        }
+        // Ya estamos en @MainActor, podemos mutar @State directamente
+        self.isLoggedIn = (session != nil)
+        self.isCheckingSession = false
     }
 }
