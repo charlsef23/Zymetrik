@@ -167,12 +167,6 @@ class SetRegistro: Identifiable, ObservableObject {
     }
 }
 
-enum PerfilTab: String, CaseIterable {
-    case entrenamientos = "Entrenos"
-    case estadisticas = "Estadísticas"
-    case logros = "Logros"
-}
-
 // MARK: - Helpers
 extension PostgrestResponse {
     func decoded<U: Decodable>(to type: U.Type) throws -> U {
