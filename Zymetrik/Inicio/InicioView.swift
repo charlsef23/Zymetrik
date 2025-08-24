@@ -22,6 +22,7 @@ struct InicioView: View {
                         }
                     }
                     .font(.title2)
+                    .foregroundColor(.foregroundIcon)
                 }
                 .padding(.horizontal)
                 .padding(.top, 20)

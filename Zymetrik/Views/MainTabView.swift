@@ -24,7 +24,7 @@ struct MainTabView: View {
                     Image(systemName: "person.crop.circle")
                 }
         }
-        .accentColor(.black)
+        .accentColor(.mainTab)
     }
 }
 
