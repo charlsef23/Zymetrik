@@ -1,15 +1,18 @@
-// Screens/DMNewChatView.swift
 import SwiftUI
+import Supabase
 
 struct DMNewChatView: View {
-    var onCreated: (UUID) -> Void = { _ in }
-    
+    /// Devuelve (conversationID, usuarioSeleccionado) al padre
+    var onCreated: (UUID, PerfilLite) -> Void = { _, _ in }
+
     @Environment(\.dismiss) private var dismiss
     @State private var query: String = ""
     @State private var results: [PerfilLite] = []
     @State private var loading = false
     @State private var errorText: String?
-    
+
+    @State private var searchTask: Task<Void, Never>?
+
     var body: some View {
         VStack {
             HStack {
@@ -17,17 +20,37 @@ struct DMNewChatView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
                     .padding(10)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                if loading { ProgressView() }
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+
+                if loading { ProgressView().padding(.leading, 4) }
             }
             .padding(.horizontal)
             .padding(.top, 8)
-            
+            .onChange(of: query) { _, newValue in
+                searchTask?.cancel()
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { results = []; return }
+                searchTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 350_000_000) // 350ms debounce
+                    await search(text: trimmed)
+                }
+            }
+
+            if let errorText {
+                Text(errorText).foregroundColor(.secondary).padding(.horizontal)
+            }
+
+            if results.isEmpty && !query.isEmpty && !loading {
+                ContentUnavailableView(
+                    "Sin resultados",
+                    systemImage: "magnifyingglass",
+                    description: Text("Prueba con otro nombre de usuario.")
+                )
+                .padding(.top, 24)
+            }
+
             List(results) { user in
-                Button {
-                    Task { await startChat(with: user) }
-                } label: {
+                Button { Task { await startChat(with: user) } } label: {
                     HStack(spacing: 12) {
                         AvatarAsyncImage(url: URL(string: user.avatar_url ?? ""), size: 44)
                         Text(user.username).font(.headline)
@@ -35,22 +58,17 @@ struct DMNewChatView: View {
                 }
             }
             .listStyle(.plain)
-            
+
             Spacer()
         }
         .navigationTitle("Nuevo mensaje")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { Button("Cancelar") { dismiss() } }
         }
-        .onChange(of: query) { _, newValue in
-            Task { await search(text: newValue) }
-        }
     }
-    
+
+    // MARK: - Networking
     private func search(text: String) async {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            results = []; return
-        }
         loading = true; errorText = nil
         do {
             let res = try await SupabaseManager.shared.client
@@ -65,14 +83,15 @@ struct DMNewChatView: View {
         }
         loading = false
     }
-    
+
     private func startChat(with user: PerfilLite) async {
         do {
             let convID = try await DMMessagingService.shared.getOrCreateDM(with: user.id)
-            onCreated(convID)
+            onCreated(convID, user)
             dismiss()
         } catch {
-            errorText = error.localizedDescription
+            errorText = (error as NSError).userInfo[NSLocalizedDescriptionKey] as? String
+                       ?? error.localizedDescription
         }
     }
 }

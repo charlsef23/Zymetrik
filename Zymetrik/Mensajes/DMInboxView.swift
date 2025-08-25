@@ -13,7 +13,7 @@ struct DMInboxView: View {
     @State private var loading = true
     @State private var errorText: String?
     @State private var pushChat: DMInboxItem?
-    
+
     var body: some View {
         NavigationStack {
             Group {
@@ -26,14 +26,14 @@ struct DMInboxView: View {
                         Button("Reintentar") { Task { await load() } }
                     }
                 } else if items.isEmpty {
-                    ContentUnavailableView("Sin mensajes",
-                                           systemImage: "bubble.left.and.bubble.right",
-                                           description: Text("Empieza una conversación desde un perfil."))
+                    ContentUnavailableView(
+                        "Sin mensajes",
+                        systemImage: "bubble.left.and.bubble.right",
+                        description: Text("Empieza una conversación desde un perfil.")
+                    )
                 } else {
                     List(items) { it in
-                        Button {
-                            pushChat = it
-                        } label: {
+                        Button { pushChat = it } label: {
                             HStack(spacing: 12) {
                                 AvatarAsyncImage(url: URL(string: it.otherPerfil?.avatar_url ?? ""), size: 48)
                                 VStack(alignment: .leading, spacing: 4) {
@@ -54,14 +54,30 @@ struct DMInboxView: View {
                         }
                     }
                     .listStyle(.plain)
+                    .refreshable { await load() }
                 }
             }
             .navigationTitle("Mensajes")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink(destination: DMNewChatView(onCreated: { convID in
-                        Task { await load() }
-                    })) {
+                    NavigationLink(
+                        destination: DMNewChatView(onCreated: { convID, user in
+                            let temp = DMInboxItem(
+                                id: convID,
+                                conversation: DMConversation(
+                                    id: convID,
+                                    is_group: false,
+                                    created_at: Date(),
+                                    last_message_at: nil
+                                ),
+                                otherPerfil: user,
+                                lastMessagePreview: nil,
+                                lastAt: nil
+                            )
+                            pushChat = temp            // navega al chat
+                            Task { await load() }      // refresca inbox
+                        })
+                    ) {
                         Image(systemName: "square.and.pencil")
                     }
                 }
@@ -72,39 +88,55 @@ struct DMInboxView: View {
             }
         }
     }
-    
+
+    // MARK: - Data
     private func load() async {
         loading = true; errorText = nil
         do {
             let svc = DMMessagingService.shared
             let myID = try await svc.currentUserID()
             let convs = try await svc.fetchConversations()
-            
-            // Para cada conversación, obtenemos miembros y perfil del otro usuario
+
             var temp: [DMInboxItem] = []
-            for conv in convs {
-                let members = try await svc.fetchMembers(conversationID: conv.id)
-                let otherID = members.map(\.autor_id).first { $0 != myID }
-                var other: PerfilLite? = nil
-                if let oid = otherID { other = try? await svc.fetchPerfil(id: oid) }
-                
-                // Cargar último mensaje (rápido: pageSize 1)
-                let last = try await svc.fetchMessages(conversationID: conv.id, pageSize: 1).last
-                temp.append(.init(
-                    id: conv.id,
-                    conversation: conv,
-                    otherPerfil: other,
-                    lastMessagePreview: last?.content,
-                    lastAt: conv.last_message_at ?? last?.created_at
-                ))
+            temp.reserveCapacity(convs.count)
+
+            try await withThrowingTaskGroup(of: DMInboxItem?.self) { group in
+                for conv in convs {
+                    group.addTask {
+                        do {
+                            async let members = svc.fetchMembers(conversationID: conv.id)
+                            async let lastMsg = svc.fetchMessages(conversationID: conv.id, pageSize: 1)
+                            let (mems, last) = try await (members, lastMsg)
+
+                            let otherID = mems.map(\.autor_id).first { $0 != myID }
+                            let other = try await (otherID != nil ? svc.fetchPerfil(id: otherID!) : nil)
+
+                            return DMInboxItem(
+                                id: conv.id,
+                                conversation: conv,
+                                otherPerfil: other,
+                                lastMessagePreview: last.last?.content,
+                                lastAt: conv.last_message_at ?? last.last?.created_at
+                            )
+                        } catch {
+                            return nil // omite conversión con fallo puntual
+                        }
+                    }
+                }
+                for try await item in group {
+                    if let item { temp.append(item) }
+                }
             }
-            self.items = temp
+
+            self.items = temp.sorted { (a, b) in
+                (a.lastAt ?? .distantPast) > (b.lastAt ?? .distantPast)
+            }
         } catch {
             self.errorText = error.localizedDescription
         }
         loading = false
     }
-    
+
     private func shortDate(_ date: Date) -> String {
         let fmt = DateFormatter()
         fmt.locale = .current
