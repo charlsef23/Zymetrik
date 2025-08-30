@@ -2,7 +2,6 @@ import SwiftUI
 import Supabase
 
 struct DMNewChatView: View {
-    /// Devuelve (conversationID, usuarioSeleccionado) al padre
     var onCreated: (UUID, PerfilLite) -> Void = { _, _ in }
 
     @Environment(\.dismiss) private var dismiss
@@ -21,7 +20,6 @@ struct DMNewChatView: View {
                     .autocorrectionDisabled(true)
                     .padding(10)
                     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-
                 if loading { ProgressView().padding(.leading, 4) }
             }
             .padding(.horizontal)
@@ -31,7 +29,7 @@ struct DMNewChatView: View {
                 let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { results = []; return }
                 searchTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 350_000_000) // 350ms debounce
+                    try? await Task.sleep(nanoseconds: 350_000_000)
                     await search(text: trimmed)
                 }
             }
@@ -67,7 +65,6 @@ struct DMNewChatView: View {
         }
     }
 
-    // MARK: - Networking
     private func search(text: String) async {
         loading = true; errorText = nil
         do {
@@ -78,9 +75,7 @@ struct DMNewChatView: View {
                 .limit(20)
                 .execute()
             self.results = try res.decodedList(to: PerfilLite.self)
-        } catch {
-            errorText = error.localizedDescription
-        }
+        } catch { errorText = error.localizedDescription }
         loading = false
     }
 

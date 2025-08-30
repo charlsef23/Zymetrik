@@ -11,11 +11,13 @@ public struct DMMessage: Codable, Identifiable, Hashable {
     public let content: String
     public let created_at: Date
     public let client_tag: String?
-    // Estado sólo UI
+    public let edited_at: Date?
+    public let deleted_for_all_at: Date?
+    // Solo UI
     public var _delivery: DeliveryState? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, conversation_id, autor_id, content, created_at, client_tag
+        case id, conversation_id, autor_id, content, created_at, client_tag, edited_at, deleted_for_all_at
     }
 
     public static func == (lhs: DMMessage, rhs: DMMessage) -> Bool { lhs.id == rhs.id }
@@ -34,6 +36,9 @@ public struct DMMember: Codable, Identifiable, Hashable {
     public let conversation_id: UUID
     public let autor_id: UUID
     public let joined_at: Date?
+    public let last_read_at: Date?
+    public let is_typing: Bool?
+    public let typing_updated_at: Date?
 }
 
 public struct PerfilLite: Codable, Identifiable, Hashable {

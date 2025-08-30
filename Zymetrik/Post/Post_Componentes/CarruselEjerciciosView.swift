@@ -6,73 +6,66 @@ struct CarruselEjerciciosView: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 20) {
+            HStack(spacing: 14) {
                 ForEach(ejercicios) { ejercicioItem in
                     Button {
                         withAnimation(.easeInOut) {
                             ejercicioSeleccionado = ejercicioItem
                         }
                     } label: {
-                        VStack(spacing: 12) {
-                            // Imagen del ejercicio
-                            if let urlString = ejercicioItem.imagen_url, let url = URL(string: urlString) {
+                        ZStack {
+                            // Imagen del ejercicio (solo foto)
+                            if let urlString = ejercicioItem.imagen_url,
+                               let url = URL(string: urlString) {
                                 AsyncImage(url: url) { phase in
                                     switch phase {
                                     case .empty:
-                                        ProgressView()
-                                            .frame(width: 100, height: 100)
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .fill(Color(.secondarySystemBackground))
+                                            .overlay(ProgressView())
                                     case .success(let image):
                                         image
                                             .resizable()
                                             .scaledToFill()
-                                            .frame(width: 100, height: 100)
-                                            .clipped()
-                                            .cornerRadius(12)
                                     case .failure:
-                                        Image(systemName: "photo.fill")
-                                            .resizable()
-                                            .scaledToFit()
-                                            .frame(width: 40, height: 40)
-                                            .foregroundColor(.gray)
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .fill(Color(.secondarySystemBackground))
                                     @unknown default:
-                                        EmptyView()
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .fill(Color(.secondarySystemBackground))
                                     }
                                 }
+                                .frame(width: 120, height: 120)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .contentShape(RoundedRectangle(cornerRadius: 16))
                             } else {
-                                Image(systemName: "photo")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 40, height: 40)
-                                    .foregroundColor(.gray)
+                                // Placeholder
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Color(.secondarySystemBackground))
+                                    .frame(width: 120, height: 120)
+                                    .contentShape(RoundedRectangle(cornerRadius: 16))
                             }
-
-                            // Nombre del ejercicio
-                            Text(ejercicioItem.nombre)
-                                .font(.subheadline)
-                                .foregroundColor(.primary)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-                                .frame(maxWidth: 100)
                         }
-                        .padding()
-                        .frame(width: 120)
-                        .background(
-                            ejercicioSeleccionado?.id == ejercicioItem.id
-                            ? Color.accentColor.opacity(0.2)
-                            : Color(.systemGray6)
-                        )
-                        .cornerRadius(18)
+                        // Marco verde (seleccionado) / gris (no seleccionado)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 18)
+                            RoundedRectangle(cornerRadius: 16)
                                 .stroke(
                                     ejercicioSeleccionado?.id == ejercicioItem.id
-                                    ? Color.accentColor
+                                    ? Color.green
                                     : Color.gray.opacity(0.3),
-                                    lineWidth: 1
+                                    lineWidth: ejercicioSeleccionado?.id == ejercicioItem.id ? 3 : 1
                                 )
                         )
-                        .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 2)
+                        // Glow sutil solo si está seleccionado
+                        .shadow(
+                            color: ejercicioSeleccionado?.id == ejercicioItem.id
+                                ? Color.green.opacity(0.35)
+                                : Color.clear,
+                            radius: 8, x: 0, y: 4
+                        )
+                        .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 3)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)

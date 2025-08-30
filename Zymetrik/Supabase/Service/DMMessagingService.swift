@@ -1,19 +1,17 @@
+// DMMessagingService.swift
 import Foundation
 import Supabase
 
-/// Servicio de mensajería DM para Supabase (RPC-based)
 final class DMMessagingService {
     static let shared = DMMessagingService()
     private init() {}
 
-    // Ajusta si tu manager es distinto
-    private let client = SupabaseManager.shared.client
+    let client = SupabaseManager.shared.client
 
-    // Pollers por conversación
-    private var pollers: [UUID: Task<Void, Never>] = [:]
-    public var pollingInterval: TimeInterval = 3
+    // Realtime V2
+    private var channels: [UUID: RealtimeChannelV2] = [:]
 
-    // MARK: - Decoders robustos (fechas variables)
+    // MARK: - Decoder robusto
     private static let iso8601NoFrac: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withColonSeparatorInTimeZone]
@@ -36,7 +34,6 @@ final class DMMessagingService {
         f3.dateFormat = "yyyy-MM-dd'T'HH:mm:ssXXXXX"
         return [f1, f2, f3]
     }()
-
     private lazy var decoder: JSONDecoder = {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .custom { decoder in
@@ -49,22 +46,8 @@ final class DMMessagingService {
         }
         return d
     }()
-
-    private func decodeList<T: Decodable>(_ data: Data) throws -> [T] {
-        do { return try decoder.decode([T].self, from: data) }
-        catch {
-            print("❌ decodeList error:", error, String(data: data, encoding: .utf8) ?? "")
-            throw error
-        }
-    }
-
-    private func decodeObject<T: Decodable>(_ data: Data) throws -> T {
-        do { return try decoder.decode(T.self, from: data) }
-        catch {
-            print("❌ decodeObject error:", error, String(data: data, encoding: .utf8) ?? "")
-            throw error
-        }
-    }
+    private func decodeList<T: Decodable>(_ data: Data) throws -> [T] { try decoder.decode([T].self, from: data) }
+    private func decodeObject<T: Decodable>(_ data: Data) throws -> T { try decoder.decode(T.self, from: data) }
 
     // MARK: - Auth
     func currentUserID() async throws -> UUID {
@@ -88,44 +71,47 @@ final class DMMessagingService {
         let body: String
         let client_tag: String?
     }
+    private struct EditParams: Encodable { let msg_id: String; let new_body: String }
+    private struct HideParams: Encodable { let conv_id: String; let msg_id: String }
+    private struct DeleteAllParams: Encodable { let msg_id: String }
 
     // MARK: - RPCs
-    func getOrCreateDM(with otherUserID: UUID) async throws -> UUID {
-        let myID = try await currentUserID()
-        let params = GetOrCreateDMParams(a: myID.uuidString, b: otherUserID.uuidString)
-        let res = try await client.rpc("get_or_create_dm", params: params).execute()
-        let data = res.data
+    func getOrCreateDM(with other: UUID) async throws -> UUID {
+        let my = try await currentUserID()
+        let p = GetOrCreateDMParams(a: my.uuidString, b: other.uuidString)
+        let res = try await client.rpc("get_or_create_dm", params: p).execute()
 
-        // soporta: objeto {id:"..."}, {"get_or_create_dm":"..."}, string "uuid", ["uuid"], o texto plano
-        if let any = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any] {
-            if let v = any["get_or_create_dm"] as? String, let id = UUID(uuidString: v) { return id }
-            if let v = any["id"] as? String, let id = UUID(uuidString: v) { return id }
-            if let zero = any["0"] as? [String: Any], let v = zero["id"] as? String, let id = UUID(uuidString: v) { return id }
+        if let dict = try? JSONSerialization.jsonObject(with: res.data) as? [String: Any] {
+            if let s = dict["get_or_create_dm"] as? String, let id = UUID(uuidString: s) { return id }
+            if let s = dict["id"] as? String, let id = UUID(uuidString: s) { return id }
+            if let zero = dict["0"] as? [String: Any], let s = zero["id"] as? String, let id = UUID(uuidString: s) { return id }
         }
-        if let s = try? JSONDecoder().decode(String.self, from: data), let id = UUID(uuidString: s) { return id }
-        if let arr = try? JSONDecoder().decode([String].self, from: data), let first = arr.first, let id = UUID(uuidString: first) { return id }
-        if let raw = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"")), let id = UUID(uuidString: raw) { return id }
+        if let s = try? JSONDecoder().decode(String.self, from: res.data), let id = UUID(uuidString: s) { return id }
+        if let arr = try? JSONDecoder().decode([String].self, from: res.data), let s = arr.first, let id = UUID(uuidString: s) { return id }
+        if let raw = String(data: res.data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"")),
+           let id = UUID(uuidString: raw) { return id }
 
-        print("RPC get_or_create_dm payload:", String(data: data, encoding: .utf8) ?? "<binario>")
         throw NSError(domain: "RPC", code: -2, userInfo: [NSLocalizedDescriptionKey: "Respuesta RPC inválida al crear/obtener DM"])
     }
 
     func fetchConversations(limit: Int = 30) async throws -> [DMConversation] {
-        let myID = try await currentUserID()
-        let params = GetUserConversationsParams(user_id: myID.uuidString, lim: limit)
-        let res = try await client.rpc("get_user_conversations", params: params).execute()
+        let my = try await currentUserID()
+        let p = GetUserConversationsParams(user_id: my.uuidString, lim: limit)
+        let res = try await client.rpc("get_user_conversations", params: p).execute()
         return try decodeList(res.data)
     }
 
     func fetchMembers(conversationID: UUID) async throws -> [DMMember] {
-        let params = GetConversationMembersParams(conv_id: conversationID.uuidString)
-        let res = try await client.rpc("get_conversation_members", params: params).execute()
+        let p = GetConversationMembersParams(conv_id: conversationID.uuidString)
+        let res = try await client.rpc("get_conversation_members", params: p).execute()
         return try decodeList(res.data)
     }
 
     func fetchPerfil(id: UUID) async throws -> PerfilLite {
-        let params = GetPerfilLiteParams(user_id: id.uuidString)
-        let res = try await client.rpc("get_perfil_lite", params: params).execute()
+        let p = GetPerfilLiteParams(user_id: id.uuidString)
+        let res = try await client.rpc("get_perfil_lite", params: p).execute()
         if let one: PerfilLite = try? decodeObject(res.data) { return one }
         let list: [PerfilLite] = try decodeList(res.data)
         guard let first = list.first else {
@@ -134,64 +120,145 @@ final class DMMessagingService {
         return first
     }
 
-    /// Trae mensajes ordenados asc (viejo→nuevo).
-    func fetchMessages(conversationID: UUID, before: Date? = nil, after: Date? = nil, pageSize: Int = 30) async throws -> [DMMessage] {
+    func fetchMessages(conversationID: UUID, before: Date? = nil, after: Date? = nil, pageSize: Int = 50) async throws -> [DMMessage] {
         let iso = ISO8601DateFormatter()
-        let params = GetDMMessagesParams(
+        let p = GetDMMessagesParams(
             conv_id: conversationID.uuidString,
             before_ts: before.map { iso.string(from: $0) },
             after_ts:  after.map { iso.string(from: $0) },
             page_size: pageSize
         )
-        let res = try await client.rpc("get_dm_messages", params: params).execute()
-        return try decodeList(res.data) // RPC ya ordena asc
+        let res = try await client.rpc("get_dm_messages", params: p).execute()
+        return try decodeList(res.data) // asc
     }
 
-    /// Envío con reconciliación: el backend devuelve la fila insertada.
     func sendMessage(conversationID: UUID, text: String, clientTag: String) async throws -> DMMessage {
         let payload = SendDMParams(conv_id: conversationID.uuidString, body: text, client_tag: clientTag)
         let res = try await client.rpc("send_dm_message", params: payload).execute()
         return try decodeObject(res.data) as DMMessage
     }
 
-    // MARK: - Polling incremental
-    func startPolling(conversationID: UUID,
-                      since initialDate: Date?,
-                      onInsert: @escaping (DMMessage) -> Void) {
-        stopPolling(conversationID: conversationID)
-        let lastRef = Locked<Date?>(initialDate)
+    func setTyping(conversationID: UUID, typing: Bool) async {
+        struct P: Encodable { let conv_id: String; let typing: Bool }
+        _ = try? await client.rpc("set_dm_typing", params: P(conv_id: conversationID.uuidString, typing: typing)).execute()
+    }
 
-        pollers[conversationID] = Task.detached { [weak self] in
+    func markRead(conversationID: UUID) async {
+        struct P: Encodable { let conv_id: String }
+        _ = try? await client.rpc("mark_dm_read", params: P(conv_id: conversationID.uuidString)).execute()
+    }
+
+    func editMessage(messageID: UUID, newText: String) async throws -> DMMessage {
+        let res = try await client.rpc("edit_dm_message", params: EditParams(msg_id: messageID.uuidString, new_body: newText)).execute()
+        return try decodeObject(res.data) as DMMessage
+    }
+
+    func deleteMessageForAll(messageID: UUID) async throws -> DMMessage {
+        let res = try await client.rpc("delete_dm_message_for_all", params: DeleteAllParams(msg_id: messageID.uuidString)).execute()
+        return try decodeObject(res.data) as DMMessage
+    }
+
+    func hideMessageForMe(conversationID: UUID, messageID: UUID) async {
+        _ = try? await client.rpc("hide_dm_message_for_me", params: HideParams(conv_id: conversationID.uuidString, msg_id: messageID.uuidString)).execute()
+    }
+
+    // MARK: - Realtime V2
+
+    struct RealtimeHandlers {
+        var onInserted: ((DMMessage) -> Void)?
+        var onUpdated:  ((DMMessage) -> Void)?
+        var onDeletedGlobal: ((UUID) -> Void)?
+        var onTypingChanged: ((UUID, Bool) -> Void)?
+        var onMembersUpdated: (([DMMember]) -> Void)?
+    }
+
+    /// Suscribe a cambios de `dm_messages` y `dm_members` para una conversación.
+    @discardableResult
+    func subscribe(conversationID: UUID, handlers: RealtimeHandlers) async -> RealtimeChannelV2 {
+        // Desuscribe si ya existe
+        await unsubscribe(conversationID: conversationID)
+
+        // Crea canal
+        let channel = client.realtimeV2.channel("dm:\(conversationID.uuidString)")
+        channels[conversationID] = channel
+
+        // Filtro PostgREST
+        let filter = "conversation_id=eq.\(conversationID.uuidString)"
+
+        // INSERTS: dm_messages
+        _ = channel.onPostgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "dm_messages",
+            filter: filter
+        ) { [weak self] change in
             guard let self else { return }
-            while !Task.isCancelled {
-                do {
-                    let after = lastRef.value
-                    let news = try await self.fetchMessages(conversationID: conversationID, after: after, pageSize: 50)
-                    if !news.isEmpty {
-                        for m in news { onInsert(m) }
-                        lastRef.value = news.map(\.created_at).max() ?? after
-                    }
-                } catch {
-                    // Ignora errores transitorios
-                }
-                try? await Task.sleep(nanoseconds: UInt64(self.pollingInterval * 1_000_000_000))
+            let rec = change.record // [String: AnyJSON]
+            if let data = try? JSONEncoder().encode(rec),
+               let msg  = try? self.decoder.decode(DMMessage.self, from: data) {
+                handlers.onInserted?(msg)
             }
         }
+
+        // UPDATES: dm_messages (editado / delete_for_all)
+        _ = channel.onPostgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "dm_messages",
+            filter: filter
+        ) { [weak self] change in
+            guard let self else { return }
+            let rec = change.record
+            if let data = try? JSONEncoder().encode(rec),
+               let msg  = try? self.decoder.decode(DMMessage.self, from: data) {
+                if msg.deleted_for_all_at != nil {
+                    handlers.onDeletedGlobal?(msg.id)
+                } else {
+                    handlers.onUpdated?(msg)
+                }
+            }
+        }
+
+        // UPDATES: dm_members (typing / last_read_at)
+        _ = channel.onPostgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "dm_members",
+            filter: filter
+        ) { [weak self] _ in
+            guard let self else { return }
+            // Envolver trabajo async en Task para que el callback siga siendo sync
+            Task {
+                if let mems = try? await self.fetchMembers(conversationID: conversationID) {
+                    // emitir cambios en main si tu UI lo requiere:
+                    handlers.onMembersUpdated?(mems)
+                    if let typingUser = mems.first(where: { $0.is_typing == true })?.autor_id {
+                        handlers.onTypingChanged?(typingUser, true)
+                    } else if let other = mems.first?.autor_id {
+                        handlers.onTypingChanged?(other, false)
+                    }
+                }
+            }
+        }
+
+        // Activar canal (async)
+        await channel.subscribe()
+
+        return channel
     }
 
-    func stopPolling(conversationID: UUID) {
-        pollers[conversationID]?.cancel()
-        pollers.removeValue(forKey: conversationID)
+    func unsubscribe(conversationID: UUID) async {
+        if let ch = channels[conversationID] {
+            await ch.unsubscribe()
+            channels.removeValue(forKey: conversationID)
+        }
     }
-}
-
-// Pequeño contenedor thread-safe
-final class Locked<T> {
-    private let q = DispatchQueue(label: "lock.\(UUID().uuidString)")
-    private var _v: T
-    init(_ v: T) { _v = v }
-    var value: T {
-        get { q.sync { _v } }
-        set { q.sync { _v = newValue } }
+    
+    // DMMessagingService.swift
+    func fetchLastMessage(conversationID: UUID) async throws -> DMMessage? {
+        struct P: Encodable { let conv_id: String }
+        let res = try await client.rpc("get_last_dm_message", params: P(conv_id: conversationID.uuidString)).execute()
+        let list: [DMMessage] = try decodeList(res.data)
+        return list.first
     }
 }

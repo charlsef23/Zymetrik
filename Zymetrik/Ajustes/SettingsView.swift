@@ -1,7 +1,11 @@
 import SwiftUI
+import Supabase
 
 struct SettingsView: View {
     @State private var mostrarShare = false
+    @State private var esAdmin = false
+
+    private var client: SupabaseClient { SupabaseManager.shared.client }
 
     var body: some View {
         NavigationStack {
@@ -37,11 +41,44 @@ struct SettingsView: View {
                     SettingsSectionCard(
                         title: "Soporte",
                         items: [
-                            .init(icon: "envelope.fill", tint: .teal, title: "Enviar feedback", destination: AnyView(Text("FeedbackView()"))),
+                            .init(icon: "envelope.fill", tint: .teal, title: "Enviar feedback", destination: AnyView(FeedbackView())),
                             .init(icon: "questionmark.circle.fill", tint: .indigo, title: "Contactar con soporte", destination: AnyView(Text("SoporteView()"))),
                             .init(icon: "book.fill", tint: .brown, title: "FAQ", destination: AnyView(Text("FAQView()")))
                         ]
                     )
+                    
+                    // MARK: - Administración (solo admins)
+                    if esAdmin {
+                        SettingsSectionCard(
+                            title: "Administración",
+                            items: [
+                                .init(
+                                    icon: "tray.full.fill",
+                                    tint: .cyan,
+                                    title: "Feedback (Admin)",
+                                    destination: AnyView(AdminFeedbackListView())
+                                ),
+                                .init(
+                                    icon: "person.crop.circle.badge.exclam",
+                                    tint: .red,
+                                    title: "Moderación",
+                                    destination: AnyView(Text("ModeracionView()")) // ⬅️ placeholder
+                                ),
+                                .init(
+                                    icon: "chart.bar.fill",
+                                    tint: .orange,
+                                    title: "Métricas",
+                                    destination: AnyView(Text("MetricasView()")) // ⬅️ placeholder
+                                ),
+                                .init(
+                                    icon: "lock.doc.fill",
+                                    tint: .purple,
+                                    title: "Policies & RLS",
+                                    destination: AnyView(Text("PoliciesView()")) // ⬅️ placeholder
+                                )
+                            ]
+                        )
+                    }
 
                     // MARK: - Cuenta
                     SettingsSectionCard(
@@ -60,10 +97,37 @@ struct SettingsView: View {
             .sheet(isPresented: $mostrarShare) {
                 ShareProfileView(username: "carlos", profileImage: Image("foto_perfil"))
             }
+            .task {
+                await cargarEsAdmin()
+            }
+        }
+    }
+
+    // MARK: - Helpers
+    private func cargarEsAdmin() async {
+        do {
+            let user = try await client.auth.session.user
+
+            let resp = try await client
+                .from("perfil")
+                .select("es_admin", head: false)
+                .eq("id", value: user.id.uuidString)
+                .limit(1)
+                .execute()
+
+            struct Row: Decodable { let es_admin: Bool }
+
+            // En tu SDK, resp.data es Data (no opcional)
+            let data = resp.data
+            let rows = try JSONDecoder().decode([Row].self, from: data)
+            esAdmin = rows.first?.es_admin ?? false
+
+        } catch {
+            print("Error cargando es_admin:", error.localizedDescription)
+            esAdmin = false
         }
     }
 }
-
 // MARK: - Models
 
 struct SettingsItem: Identifiable {

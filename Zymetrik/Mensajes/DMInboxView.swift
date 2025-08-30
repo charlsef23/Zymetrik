@@ -74,8 +74,8 @@ struct DMInboxView: View {
                                 lastMessagePreview: nil,
                                 lastAt: nil
                             )
-                            pushChat = temp            // navega al chat
-                            Task { await load() }      // refresca inbox
+                            pushChat = temp
+                            Task { await load() }
                         })
                     ) {
                         Image(systemName: "square.and.pencil")
@@ -105,9 +105,18 @@ struct DMInboxView: View {
                     group.addTask {
                         do {
                             async let members = svc.fetchMembers(conversationID: conv.id)
-                            async let lastMsg = svc.fetchMessages(conversationID: conv.id, pageSize: 1)
-                            let (mems, last) = try await (members, lastMsg)
 
+                            // 🔹 Intenta obtener el ÚLTIMO mensaje real (DESC LIMIT 1)
+                            let last: DMMessage?
+                            do {
+                                last = try await svc.fetchLastMessage(conversationID: conv.id)
+                            } catch {
+                                // Fallback si la RPC no existe: usa la antigua (ASC) y coge el .last
+                                let one = try await svc.fetchMessages(conversationID: conv.id, pageSize: 1)
+                                last = one.last
+                            }
+
+                            let mems = try await members
                             let otherID = mems.map(\.autor_id).first { $0 != myID }
                             let other = try await (otherID != nil ? svc.fetchPerfil(id: otherID!) : nil)
 
@@ -115,11 +124,11 @@ struct DMInboxView: View {
                                 id: conv.id,
                                 conversation: conv,
                                 otherPerfil: other,
-                                lastMessagePreview: last.last?.content,
-                                lastAt: conv.last_message_at ?? last.last?.created_at
+                                lastMessagePreview: last?.content,
+                                lastAt: conv.last_message_at ?? last?.created_at
                             )
                         } catch {
-                            return nil // omite conversión con fallo puntual
+                            return nil // omitimos convs con fallo puntual
                         }
                     }
                 }

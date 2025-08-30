@@ -5,10 +5,12 @@ struct PostHeader: View {
     var onEliminar: (() -> Void)?  // Callback para eliminar
 
     var body: some View {
-        HStack {
-            Image(systemName: "person.crop.circle")
-                .resizable()
-                .frame(width: 36, height: 36)
+        HStack(spacing: 12) {
+            // 👉 AvatarAsyncImage en lugar del icono fijo
+            AvatarAsyncImage(
+                url: URL(string: post.avatar_url ?? ""),
+                size: 36
+            )
 
             NavigationLink(destination: UserProfileView(username: post.username)) {
                 Text("@\(post.username)")
@@ -17,6 +19,7 @@ struct PostHeader: View {
             }
 
             Spacer()
+
             Text(post.fecha.timeAgoDisplay())
                 .font(.caption)
                 .foregroundColor(.gray)
