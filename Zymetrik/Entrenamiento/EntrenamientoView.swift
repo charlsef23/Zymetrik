@@ -157,9 +157,9 @@ struct EntrenamientoView: View {
                 Button(action: { mostrarLista = true }) {
                     Image(systemName: "plus")
                         .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.foregroundPlus)
                         .frame(width: 56, height: 56)
-                        .background(Color.black)
+                        .background(.backgroundPlus)
                         .clipShape(Circle())
                         .shadow(radius: 4)
                 }

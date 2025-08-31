@@ -15,19 +15,25 @@ struct CalendarView: View {
 
                 HStack(spacing: 12) {
                     ForEach(weekDays, id: \.self) { date in
+                        // Flags por día (dentro del ámbito del ForEach)
                         let isToday = calendar.isDateInToday(date)
                         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
                         let isPast = date < calendar.startOfDay(for: Date())
                         let tieneEjercicios = (ejerciciosPorDia[date.stripTime()]?.isEmpty == false)
 
+                        // Contenedor del día
                         VStack(spacing: 6) {
-                            Text("\(calendar.component(.day, from: date))")
-                                .fontWeight(isToday ? .bold : .regular)
-                                .foregroundColor(isPast ? .gray : .black)
+                            VStack(spacing: 4) {
+                                Text("\(calendar.component(.day, from: date))")
+                                    .fontWeight(isToday ? .bold : .regular)
+                                    .foregroundColor(isPast ? .gray : Color("CalendarDay"))
 
-                            Text(weekdayShort(for: date))
-                                .font(.caption)
-                                .foregroundColor(isToday ? .red : (isPast ? .gray : .black))
+                                Text(weekdayShort(for: date))
+                                    .font(.caption)
+                                    .foregroundColor(
+                                        isToday ? .red : (isPast ? .gray : Color("CalendarDay"))
+                                    )
+                            }
 
                             if tieneEjercicios {
                                 Circle()
