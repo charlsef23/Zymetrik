@@ -18,7 +18,7 @@ struct PerfilEstadisticasView: View {
                     ForEach(ejerciciosConSesiones, id: \.ejercicio.id) { par in
                         EstadisticaEjercicioCard(
                             ejercicio: par.ejercicio,
-                            sesiones: par.sesiones,
+                            perfilId: nil,   // 👈 tu propio perfil (o el id de otro perfil si lo necesitas)
                             ejerciciosAbiertos: $ejerciciosAbiertos
                         )
                     }

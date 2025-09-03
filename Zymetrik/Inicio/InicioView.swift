@@ -32,11 +32,11 @@ struct InicioView: View {
                     ForEach(["Para ti", "Siguiendo"], id: \.self) { opcion in
                         VStack {
                             Text(opcion)
-                                .foregroundColor(seleccion == opcion ? .black : .gray)
+                                .foregroundColor(seleccion == opcion ? Color("ParaTiColor") : .gray)
                                 .fontWeight(seleccion == opcion ? .semibold : .regular)
                             if seleccion == opcion {
                                 Capsule()
-                                    .fill(Color.black)
+                                    .fill(Color("ParaTiColor"))
                                     .frame(height: 3)
                             } else {
                                 Color.clear.frame(height: 3)

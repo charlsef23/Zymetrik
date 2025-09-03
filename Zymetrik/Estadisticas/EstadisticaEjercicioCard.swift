@@ -2,8 +2,10 @@ import SwiftUI
 
 struct EstadisticaEjercicioCard: View {
     let ejercicio: EjercicioPostContenido
-    let sesiones: [SesionEjercicio]
+    let perfilId: UUID?   // 👈 si nil => tu propio perfil
+
     @Binding var ejerciciosAbiertos: Set<UUID>
+    @StateObject private var vm = ViewModel()
 
     // Computed: ¿está expandido este ejercicio?
     private var isExpanded: Bool {
@@ -15,7 +17,6 @@ struct EstadisticaEjercicioCard: View {
             // Header
             Button(action: toggleExpanded) {
                 HStack(spacing: 12) {
-                    // Ícono / avatar del ejercicio
                     ZStack {
                         Circle()
                             .fill(.ultraThinMaterial)
@@ -25,17 +26,14 @@ struct EstadisticaEjercicioCard: View {
                             .opacity(0.85)
                     }
 
-                    // Título + meta
                     VStack(alignment: .leading, spacing: 4) {
                         Text(ejercicio.nombre)
                             .font(.headline)
                             .fontWeight(.semibold)
                             .lineLimit(1)
 
-                        // Línea de meta (chips)
                         HStack(spacing: 6) {
-                            Chip(text: "\(sesiones.count) sesiones")
-                            // Puedes añadir más chips si quieres (p.ej. “últ. 30 días”)
+                            Chip(text: "\(vm.sesiones.count) sesiones")
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -43,9 +41,8 @@ struct EstadisticaEjercicioCard: View {
 
                     Spacer()
 
-                    // Estado y chevron
                     HStack(spacing: 10) {
-                        let estado = compararProgreso(sesiones)
+                        let estado = compararProgreso(vm.sesiones)
                         ProgresoCirculoView(estado: estado)
                             .frame(width: 22, height: 22)
 
@@ -63,18 +60,15 @@ struct EstadisticaEjercicioCard: View {
             }
             .buttonStyle(.plain)
 
-            // Divider con animación
             Divider()
                 .opacity(isExpanded ? 1 : 0)
                 .animation(.snappy(duration: 0.18), value: isExpanded)
 
-            // Contenido expandido
             if isExpanded {
                 VStack(alignment: .leading, spacing: 12) {
-                    GraficaPesoView(sesiones: sesiones)
+                    GraficaPesoView(sesiones: vm.sesiones)
                         .padding(.top, 4)
 
-                    // Footer opcional (puedes quitarlo si no lo necesitas)
                     HStack {
                         Label("Histórico", systemImage: "chart.line.uptrend.xyaxis")
                             .font(.subheadline)
@@ -93,7 +87,6 @@ struct EstadisticaEjercicioCard: View {
             }
         }
         .background(
-            // Card moderna con sutil gradiente + borde
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(
                     LinearGradient(
@@ -113,6 +106,9 @@ struct EstadisticaEjercicioCard: View {
         .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 6)
         .padding(.horizontal)
         .padding(.vertical, 4)
+        .task {
+            await vm.cargarSesiones(ejercicioID: ejercicio.id, autorId: perfilId)
+        }
     }
 
     private func toggleExpanded() {
@@ -124,6 +120,23 @@ struct EstadisticaEjercicioCard: View {
         #if os(iOS)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
+    }
+
+    // MARK: - ViewModel interno
+    @MainActor
+    final class ViewModel: ObservableObject {
+        @Published var sesiones: [SesionEjercicio] = []
+
+        func cargarSesiones(ejercicioID: UUID, autorId: UUID?) async {
+            do {
+                sesiones = try await SupabaseService.shared.obtenerSesionesPara(
+                    ejercicioID: ejercicioID,
+                    autorId: autorId
+                )
+            } catch {
+                print("❌ Error cargando sesiones: \(error)")
+            }
+        }
     }
 }
 

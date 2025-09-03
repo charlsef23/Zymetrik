@@ -203,26 +203,45 @@ extension SupabaseService {
 }
 
 extension SupabaseService {
-    func obtenerSesionesPara(ejercicioID: UUID) async throws -> [SesionEjercicio] {
-        let response = try await client
-            .from("posts")
-            .select("fecha, contenido", head: false)
-            .order("fecha", ascending: true)
+
+    // DTO que devuelve la RPC (UNA fila por sesión/post)
+    struct SesionPorPostDTO: Decodable {
+        let post_id: UUID
+        let fecha: String            // "YYYY-MM-DD"
+        let ejercicio_id: UUID
+        let sets_count: Int
+        let repeticiones_total: Int
+        let peso_total: Double
+    }
+
+    // Parámetros tipados (Encodable) para la RPC
+    private struct GetSesionesParams: Encodable {
+        let _ejercicio: UUID
+        let _autor: UUID?
+    }
+
+    /// Opción A: 1 sesión = 1 post que incluyó el ejercicio (sin duplicados por set)
+    func obtenerSesionesPara(ejercicioID: UUID, autorId: UUID? = nil) async throws -> [SesionEjercicio] {
+        let res = try await client
+            .rpc(
+                "api_get_sesiones",
+                params: GetSesionesParams(_ejercicio: ejercicioID, _autor: autorId)
+            )
             .execute()
 
-        struct PostConContenido: Decodable {
-            let fecha: Date
-            let contenido: [EjercicioPostContenido]
+        let dtos: [SesionPorPostDTO] = try res.decodedList(to: SesionPorPostDTO.self)
+
+        let df = DateFormatter()
+        df.calendar = .init(identifier: .iso8601)
+        df.locale = .init(identifier: "en_US_POSIX")
+        df.dateFormat = "yyyy-MM-dd"
+
+        let sesiones: [SesionEjercicio] = dtos.compactMap { dto in
+            guard let d = df.date(from: dto.fecha) else { return nil }
+            return SesionEjercicio(fecha: d, pesoTotal: dto.peso_total)
         }
 
-        let posts = try response.decodedList(to: PostConContenido.self)
-
-        return posts.compactMap { post in
-            guard let ejercicio = post.contenido.first(where: { $0.id == ejercicioID }) else {
-                return nil
-            }
-            return SesionEjercicio(fecha: post.fecha, pesoTotal: ejercicio.totalPeso)
-        }
+        return sesiones.sorted { $0.fecha < $1.fecha }
     }
 }
 

@@ -1,65 +1,76 @@
 import SwiftUI
 import Supabase
 
+// Helper local para silenciar cancelaciones de red (-999)
+private func isCancelled(_ error: Error) -> Bool {
+    if let urlErr = error as? URLError, urlErr.code == .cancelled { return true }
+    if let nsErr = error as NSError?, nsErr.domain == NSURLErrorDomain && nsErr.code == NSURLErrorCancelled { return true }
+    return (error as? CancellationError) != nil
+}
+
+// MARK: - Fila de usuario (resultados)
+
 struct UsuarioRowView: View {
     let perfil: Perfil
     @Binding var seguidos: Set<UUID>
     let currentUserID: UUID?
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             if let url = perfil.avatar_url, let imageURL = URL(string: url) {
                 AsyncImage(url: imageURL) { image in
                     image.resizable()
                 } placeholder: {
                     Color.gray.opacity(0.3)
                 }
-                .frame(width: 44, height: 44)
+                .frame(width: 52, height: 52)
                 .clipShape(Circle())
             } else {
                 Image(systemName: "person.circle.fill")
                     .resizable()
-                    .frame(width: 44, height: 44)
+                    .frame(width: 52, height: 52)
                     .foregroundColor(.gray)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(perfil.username)
-                    .font(.headline)
-                Text(perfil.nombre)
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundColor(.primary)
+
+                if !perfil.nombre.isEmpty {
+                    Text(perfil.nombre)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer()
 
             if perfil.id != currentUserID {
                 Button {
-                    Task {
-                        await toggleFollow(for: perfil.id)
-                    }
+                    Task { await toggleFollow(for: perfil.id) }
                 } label: {
                     Text(seguidos.contains(perfil.id) ? "Siguiendo" : "Seguir")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
                         .background(seguidos.contains(perfil.id) ? Color(.systemGray5) : Color.black)
-                        .foregroundColor(seguidos.contains(perfil.id) ? .black : .white)
-                        .cornerRadius(20)
+                        .foregroundColor(seguidos.contains(perfil.id) ? .primary : .white)
+                        .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
         .padding(.horizontal)
-        .task {
-            await verificarSeguimiento()
-        }
+        .task { await verificarSeguimiento() }
     }
 
-    // Verifica si el usuario actual sigue a este perfil (en caso de cambio desde otra vista)
-    func verificarSeguimiento() async {
+    // Verifica si el usuario actual sigue a este perfil (por si cambió en otra vista)
+    private func verificarSeguimiento() async {
         guard let currentUserID else { return }
-        guard !seguidos.contains(perfil.id) else { return } // Si ya está marcado como seguido, no comprobamos
+        guard !seguidos.contains(perfil.id) else { return }
 
         do {
             let response = try await SupabaseManager.shared.client
@@ -70,15 +81,18 @@ struct UsuarioRowView: View {
                 .limit(1)
                 .execute()
 
-            if let _ = try? response.decoded(to: [String: String].self) {
-                seguidos.insert(perfil.id)
+            if let dict = try? JSONSerialization.jsonObject(with: response.data) as? [[String: String]],
+               dict.first?["followed_id"] != nil {
+                _ = await MainActor.run { seguidos.insert(perfil.id) }
             }
         } catch {
-            print("❌ Error verificando seguimiento:", error)
+            if !isCancelled(error) {
+                print("❌ Error verificando seguimiento (real): \(error)")
+            }
         }
     }
 
-    func toggleFollow(for followedID: UUID) async {
+    private func toggleFollow(for followedID: UUID) async {
         guard let session = try? await SupabaseManager.shared.client.auth.session else {
             print("❌ No hay sesión activa")
             return
@@ -96,7 +110,7 @@ struct UsuarioRowView: View {
                     .eq("followed_id", value: followedIDString)
                     .execute()
 
-                seguidos.remove(followedID)
+                _ = await MainActor.run { seguidos.remove(followedID) }
             } else {
                 let insertData: [String: String] = [
                     "follower_id": currentUserID,
@@ -108,10 +122,12 @@ struct UsuarioRowView: View {
                     .insert(insertData)
                     .execute()
 
-                seguidos.insert(followedID)
+                _ = await MainActor.run { seguidos.insert(followedID) }
             }
         } catch {
-            print("❌ Error al alternar seguimiento: \(error)")
+            if !isCancelled(error) {
+                print("❌ Error al alternar seguimiento (real): \(error)")
+            }
         }
     }
 }
