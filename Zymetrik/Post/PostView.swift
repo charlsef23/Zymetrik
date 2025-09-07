@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 struct PostView: View {
     let post: Post
@@ -11,22 +13,73 @@ struct PostView: View {
     @State private var guardado = false
     @State private var mostrarComentarios = false
     @State private var mostrarConfirmacionEliminar = false
+    @State private var mostrarShare = false
 
-    // Evita re-disparos en reappear (scroll)
+    // Animación corazón
+    @State private var showHeart = false
+    @Namespace private var heartNS
+
+    // Control de carga
     @State private var didPrime = false
     @State private var primeTask: Task<Void, Never>? = nil
+    @State private var isReady = false
+
+    // Cachés de imágenes predescargadas
+    @State private var avatarImage: UIImage? = nil
+    @State private var imageCache: [UUID: UIImage] = [:]
+
+    init(
+        post: Post,
+        onPostEliminado: (() -> Void)? = nil,
+        onGuardadoCambio: ((Bool) -> Void)? = nil
+    ) {
+        self.post = post
+        self.onPostEliminado = onPostEliminado
+        self.onGuardadoCambio = onGuardadoCambio
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            PostHeader(post: post) { mostrarConfirmacionEliminar = true }
+        Group {
+            if isReady {
+                content
+                    .transition(.opacity.combined(with: .scale))
+            } else {
+                PostSkeletonView()
+            }
+        }
+        .onAppear {
+            if !didPrime {
+                didPrime = true
+                ejercicioSeleccionado = post.contenido.first
+                primeTask?.cancel()
+                primeTask = Task { await primeAll() }
+            }
+        }
+        .onDisappear { primeTask?.cancel() }
+    }
 
-            if let ejercicio = ejercicioSeleccionado {
-                EjercicioEstadisticasView(ejercicio: ejercicio)
+    // MARK: - Contenido real
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            PostHeader(
+                post: post,
+                onEliminar: { mostrarConfirmacionEliminar = true },
+                onCompartir: { mostrarShare = true },
+                preloadedAvatar: avatarImage
+            )
+
+            if let e = ejercicioSeleccionado {
+                EjercicioEstadisticasView(
+                    ejercicio: e,
+                    comparativaAnterior: nil
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             CarruselEjerciciosView(
                 ejercicios: post.contenido,
-                ejercicioSeleccionado: $ejercicioSeleccionado
+                ejercicioSeleccionado: $ejercicioSeleccionado,
+                preloadedImages: imageCache
             )
 
             PostActionsView(
@@ -38,85 +91,175 @@ struct PostView: View {
                 toggleSave: toggleSave
             )
         }
-        .padding()
-        .onAppear {
-            if !didPrime {
-                didPrime = true
-                ejercicioSeleccionado = post.contenido.first
-
-                // Paraleliza 3 llamadas; menos latencia percibida
-                primeTask?.cancel()
-                primeTask = Task {
-                    await primePostMeta()
-                }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(.systemBackground))
+                .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 6)
+        )
+        .contentShape(Rectangle())
+        .overlay {
+            if showHeart {
+                HeartBurst()
+                    .matchedGeometryEffect(id: "heart", in: heartNS)
+                    .transition(.scale.combined(with: .opacity))
             }
         }
-        .onDisappear { primeTask?.cancel() }
+        .gesture(
+            TapGesture(count: 2).onEnded {
+                Task { await doubleTapLike() }
+            }
+        )
         .sheet(isPresented: $mostrarComentarios) {
             ComentariosView(postID: post.id)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $mostrarShare) {
+            ShareSheet(items: [shareText()])
         }
         .alert("¿Eliminar este post?", isPresented: $mostrarConfirmacionEliminar) {
             Button("Eliminar", role: .destructive) { eliminarPost() }
             Button("Cancelar", role: .cancel) {}
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Post de @\(post.username)"))
     }
 
-    // MARK: - Prime de meta (paralelo)
-    private func primePostMeta() async {
-        async let liked: Bool = (try? await SupabaseService.shared.didLike(postID: post.id)) ?? false
-        async let count: Int  = (try? await SupabaseService.shared.countLikes(postID: post.id)) ?? 0
-        async let saved: Bool = (try? await SupabaseService.shared.didSave(postID: post.id)) ?? false
+    // MARK: - Carga total (meta + imágenes)
+    private func primeAll() async {
+        isReady = false
 
-        let (l, c, s) = await (liked, count, saved)
+        // Meta (1 sola RPC)
+        async let meta = try? await SupabaseService.shared.fetchPostMeta(postID: post.id)
+
+        // Si el feed ya prefetched, úsalo antes de ir a red
+        if avatarImage == nil, let preA = await FeedPrefetcher.shared.avatar(for: post.autor_id) {
+            avatarImage = preA
+        }
+        if imageCache.isEmpty, let preI = await FeedPrefetcher.shared.images(for: post.id) {
+            imageCache = preI
+        }
+
+        // Avatar (downsample 40x40) si no venía del prefetch
+        async let avatarTask: UIImage? = {
+            if let avatarImage { return avatarImage }
+            if let urlStr = post.avatar_url, let url = URL(string: urlStr) {
+                return await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 40, height: 40))
+            }
+            return nil
+        }()
+
+        // Thumbnails carrusel (120x120) para los que falten
+        async let thumbsTask: [UUID: UIImage] = await preloadCarouselImages(for: post.contenido, existing: imageCache)
+
+        let (m, avatar, thumbs) = await (meta, avatarTask, thumbsTask)
 
         await MainActor.run {
-            leDioLike = l
-            numLikes = c
-            guardado = s
+            if let m {
+                leDioLike = m.liked
+                guardado  = m.saved
+                numLikes  = m.likes_count
+            }
+            if let avatar { avatarImage = avatar }
+            imageCache.merge(thumbs) { old, _ in old }
+
+            withAnimation(.easeOut(duration: 0.18)) { isReady = true }
         }
     }
 
-    // MARK: - Eliminar
-    private func eliminarPost() {
+    private func preloadCarouselImages(for ejercicios: [EjercicioPostContenido], existing: [UUID: UIImage]) async -> [UUID: UIImage] {
+        var dict: [UUID: UIImage] = [:]
+        await withTaskGroup(of: (UUID, UIImage?)?.self) { group in
+            for e in ejercicios {
+                guard existing[e.id] == nil else { continue }
+                if let s = e.imagen_url, let url = URL(string: s) {
+                    group.addTask(priority: .userInitiated) {
+                        let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 120, height: 120))
+                        return (e.id, img)
+                    }
+                }
+            }
+            for await pair in group {
+                if let (id, img) = pair, let img { dict[id] = img }
+            }
+        }
+        return dict
+    }
+}
+
+// MARK: - Lógica UI
+private extension PostView {
+    func shareText() -> String {
+        "Entrenamiento de @\(post.username) • \(post.fecha.timeAgoDisplay())"
+    }
+
+    func doubleTapLike() async {
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+        if !leDioLike {
+            await toggleLike()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
+                showHeart = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+                withAnimation(.easeOut(duration: 0.25)) { showHeart = false }
+            }
+        } else {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                showHeart = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                withAnimation(.easeOut(duration: 0.25)) { showHeart = false }
+            }
+        }
+    }
+
+    func eliminarPost() {
         Task {
             do {
                 try await SupabaseService.shared.eliminarPost(postID: post.id)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 onPostEliminado?()
             } catch {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
                 print("❌ Error al eliminar el post: \(error)")
             }
         }
     }
 
-    // MARK: - Likes
-    private func toggleLike() async {
+    func toggleLike() async {
         await MainActor.run {
             leDioLike.toggle()
             numLikes += leDioLike ? 1 : -1
         }
         do {
             try await SupabaseService.shared.setLike(postID: post.id, like: leDioLike)
+            if leDioLike {
+                UIImpactFeedbackGenerator().impactOccurred(intensity: 0.7)
+            }
         } catch {
             print("❌ Error al cambiar like: \(error)")
             await MainActor.run {
                 leDioLike.toggle()
                 numLikes += leDioLike ? 1 : -1
             }
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
 
-    // MARK: - Guardados
-    private func toggleSave() async {
+    func toggleSave() async {
         await MainActor.run { guardado.toggle() }
         do {
             try await SupabaseService.shared.setSaved(postID: post.id, saved: guardado)
             await MainActor.run { onGuardadoCambio?(guardado) }
+            UIImpactFeedbackGenerator().impactOccurred(intensity: 0.4)
         } catch {
             print("❌ Error al cambiar guardado: \(error)")
             await MainActor.run {
                 guardado.toggle()
                 onGuardadoCambio?(guardado)
             }
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
 }

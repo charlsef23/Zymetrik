@@ -1,8 +1,22 @@
 import SwiftUI
+import UIKit
 
 struct CarruselEjerciciosView: View {
     let ejercicios: [EjercicioPostContenido]
     @Binding var ejercicioSeleccionado: EjercicioPostContenido?
+
+    /// Cache de imágenes precargadas: key = id de ejercicio
+    var preloadedImages: [UUID: UIImage] = [:]
+
+    init(
+        ejercicios: [EjercicioPostContenido],
+        ejercicioSeleccionado: Binding<EjercicioPostContenido?>,
+        preloadedImages: [UUID: UIImage] = [:]
+    ) {
+        self.ejercicios = ejercicios
+        self._ejercicioSeleccionado = ejercicioSeleccionado
+        self.preloadedImages = preloadedImages
+    }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -11,65 +25,53 @@ struct CarruselEjerciciosView: View {
                     Button {
                         withAnimation(.easeInOut) {
                             ejercicioSeleccionado = ejercicioItem
+                            UISelectionFeedbackGenerator().selectionChanged()
                         }
                     } label: {
                         ZStack {
-                            // Imagen del ejercicio (solo foto)
-                            if let urlString = ejercicioItem.imagen_url,
-                               let url = URL(string: urlString) {
+                            if let image = preloadedImages[ejercicioItem.id] {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                            } else if let urlString = ejercicioItem.imagen_url,
+                                      let url = URL(string: urlString) {
                                 AsyncImage(url: url) { phase in
                                     switch phase {
                                     case .empty:
-                                        RoundedRectangle(cornerRadius: 16)
-                                            .fill(Color(.secondarySystemBackground))
-                                            .overlay(ProgressView())
+                                        ShimmerRect()
                                     case .success(let image):
-                                        image
-                                            .resizable()
-                                            .scaledToFill()
+                                        image.resizable().scaledToFill()
                                     case .failure:
-                                        RoundedRectangle(cornerRadius: 16)
-                                            .fill(Color(.secondarySystemBackground))
+                                        PlaceholderRect(icon: "dumbbell.fill")
                                     @unknown default:
-                                        RoundedRectangle(cornerRadius: 16)
-                                            .fill(Color(.secondarySystemBackground))
+                                        PlaceholderRect(icon: "dumbbell.fill")
                                     }
                                 }
-                                .frame(width: 120, height: 120)
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
-                                .contentShape(RoundedRectangle(cornerRadius: 16))
                             } else {
-                                // Placeholder
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color(.secondarySystemBackground))
-                                    .frame(width: 120, height: 120)
-                                    .contentShape(RoundedRectangle(cornerRadius: 16))
+                                PlaceholderRect(icon: "dumbbell.fill")
                             }
                         }
-                        // Marco verde (seleccionado) / gris (no seleccionado)
+                        .frame(width: 120, height: 120)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .stroke(
                                     ejercicioSeleccionado?.id == ejercicioItem.id
                                     ? Color.green
-                                    : Color.gray.opacity(0.3),
+                                    : Color.gray.opacity(0.28),
                                     lineWidth: ejercicioSeleccionado?.id == ejercicioItem.id ? 3 : 1
                                 )
-                        )
-                        // Glow sutil solo si está seleccionado
-                        .shadow(
-                            color: ejercicioSeleccionado?.id == ejercicioItem.id
-                                ? Color.green.opacity(0.35)
-                                : Color.clear,
-                            radius: 8, x: 0, y: 4
                         )
                         .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 3)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(Text("\(ejercicioItem.nombre)"))
+                    .accessibilityAddTraits(ejercicioSeleccionado?.id == ejercicioItem.id ? .isSelected : [])
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 2)
+            .padding(.vertical, 8)
         }
     }
 }

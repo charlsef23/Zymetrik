@@ -1,18 +1,49 @@
-// UI/AvatarAsyncImage.swift
 import SwiftUI
+import UIKit
 
 struct AvatarAsyncImage: View {
     let url: URL?
-    var size: CGFloat = 40
-    
+    let size: CGFloat
+    var preloaded: UIImage? = nil
+
+    init(url: URL?, size: CGFloat, preloaded: UIImage? = nil) {
+        self.url = url
+        self.size = size
+        self.preloaded = preloaded
+    }
+
     var body: some View {
-        AsyncImage(url: url) { img in
-            img.resizable().scaledToFill()
-        } placeholder: {
-            Circle().fill(Color.gray.opacity(0.2))
-                .overlay(Image(systemName: "person.fill").opacity(0.4))
+        Group {
+            if let pre = preloaded {
+                Image(uiImage: pre)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        Circle()
+                            .fill(Color(.secondarySystemBackground))
+                            .overlay(ProgressView())
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .failure:
+                        Image(systemName: "person.crop.circle.fill")
+                            .resizable()
+                            .scaledToFill()
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.secondary)
+                    @unknown default:
+                        Circle().fill(Color(.secondarySystemBackground))
+                    }
+                }
+            }
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
+        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .accessibilityHidden(true)
     }
 }

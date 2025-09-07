@@ -107,17 +107,9 @@ struct EjercicioPostContenido: Identifiable, Codable {
     let imagen_url: String?
     let sets: [SetPost]
 
-    var totalSeries: Int {
-        sets.count
-    }
-
-    var totalRepeticiones: Int {
-        sets.reduce(0) { $0 + $1.repeticiones }
-    }
-
-    var totalPeso: Double {
-        sets.reduce(0) { $0 + $1.peso }
-    }
+    var totalSeries: Int { sets.count }
+    var totalRepeticiones: Int { sets.reduce(0) { $0 + $1.repeticiones } }
+    var totalPeso: Double { sets.reduce(0) { $0 + $1.peso } }
 }
 
 struct SetPost: Codable {
@@ -190,6 +182,7 @@ extension Date {
     }
 }
 
+// MARK: - Eliminar post
 extension SupabaseService {
     func eliminarPost(postID: UUID) async throws {
         _ = try await client
@@ -202,9 +195,8 @@ extension SupabaseService {
     }
 }
 
+// MARK: - Sesiones por ejercicio (RPC api_get_sesiones)
 extension SupabaseService {
-
-    // DTO que devuelve la RPC (UNA fila por sesión/post)
     struct SesionPorPostDTO: Decodable {
         let post_id: UUID
         let fecha: String            // "YYYY-MM-DD"
@@ -214,13 +206,11 @@ extension SupabaseService {
         let peso_total: Double
     }
 
-    // Parámetros tipados (Encodable) para la RPC
     private struct GetSesionesParams: Encodable {
         let _ejercicio: UUID
         let _autor: UUID?
     }
 
-    /// Opción A: 1 sesión = 1 post que incluyó el ejercicio (sin duplicados por set)
     func obtenerSesionesPara(ejercicioID: UUID, autorId: UUID? = nil) async throws -> [SesionEjercicio] {
         let res = try await client
             .rpc(
@@ -245,6 +235,7 @@ extension SupabaseService {
     }
 }
 
+// MARK: - Planes (upsert/fetch)
 extension SupabaseService {
     func upsertPlan(fecha: Date, ejercicios: [Ejercicio]) async throws {
         let user = try await client.auth.session.user
@@ -288,8 +279,6 @@ extension SupabaseService {
 
 // MARK: - Favoritos (fetch, toggle, set)
 extension SupabaseService {
-
-    /// Devuelve todos los ejercicios con la marca `esFavorito` ya calculada para el usuario actual.
     func fetchEjerciciosConFavoritos() async throws -> [Ejercicio] {
         let client = self.client
         let userId = try await client.auth.session.user.id
@@ -312,7 +301,6 @@ extension SupabaseService {
         let (ejercicios, favoritos) = try await (ejerciciosReq, favoritosReq)
         let favs = Set(favoritos.map(\.ejercicio_id))
 
-        // Marca local esFavorito sin tocar la tabla ejercicios
         return ejercicios.map { e in
             var copy = e
             copy.esFavorito = favs.contains(e.id)
@@ -320,7 +308,6 @@ extension SupabaseService {
         }
     }
 
-    /// Devuelve solo los IDs de ejercicios favoritos del usuario actual.
     func fetchFavoritosIDs() async throws -> Set<UUID> {
         let client = self.client
         let userId = try await client.auth.session.user.id
@@ -337,14 +324,12 @@ extension SupabaseService {
         return Set(rows.map(\.ejercicio_id))
     }
 
-    /// Cambia el estado de favorito de un ejercicio. Devuelve el estado final.
     @discardableResult
     func toggleFavorito(ejercicioID: UUID, currentlyFavorito: Bool) async throws -> Bool {
         try await setFavorito(ejercicioID: ejercicioID, favorito: !currentlyFavorito)
         return !currentlyFavorito
     }
 
-    /// Fija el estado de favorito (true = inserta, false = borra).
     func setFavorito(ejercicioID: UUID, favorito: Bool) async throws {
         let client = self.client
         let userId = try await client.auth.session.user.id
@@ -368,15 +353,13 @@ extension SupabaseService {
     }
 }
 
+// MARK: - Likes
 extension SupabaseService {
-
-    /// Devuelve true si el usuario actual ya ha dado like a `postID`.
     func didLike(postID: UUID) async throws -> Bool {
         let userId = try await client.auth.session.user.id
-        // Buscamos 1 fila como máximo: si hay, ya dio like.
         let res = try await client
             .from("post_likes")
-            .select("post_id", head: false) // necesitamos cuerpo para contar filas devueltas
+            .select("post_id", head: false)
             .eq("post_id", value: postID.uuidString)
             .eq("autor_id", value: userId.uuidString)
             .limit(1)
@@ -387,7 +370,6 @@ extension SupabaseService {
         return !rows.isEmpty
     }
 
-    /// Cuenta los likes de un post. Usa count exacto en cabecera (rápido).
     func countLikes(postID: UUID) async throws -> Int {
         let res = try await client
             .from("post_likes")
@@ -397,12 +379,10 @@ extension SupabaseService {
         return res.count ?? 0
     }
 
-    /// Fija el estado de like (true = like, false = quitar like).
     func setLike(postID: UUID, like: Bool) async throws {
         let userId = try await client.auth.session.user.id
 
         if like {
-            // Insert idempotente: si ya existe PK (post_id, autor_id), se ignora con upsert onConflict.
             _ = try await client
                 .from("post_likes")
                 .upsert([
@@ -420,7 +400,6 @@ extension SupabaseService {
         }
     }
 
-    /// Cambia el like y devuelve el estado final.
     @discardableResult
     func toggleLike(postID: UUID, currentlyLiked: Bool) async throws -> Bool {
         try await setLike(postID: postID, like: !currentlyLiked)
@@ -428,9 +407,8 @@ extension SupabaseService {
     }
 }
 
+// MARK: - Guardados
 extension SupabaseService {
-
-    /// Devuelve true si el usuario actual ya guardó `postID`.
     func didSave(postID: UUID) async throws -> Bool {
         let userId = try await client.auth.session.user.id
         let res = try await client
@@ -446,7 +424,6 @@ extension SupabaseService {
         return !rows.isEmpty
     }
 
-    /// Fija el estado de guardado (true = guardar, false = quitar).
     func setSaved(postID: UUID, saved: Bool) async throws {
         let userId = try await client.auth.session.user.id
 
@@ -468,7 +445,6 @@ extension SupabaseService {
         }
     }
 
-    /// Cambia el guardado y devuelve el estado final.
     @discardableResult
     func toggleSaved(postID: UUID, currentlySaved: Bool) async throws -> Bool {
         try await setSaved(postID: postID, saved: !currentlySaved)
@@ -479,7 +455,6 @@ extension SupabaseService {
     func fetchSavedPosts() async throws -> [Post] {
         let userId = try await client.auth.session.user.id
 
-        // Traemos filas de post_guardados con el post embebido
         let res = try await client
             .from("post_guardados")
             .select("""
@@ -497,7 +472,6 @@ extension SupabaseService {
         }
 
         let rows = try res.decodedList(to: SavedRow.self)
-        // Ordenamos localmente por fecha descendente del post
         return rows
             .map { $0.posts }
             .sorted { $0.fecha > $1.fecha }
