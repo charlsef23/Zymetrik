@@ -1,105 +1,140 @@
 import SwiftUI
+import UIKit
 
 struct ComentariosView: View {
     let postID: UUID
+
     @State private var comentarios: [Comentario] = []
-    @State private var nuevoComentario: String = ""
+    @State private var respuestasByParent: [UUID?: [Comentario]] = [:]
     @State private var respondiendoA: Comentario? = nil
 
-    // Paginación
-    @State private var loading = false
-    @State private var reachedEnd = false
-    @State private var beforeCursor: Date? = nil // carga hacia atrás (más antiguos)
+    @State private var nuevoComentario: String = ""
+    @FocusState private var inputFocused: Bool
+    @State private var sending = false
 
-    var comentariosRaiz: [Comentario] {
-        comentarios.filter { $0.comentario_padre_id == nil }
-    }
+    @State private var initialLoading = false
+    @State private var isLoadingMore = false
+    @State private var reachedEnd = false
+    @State private var beforeCursor: Date? = nil
+    @State private var lastRequestedCursor: Date? = nil
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
-                Text("Comentarios")
-                    .font(.headline)
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Comentarios").font(.headline)
+                    Text("\(comentarios.count) en total")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if initialLoading || isLoadingMore {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
 
-                ForEach(comentariosRaiz) { comentario in
-                    comentarioView(comentario, nivel: 0)
-                        .onAppear { // infinite scroll
-                            if comentario.id == comentariosRaiz.last?.id {
-                                Task { await loadMore() }
+            Divider()
+
+            // Lista
+            ScrollViewReader { _ in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        if initialLoading {
+                            ForEach(0..<6, id: \.self) { _ in
+                                CommentSkeleton().padding(.horizontal)
+                            }
+                        } else {
+                            ForEach(respuestasByParent[nil] ?? []) { c in
+                                CommentThreadNode(
+                                    comentario: c,
+                                    nivel: 0,
+                                    childrenProvider: { respuestasByParent[$0] ?? [] },
+                                    onReply: { handleReply(to: $0) }
+                                )
+                                .padding(.horizontal)
+                            }
+                            if !reachedEnd {
+                                BottomSentinel { triggerLoadMoreIfNeeded() }
+                                    .frame(height: 1)
+                                    .padding(.horizontal)
+                            } else {
+                                HStack {
+                                    Spacer()
+                                    Text("No hay más")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.vertical, 12)
+                                    Spacer()
+                                }
                             }
                         }
+                    }
+                    .padding(.top, 12)
+                    .transaction { $0.disablesAnimations = true }
                 }
-
-                if loading { HStack { Spacer(); ProgressView(); Spacer() } }
-
-                Divider().padding(.vertical, 4)
-
-                if let respondiendoA = respondiendoA {
-                    HStack {
-                        Text("Respondiendo a @\(respondiendoA.username)")
-                            .font(.footnote)
-                            .foregroundColor(.gray)
-                        Spacer()
-                        Button("Cancelar") { self.respondiendoA = nil }
-                            .font(.footnote)
-                            .foregroundColor(.red)
+                .onChange(of: respondiendoA?.id) { _, to in
+                    if to != nil {
+                        inputFocused = true
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
                 }
-
-                HStack {
-                    TextField("Añade un comentario...", text: $nuevoComentario)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Enviar") { Task { await enviarComentario() } }
-                }
             }
-            .padding()
+
+            Divider()
+
+            // Composer
+            CommentsComposerBar(
+                placeholder: respondiendoA == nil
+                    ? "Añade un comentario…"
+                    : "Responder a @\(respondiendoA?.username ?? "")…",
+                text: $nuevoComentario,
+                isSending: sending,
+                onSend: { Task { await enviarComentario() } },
+                onCancelReply: { respondiendoA = nil },
+                showCancelReply: respondiendoA != nil
+            )
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial)
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 0) }
         }
+        .onAppear { Task { await initialLoad() } }
         .refreshable { await refresh() }
-        .task { await initialLoad() }
     }
 
-    // MARK: - Estructura recursiva
-    func comentarioView(_ comentario: Comentario, nivel: Int = 0) -> AnyView {
-        AnyView(
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("@\(comentario.username)")
-                        .font(.caption.bold())
-                    Spacer()
-                    Button("Responder") { respondiendoA = comentario }
-                        .font(.caption2)
-                }
-                Text(comentario.contenido)
-                    .font(.subheadline)
-
-                // Hijos
-                let respuestas = comentarios.filter { $0.comentario_padre_id == comentario.id }
-                if !respuestas.isEmpty {
-                    Divider().opacity(0.3)
-                    ForEach(respuestas) { respuesta in
-                        comentarioView(respuesta, nivel: nivel + 1)
-                            .padding(.leading, CGFloat((nivel + 1) * 20))
-                    }
-                }
-            }
-        )
-    }
+    // MARK: - Interacciones
+    private func handleReply(to comentario: Comentario) { respondiendoA = comentario }
 
     // MARK: - Carga
     private func initialLoad() async {
-        if comentarios.isEmpty { await refresh() }
+        if !comentarios.isEmpty { return }
+        initialLoading = true
+        await refresh()
+        initialLoading = false
     }
 
     private func refresh() async {
         reachedEnd = false
         beforeCursor = nil
+        lastRequestedCursor = nil
         await loadMore(reset: true)
     }
 
+    private func triggerLoadMoreIfNeeded() {
+        guard !isLoadingMore, !reachedEnd else { return }
+        guard beforeCursor != lastRequestedCursor else { return }
+        lastRequestedCursor = beforeCursor
+        Task { await loadMore() }
+    }
+
     private func loadMore(reset: Bool = false) async {
-        guard !loading, !reachedEnd else { return }
-        loading = true
-        defer { loading = false }
+        guard !isLoadingMore, !reachedEnd else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
 
         do {
             struct P: Encodable {
@@ -113,34 +148,45 @@ struct ComentariosView: View {
                 p_before: beforeCursor.map { iso.string(from: $0) },
                 p_limit: 50
             )
+
             let res = try await SupabaseManager.shared.client
                 .rpc("get_post_comments", params: p)
                 .execute()
+
             let page = try res.decodedList(to: Comentario.self)
 
             if reset {
                 comentarios = page
             } else {
-                // Append por ID, evita duplicados si refresca
                 var dict = Dictionary(uniqueKeysWithValues: comentarios.map { ($0.id, $0) })
                 for c in page { dict[c.id] = c }
                 comentarios = dict.values.sorted { $0.creado_en < $1.creado_en }
             }
 
+            respuestasByParent = Dictionary(grouping: comentarios, by: { $0.comentario_padre_id })
+
             if page.isEmpty {
                 reachedEnd = true
             } else {
-                beforeCursor = page.first?.creado_en // vienen desc por fecha en la RPC; si los ordenas asc, usa .last
+                // RPC ordena DESC, como ordenamos ASC local, toma el "primero" (el más antiguo de la página DESC)
+                beforeCursor = page.first?.creado_en
             }
+        } catch is CancellationError {
+            return
+        } catch let e as URLError where e.code == .cancelled {
+            return
         } catch {
             print("❌ Error al cargar comentarios: \(error)")
         }
     }
 
-    // MARK: - Enviar (append local y no recargar todo)
+    // MARK: - Enviar
     private func enviarComentario() async {
         let trimmed = nuevoComentario.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty, !sending else { return }
+
+        sending = true
+        defer { sending = false }
 
         do {
             let session = try await SupabaseManager.shared.client.auth.session
@@ -151,38 +197,26 @@ struct ComentariosView: View {
                 comentario_padre_id: respondiendoA?.id
             )
 
-            // Insert y devuelve el comentario con perfil.username
             let res = try await SupabaseManager.shared.client
                 .from("comentarios")
                 .insert(nuevo)
-                .select("*, perfil:autor_id(username)") // trae username junto al comentario
+                .select("*, perfil:autor_id(username,avatar_url)") // 👈 trae avatar también
                 .single()
                 .execute()
 
             let creado = try res.decoded(to: Comentario.self)
-
-            // Añade sin mutar propiedades
             comentarios.append(creado)
             comentarios.sort { $0.creado_en < $1.creado_en }
+            respuestasByParent = Dictionary(grouping: comentarios, by: { $0.comentario_padre_id })
 
             await MainActor.run {
                 nuevoComentario = ""
                 respondiendoA = nil
+                UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
             }
         } catch {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
             print("❌ Error al enviar comentario: \(error)")
         }
-    }
-
-    private func usernameActual() async throws -> String {
-        let s = try await SupabaseManager.shared.client.auth.session
-        let r = try await SupabaseManager.shared.client
-            .from("perfil")
-            .select("username")
-            .eq("id", value: s.user.id.uuidString)
-            .single()
-            .execute()
-        struct U: Decodable { let username: String }
-        return try r.decoded(to: U.self).username
     }
 }

@@ -130,40 +130,74 @@ struct PostView: View {
     private func primeAll() async {
         isReady = false
 
-        // Meta (1 sola RPC)
-        async let meta = try? await SupabaseService.shared.fetchPostMeta(postID: post.id)
+        // Copias inmutables para no capturar `self` en funciones @Sendable
+        let postID = post.id
+        let autorID = post.autor_id
+        let avatarURL = post.avatar_url.flatMap { URL(string: $0) }
+        let ejercicios = post.contenido
+        let existingAvatar = self.avatarImage
+        let existingCache = self.imageCache
 
-        // Si el feed ya prefetched, úsalo antes de ir a red
-        if avatarImage == nil, let preA = await FeedPrefetcher.shared.avatar(for: post.autor_id) {
+        // Prefetch ya disponible (no concurrente)
+        if avatarImage == nil, let preA = await FeedPrefetcher.shared.avatar(for: autorID) {
             avatarImage = preA
         }
-        if imageCache.isEmpty, let preI = await FeedPrefetcher.shared.images(for: post.id) {
+        if imageCache.isEmpty, let preI = await FeedPrefetcher.shared.images(for: postID) {
             imageCache = preI
         }
 
-        // Avatar (downsample 40x40) si no venía del prefetch
-        async let avatarTask: UIImage? = {
-            if let avatarImage { return avatarImage }
-            if let urlStr = post.avatar_url, let url = URL(string: urlStr) {
+        // Helpers concurrentes, @Sendable y sin capturar self
+        @Sendable func loadAvatarImage(url: URL?, existing: UIImage?) async -> UIImage? {
+            if let existing { return existing }
+            if let url {
                 return await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 40, height: 40))
             }
             return nil
-        }()
+        }
 
-        // Thumbnails carrusel (120x120) para los que falten
-        async let thumbsTask: [UUID: UIImage] = await preloadCarouselImages(for: post.contenido, existing: imageCache)
+        @Sendable func loadThumbs(ejercicios: [EjercicioPostContenido], existing: [UUID: UIImage]) async -> [UUID: UIImage] {
+            var dict: [UUID: UIImage] = [:]
+            await withTaskGroup(of: (UUID, UIImage?)?.self) { group in
+                for e in ejercicios {
+                    guard existing[e.id] == nil else { continue }
+                    if let s = e.imagen_url, let url = URL(string: s) {
+                        group.addTask {
+                            let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 120, height: 120))
+                            return (e.id, img)
+                        }
+                    }
+                }
+                for await pair in group {
+                    if let (id, img) = pair, let img { dict[id] = img }
+                }
+            }
+            return dict
+        }
 
-        let (m, avatar, thumbs) = await (meta, avatarTask, thumbsTask)
+        // Lanza en paralelo
+        async let metaTask = SupabaseService.shared.fetchPostMeta(postID: postID) // throws
+        async let avatarTask: UIImage? = loadAvatarImage(url: avatarURL, existing: existingAvatar)
+        async let thumbsTask: [UUID: UIImage] = loadThumbs(ejercicios: ejercicios, existing: existingCache)
+
+        // Recoge resultados
+        let avatar = await avatarTask
+        let thumbs = await thumbsTask
+        let meta: SupabaseService.PostMeta?
+        do {
+            meta = try await metaTask
+        } catch {
+            meta = nil
+        }
 
         await MainActor.run {
-            if let m {
+            if let m = meta {
                 leDioLike = m.liked
                 guardado  = m.saved
-                numLikes  = m.likes_count
+                // 👇 clamp para evitar negativos por cualquier motivo
+                numLikes  = max(0, m.likes_count)
             }
             if let avatar { avatarImage = avatar }
             imageCache.merge(thumbs) { old, _ in old }
-
             withAnimation(.easeOut(duration: 0.18)) { isReady = true }
         }
     }
@@ -227,23 +261,43 @@ private extension PostView {
         }
     }
 
+    // ✅ Optimista seguro + clamp (nunca < 0) + rollback simétrico
     func toggleLike() async {
+        let newValue = !leDioLike  // lo que queremos dejar finalmente
+
+        // Aplicación optimista
         await MainActor.run {
-            leDioLike.toggle()
-            numLikes += leDioLike ? 1 : -1
+            if newValue {
+                // Pasamos de no-like -> like
+                if !leDioLike { numLikes += 1 }
+            } else {
+                // Pasamos de like -> no-like
+                if leDioLike { numLikes = max(0, numLikes - 1) }
+            }
+            leDioLike = newValue
         }
+
+        // Persistencia
         do {
-            try await SupabaseService.shared.setLike(postID: post.id, like: leDioLike)
-            if leDioLike {
+            try await SupabaseService.shared.setLike(postID: post.id, like: newValue)
+            if newValue {
                 UIImpactFeedbackGenerator().impactOccurred(intensity: 0.7)
             }
         } catch {
-            print("❌ Error al cambiar like: \(error)")
+            // Rollback si falla
             await MainActor.run {
-                leDioLike.toggle()
-                numLikes += leDioLike ? 1 : -1
+                if newValue {
+                    // habíamos sumado; revertimos
+                    numLikes = max(0, numLikes - 1)
+                    leDioLike = false
+                } else {
+                    // habíamos restado; revertimos
+                    numLikes += 1
+                    leDioLike = true
+                }
             }
             UINotificationFeedbackGenerator().notificationOccurred(.error)
+            print("❌ Error al cambiar like: \(error)")
         }
     }
 

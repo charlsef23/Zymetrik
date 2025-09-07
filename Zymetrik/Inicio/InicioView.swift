@@ -9,9 +9,11 @@ struct InicioView: View {
     @State private var isLoadingMore = false
     @State private var reachedEnd = false
     @State private var beforeCursor: Date? = nil
+    @State private var lastRequestedCursor: Date? = nil
 
-    // Cancela cargas anteriores al cambiar pestaña
+    // Concurrencia
     @State private var loadTask: Task<Void, Never>? = nil
+    @State private var feedGeneration: Int = 0   // invalida respuestas viejas
 
     var body: some View {
         NavigationStack {
@@ -66,7 +68,7 @@ struct InicioView: View {
                                 PostView(post: post)
                                     .onAppear {
                                         if post.id == posts.last?.id {
-                                            Task { await loadMore() }
+                                            triggerLoadMoreIfNeeded()
                                         }
                                     }
                             }
@@ -79,40 +81,78 @@ struct InicioView: View {
 
                 Spacer()
             }
-            .task { await initialLoad() }
+            .task {
+                if posts.isEmpty {
+                    await refresh()
+                }
+            }
         }
     }
 
-    // MARK: - Carga
-    private func initialLoad() async {
-        if posts.isEmpty { await refresh() }
-    }
+    // MARK: - Acciones
 
     private func restartFeed() {
+        // Invalida cualquier respuesta pendiente
         loadTask?.cancel()
-        loadTask = Task {
-            reachedEnd = false
-            beforeCursor = nil
-            posts = []
-            cargando = true
-            await loadMore(reset: true)
-            cargando = false
+        feedGeneration &+= 1
+
+        reachedEnd = false
+        beforeCursor = nil
+        lastRequestedCursor = nil
+        posts = []
+        cargando = true
+
+        let currentGen = feedGeneration
+        loadTask = Task { [currentGen] in
+            await loadMore(reset: true, generation: currentGen)
+            await MainActor.run { cargando = false }
         }
     }
 
     private func refresh() async {
-        reachedEnd = false
-        beforeCursor = nil
-        await loadMore(reset: true)
+        loadTask?.cancel()
+        feedGeneration &+= 1
+
+        await MainActor.run {
+            reachedEnd = false
+            beforeCursor = nil
+            lastRequestedCursor = nil
+            cargando = posts.isEmpty
+        }
+
+        let currentGen = feedGeneration
+        await loadMore(reset: true, generation: currentGen)
+        await MainActor.run { cargando = false }
     }
 
-    private func loadMore(reset: Bool = false) async {
+    private func triggerLoadMoreIfNeeded() {
         guard !isLoadingMore, !reachedEnd else { return }
-        isLoadingMore = true
-        defer { isLoadingMore = false }
+        guard beforeCursor != lastRequestedCursor else { return } // evita duplicar misma página
+        lastRequestedCursor = beforeCursor
+
+        let currentGen = feedGeneration
+        loadTask?.cancel()
+        loadTask = Task { [currentGen] in
+            await loadMore(reset: false, generation: currentGen)
+        }
+    }
+
+    // MARK: - Carga (único punto de red)
+    private func loadMore(reset: Bool, generation: Int) async {
+        // Doble guard (estado + generación)
+        await MainActor.run {
+            if isLoadingMore || reachedEnd { return }
+            isLoadingMore = true
+        }
+        defer {
+            Task { @MainActor in isLoadingMore = false }
+        }
 
         do {
-            // Llama a la RPC get_feed_posts (keyset)
+            try Task.checkCancellation()
+            guard generation == feedGeneration else { return }
+
+            // RPC get_feed_posts (keyset)
             struct P: Encodable {
                 let p_user: UUID
                 let p_after_ts: String?
@@ -124,7 +164,7 @@ struct InicioView: View {
 
             let p = P(
                 p_user: me,
-                p_after_ts: nil, // podrías usarlo para “live updates” (nuevos)
+                p_after_ts: nil,
                 p_before_ts: beforeCursor.map { iso.string(from: $0) },
                 p_limit: 20
             )
@@ -135,24 +175,32 @@ struct InicioView: View {
 
             let page = try res.decodedList(to: Post.self)
 
-            if reset {
-                posts = page
-            } else {
-                var dict = Dictionary(uniqueKeysWithValues: posts.map { ($0.id, $0) })
-                for p in page { dict[p.id] = p }
-                posts = dict.values.sorted { $0.fecha > $1.fecha }
-            }
+            guard generation == feedGeneration else { return }
 
-            if page.isEmpty {
-                reachedEnd = true
-            } else {
-                beforeCursor = page.last?.fecha
+            await MainActor.run {
+                if reset {
+                    posts = page
+                } else {
+                    var dict = Dictionary(uniqueKeysWithValues: posts.map { ($0.id, $0) })
+                    for p in page { dict[p.id] = p }
+                    posts = dict.values.sorted { $0.fecha > $1.fecha }
+                }
+
+                if page.isEmpty {
+                    reachedEnd = true
+                } else {
+                    // Keyset por fecha
+                    beforeCursor = page.last?.fecha
+                }
             }
+        } catch is CancellationError {
+            // Silenciamos cancelaciones por cambios de vista/refresh
+            return
+        } catch let urlErr as URLError where urlErr.code == .cancelled {
+            // Silenciamos NSURLErrorDomain Code -999
+            return
         } catch {
-            if (error as? CancellationError) == nil {
-                print("Error al cargar feed: \(error)")
-            }
+            print("Error al cargar feed: \(error)")
         }
-        cargando = false
     }
 }

@@ -159,18 +159,56 @@ class SetRegistro: Identifiable, ObservableObject {
     }
 }
 
-// MARK: - Helpers
+// MARK: - Helpers (decodificador flexible de fechas)
+
+// Contenedor no genérico para poder tener una estática almacenada
+fileprivate enum _SupabaseDecoders {
+    static let flexible: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let raw = try container.decode(String.self)
+
+            // 1) ISO8601 con fracciones
+            let isoFrac = ISO8601DateFormatter()
+            isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds, .withColonSeparatorInTimeZone]
+            if let d = isoFrac.date(from: raw) { return d }
+
+            // 2) ISO8601 sin fracciones
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withColonSeparatorInTimeZone]
+            if let d = iso.date(from: raw) { return d }
+
+            // 3) Fallbacks RFC3339 comunes
+            let formats = [
+                "yyyy-MM-dd'T'HH:mm:ssXXXXX",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXXXX",
+                "yyyy-MM-dd HH:mm:ssXXXXX"
+            ]
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.calendar = Calendar(identifier: .iso8601)
+
+            for f in formats {
+                df.dateFormat = f
+                if let d = df.date(from: raw) { return d }
+            }
+
+            throw DecodingError.dataCorruptedError(in: container,
+                debugDescription: "Unsupported date format: \(raw)")
+        }
+        return decoder
+    }()
+}
+
 extension PostgrestResponse {
     func decoded<U: Decodable>(to type: U.Type) throws -> U {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(U.self, from: self.data)
+        try _SupabaseDecoders.flexible.decode(U.self, from: self.data)
     }
 
     func decodedList<U: Decodable>(to type: U.Type) throws -> [U] {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode([U].self, from: self.data)
+        try _SupabaseDecoders.flexible.decode([U].self, from: self.data)
     }
 }
 
