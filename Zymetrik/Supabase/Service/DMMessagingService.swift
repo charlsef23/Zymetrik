@@ -1,4 +1,3 @@
-// DMMessagingService.swift
 import Foundation
 import Supabase
 
@@ -8,8 +7,19 @@ final class DMMessagingService {
 
     let client = SupabaseManager.shared.client
 
-    // Realtime V2
+    // Realtime V2 (chat por conversación)
     private var channels: [UUID: RealtimeChannelV2] = [:]
+    private var subscribing: Set<UUID> = []
+
+    // Realtime para Inbox (un canal por conversación para “bump”/preview)
+    private var inboxChannels: [UUID: RealtimeChannelV2] = [:]
+
+    // MARK: - Logger
+    private func log(_ items: Any...) {
+        #if DEBUG
+        print("[DM-RT]", items.map { "\($0)" }.joined(separator: " "))
+        #endif
+    }
 
     // MARK: - Decoder robusto
     private static let iso8601NoFrac: ISO8601DateFormatter = {
@@ -23,15 +33,9 @@ final class DMMessagingService {
         return f
     }()
     private static let fallbackFormatters: [DateFormatter] = {
-        let f1 = DateFormatter()
-        f1.locale = .init(identifier: "en_US_POSIX")
-        f1.dateFormat = "yyyy-MM-dd HH:mm:ssZ"
-        let f2 = DateFormatter()
-        f2.locale = .init(identifier: "en_US_POSIX")
-        f2.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX"
-        let f3 = DateFormatter()
-        f3.locale = .init(identifier: "en_US_POSIX")
-        f3.dateFormat = "yyyy-MM-dd'T'HH:mm:ssXXXXX"
+        let f1 = DateFormatter(); f1.locale = .init(identifier: "en_US_POSIX"); f1.dateFormat = "yyyy-MM-dd HH:mm:ssZ"
+        let f2 = DateFormatter(); f2.locale = .init(identifier: "en_US_POSIX"); f2.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX"
+        let f3 = DateFormatter(); f3.locale = .init(identifier: "en_US_POSIX"); f3.dateFormat = "yyyy-MM-dd'T'HH:mm:ssXXXXX"
         return [f1, f2, f3]
     }()
     private lazy var decoder: JSONDecoder = {
@@ -56,29 +60,20 @@ final class DMMessagingService {
     }
 
     // MARK: - RPC Params
-    private struct GetOrCreateDMParams: Encodable { let a: String; let b: String }
-    private struct GetUserConversationsParams: Encodable { let user_id: String; let lim: Int }
-    private struct GetConversationMembersParams: Encodable { let conv_id: String }
-    private struct GetPerfilLiteParams: Encodable { let user_id: String }
-    private struct GetDMMessagesParams: Encodable {
-        let conv_id: String
-        let before_ts: String?
-        let after_ts: String?
-        let page_size: Int
-    }
-    private struct SendDMParams: Encodable {
-        let conv_id: String
-        let body: String
-        let client_tag: String?
-    }
-    private struct EditParams: Encodable { let msg_id: String; let new_body: String }
-    private struct HideParams: Encodable { let conv_id: String; let msg_id: String }
-    private struct DeleteAllParams: Encodable { let msg_id: String }
+    private struct GetOrCreateDMParams: Encodable { let a: UUID; let b: UUID }
+    private struct GetUserConversationsParams: Encodable { let user_id: UUID; let lim: Int }
+    private struct GetConversationMembersParams: Encodable { let conv_id: UUID }
+    private struct GetPerfilLiteParams: Encodable { let user_id: UUID }
+    private struct GetDMMessagesParams: Encodable { let conv_id: UUID; let before_ts: String?; let after_ts: String?; let page_size: Int }
+    private struct SendDMParams: Encodable { let conv_id: UUID; let body: String; let client_tag: String? }
+    private struct EditParams: Encodable { let msg_id: UUID; let new_body: String }
+    private struct HideParams: Encodable { let conv_id: UUID; let msg_id: UUID }
+    private struct DeleteAllParams: Encodable { let msg_id: UUID }
 
     // MARK: - RPCs
     func getOrCreateDM(with other: UUID) async throws -> UUID {
         let my = try await currentUserID()
-        let p = GetOrCreateDMParams(a: my.uuidString, b: other.uuidString)
+        let p = GetOrCreateDMParams(a: my, b: other)
         let res = try await client.rpc("get_or_create_dm", params: p).execute()
 
         if let dict = try? JSONSerialization.jsonObject(with: res.data) as? [String: Any] {
@@ -98,19 +93,19 @@ final class DMMessagingService {
 
     func fetchConversations(limit: Int = 30) async throws -> [DMConversation] {
         let my = try await currentUserID()
-        let p = GetUserConversationsParams(user_id: my.uuidString, lim: limit)
+        let p = GetUserConversationsParams(user_id: my, lim: limit)
         let res = try await client.rpc("get_user_conversations", params: p).execute()
         return try decodeList(res.data)
     }
 
     func fetchMembers(conversationID: UUID) async throws -> [DMMember] {
-        let p = GetConversationMembersParams(conv_id: conversationID.uuidString)
+        let p = GetConversationMembersParams(conv_id: conversationID)
         let res = try await client.rpc("get_conversation_members", params: p).execute()
         return try decodeList(res.data)
     }
 
     func fetchPerfil(id: UUID) async throws -> PerfilLite {
-        let p = GetPerfilLiteParams(user_id: id.uuidString)
+        let p = GetPerfilLiteParams(user_id: id)
         let res = try await client.rpc("get_perfil_lite", params: p).execute()
         if let one: PerfilLite = try? decodeObject(res.data) { return one }
         let list: [PerfilLite] = try decodeList(res.data)
@@ -123,90 +118,99 @@ final class DMMessagingService {
     func fetchMessages(conversationID: UUID, before: Date? = nil, after: Date? = nil, pageSize: Int = 50) async throws -> [DMMessage] {
         let iso = ISO8601DateFormatter()
         let p = GetDMMessagesParams(
-            conv_id: conversationID.uuidString,
+            conv_id: conversationID,
             before_ts: before.map { iso.string(from: $0) },
             after_ts:  after.map { iso.string(from: $0) },
             page_size: pageSize
         )
         let res = try await client.rpc("get_dm_messages", params: p).execute()
-        return try decodeList(res.data) // asc
+        return try decodeList(res.data)
+    }
+
+    func fetchLastMessage(conversationID: UUID) async throws -> DMMessage? {
+        struct P: Encodable { let conv_id: UUID }
+        let res = try await client.rpc("get_last_dm_message", params: P(conv_id: conversationID)).execute()
+        let list: [DMMessage] = try decodeList(res.data)
+        return list.first
     }
 
     func sendMessage(conversationID: UUID, text: String, clientTag: String) async throws -> DMMessage {
-        let payload = SendDMParams(conv_id: conversationID.uuidString, body: text, client_tag: clientTag)
+        let payload = SendDMParams(conv_id: conversationID, body: text, client_tag: clientTag)
         let res = try await client.rpc("send_dm_message", params: payload).execute()
         return try decodeObject(res.data) as DMMessage
     }
 
     func setTyping(conversationID: UUID, typing: Bool) async {
-        struct P: Encodable { let conv_id: String; let typing: Bool }
-        _ = try? await client.rpc("set_dm_typing", params: P(conv_id: conversationID.uuidString, typing: typing)).execute()
+        struct P: Encodable { let conv_id: UUID; let typing: Bool }
+        _ = try? await client.rpc("set_dm_typing", params: P(conv_id: conversationID, typing: typing)).execute()
     }
 
     func markRead(conversationID: UUID) async {
-        struct P: Encodable { let conv_id: String }
-        _ = try? await client.rpc("mark_dm_read", params: P(conv_id: conversationID.uuidString)).execute()
+        struct P: Encodable { let conv_id: UUID }
+        _ = try? await client.rpc("mark_dm_read", params: P(conv_id: conversationID)).execute()
     }
 
     func editMessage(messageID: UUID, newText: String) async throws -> DMMessage {
-        let res = try await client.rpc("edit_dm_message", params: EditParams(msg_id: messageID.uuidString, new_body: newText)).execute()
+        let res = try await client.rpc("edit_dm_message", params: EditParams(msg_id: messageID, new_body: newText)).execute()
         return try decodeObject(res.data) as DMMessage
     }
 
     func deleteMessageForAll(messageID: UUID) async throws -> DMMessage {
-        let res = try await client.rpc("delete_dm_message_for_all", params: DeleteAllParams(msg_id: messageID.uuidString)).execute()
+        let res = try await client.rpc("delete_dm_message_for_all", params: DeleteAllParams(msg_id: messageID)).execute()
         return try decodeObject(res.data) as DMMessage
     }
 
     func hideMessageForMe(conversationID: UUID, messageID: UUID) async {
-        _ = try? await client.rpc("hide_dm_message_for_me", params: HideParams(conv_id: conversationID.uuidString, msg_id: messageID.uuidString)).execute()
+        _ = try? await client.rpc("hide_dm_message_for_me", params: HideParams(conv_id: conversationID, msg_id: messageID)).execute()
     }
 
-    // MARK: - Realtime V2
-
+    // MARK: - Realtime (chat en conversación)
     struct RealtimeHandlers {
         var onInserted: ((DMMessage) -> Void)?
         var onUpdated:  ((DMMessage) -> Void)?
-        var onDeletedGlobal: ((UUID) -> Void)?
+        var onDeletedGlobal: ((UUID) -> Void)?   // Soft-delete llega por UpdateAction
         var onTypingChanged: ((UUID, Bool) -> Void)?
         var onMembersUpdated: (([DMMember]) -> Void)?
     }
 
-    /// Suscribe a cambios de `dm_messages` y `dm_members` para una conversación.
     @discardableResult
     func subscribe(conversationID: UUID, handlers: RealtimeHandlers) async -> RealtimeChannelV2 {
-        // Desuscribe si ya existe
+        if subscribing.contains(conversationID), let ch = channels[conversationID] {
+            return ch
+        }
+        subscribing.insert(conversationID); defer { subscribing.remove(conversationID) }
         await unsubscribe(conversationID: conversationID)
 
-        // Crea canal
         let channel = client.realtimeV2.channel("dm:\(conversationID.uuidString)")
         channels[conversationID] = channel
+        log("subscribing to dm:\(conversationID.uuidString)")
 
-        // Filtro PostgREST
         let filter = "conversation_id=eq.\(conversationID.uuidString)"
 
-        // INSERTS: dm_messages
+        // INSERT (nuevo mensaje)
         _ = channel.onPostgresChange(
             InsertAction.self,
             schema: "public",
             table: "dm_messages",
             filter: filter
         ) { [weak self] change in
+            self?.log("INSERT dm_messages", conversationID, "id:", (change.record["id"] ?? "nil"))
             guard let self else { return }
-            let rec = change.record // [String: AnyJSON]
+            let rec = change.record
             if let data = try? JSONEncoder().encode(rec),
                let msg  = try? self.decoder.decode(DMMessage.self, from: data) {
                 handlers.onInserted?(msg)
             }
         }
 
-        // UPDATES: dm_messages (editado / delete_for_all)
+        // UPDATE (ediciones / soft-delete global)
         _ = channel.onPostgresChange(
             UpdateAction.self,
             schema: "public",
             table: "dm_messages",
             filter: filter
         ) { [weak self] change in
+            self?.log("UPDATE dm_messages", conversationID, "id:", (change.record["id"] ?? "nil"))
             guard let self else { return }
             let rec = change.record
             if let data = try? JSONEncoder().encode(rec),
@@ -219,31 +223,29 @@ final class DMMessagingService {
             }
         }
 
-        // UPDATES: dm_members (typing / last_read_at)
+        // Cambios en miembros (typing / read)
         _ = channel.onPostgresChange(
             UpdateAction.self,
             schema: "public",
             table: "dm_members",
             filter: filter
         ) { [weak self] _ in
+            self?.log("UPDATE dm_members", conversationID)
             guard let self else { return }
-            // Envolver trabajo async en Task para que el callback siga siendo sync
             Task {
                 if let mems = try? await self.fetchMembers(conversationID: conversationID) {
-                    // emitir cambios en main si tu UI lo requiere:
                     handlers.onMembersUpdated?(mems)
                     if let typingUser = mems.first(where: { $0.is_typing == true })?.autor_id {
                         handlers.onTypingChanged?(typingUser, true)
-                    } else if let other = mems.first?.autor_id {
-                        handlers.onTypingChanged?(other, false)
+                    } else if let any = mems.first?.autor_id {
+                        handlers.onTypingChanged?(any, false)
                     }
                 }
             }
         }
 
-        // Activar canal (async)
         await channel.subscribe()
-
+        log("subscribed dm:\(conversationID.uuidString)")
         return channel
     }
 
@@ -251,14 +253,45 @@ final class DMMessagingService {
         if let ch = channels[conversationID] {
             await ch.unsubscribe()
             channels.removeValue(forKey: conversationID)
+            log("unsubscribed", conversationID)
         }
     }
-    
-    // DMMessagingService.swift
-    func fetchLastMessage(conversationID: UUID) async throws -> DMMessage? {
-        struct P: Encodable { let conv_id: String }
-        let res = try await client.rpc("get_last_dm_message", params: P(conv_id: conversationID.uuidString)).execute()
-        let list: [DMMessage] = try decodeList(res.data)
-        return list.first
+
+    // MARK: - Realtime para Inbox
+    /// Suscribe el inbox a una lista de conversaciones. Llama a `onConversationBumped` cuando
+    /// llega/edita/borra un mensaje o cambia last_message_at para esa conversación.
+    func subscribeInbox(
+        conversationIDs: [UUID],
+        onConversationBumped: @escaping (UUID) -> Void
+    ) async {
+        // Cerrar canales no deseados
+        let wanted = Set(conversationIDs)
+        for (id, ch) in inboxChannels where !wanted.contains(id) {
+            await ch.unsubscribe()
+            inboxChannels.removeValue(forKey: id)
+            log("inbox unsubscribed", id)
+        }
+
+        // Abrir/asegurar canales para las conversaciones activas
+        for convID in wanted {
+            if inboxChannels[convID] != nil { continue }
+
+            let ch = client.realtimeV2.channel("inbox:\(convID.uuidString)")
+            inboxChannels[convID] = ch
+            log("inbox subscribing to inbox:\(convID.uuidString)")
+
+            let filter = "conversation_id=eq.\(convID.uuidString)"
+
+            // INSERT/UPDATE/DELETE en dm_messages -> actualizar preview/orden
+            _ = ch.onPostgresChange(InsertAction.self, schema: "public", table: "dm_messages", filter: filter) { _ in onConversationBumped(convID) }
+            _ = ch.onPostgresChange(UpdateAction.self, schema: "public", table: "dm_messages", filter: filter) { _ in onConversationBumped(convID) }
+            _ = ch.onPostgresChange(DeleteAction.self, schema: "public", table: "dm_messages", filter: filter) { _ in onConversationBumped(convID) }
+
+            // Cambios en last_message_at (por trigger)
+            _ = ch.onPostgresChange(UpdateAction.self, schema: "public", table: "dm_conversations", filter: "id=eq.\(convID.uuidString)") { _ in onConversationBumped(convID) }
+
+            await ch.subscribe()
+            log("inbox subscribed inbox:\(convID.uuidString)")
+        }
     }
 }

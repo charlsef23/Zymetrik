@@ -226,12 +226,16 @@ struct BuscarView: View {
             let session = try await SupabaseManager.shared.client.auth.session
             let currentUserID = session.user.id
 
+            // Si creaste la columna generada `username_lc` + índice pg_trgm,
+            // usa esta línea (más rápida):
+            let queryColumn = "username_lc"   // <- si NO la tienes, cambia a "username"
+
             let resp = try await SupabaseManager.shared.client
                 .from("perfil")
                 .select("id, username, nombre, avatar_url")
-                .ilike("username", pattern: "%\(currentQuery)%")
+                .ilike(queryColumn, pattern: "%\(currentQuery.lowercased())%")
                 // .neq("id", value: currentUserID.uuidString) // opcional para ocultarte
-                .order("username")
+                .order("username") // orden estable; refinamos abajo
                 .limit(30)
                 .execute()
 
@@ -262,6 +266,7 @@ struct BuscarView: View {
     }
 
     private func cargarSeguidos(userID: UUID) async {
+        struct FollowedOnly: Decodable { let followed_id: UUID }
         do {
             let r = try await SupabaseManager.shared.client
                 .from("followers")
@@ -269,10 +274,8 @@ struct BuscarView: View {
                 .eq("follower_id", value: userID.uuidString)
                 .execute()
 
-            if let arr = try? JSONSerialization.jsonObject(with: r.data) as? [[String: String]] {
-                let ids = arr.compactMap { $0["followed_id"] }.compactMap(UUID.init(uuidString:))
-                await MainActor.run { seguidos = Set(ids) }
-            }
+            let rows = try r.decodedList(to: FollowedOnly.self)
+            await MainActor.run { seguidos = Set(rows.map { $0.followed_id }) }
         } catch {
             if !isCancelled(error) {
                 print("❌ Seguidos (real): \(error)")

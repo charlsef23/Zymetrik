@@ -8,20 +8,25 @@ public struct DMMessage: Codable, Identifiable, Hashable {
     public let id: UUID
     public let conversation_id: UUID
     public let autor_id: UUID
-    public let content: String
+    public var content: String
     public let created_at: Date
     public let client_tag: String?
     public let edited_at: Date?
     public let deleted_for_all_at: Date?
-    // Solo UI
+    // Solo para UI (estado local de entrega)
     public var _delivery: DeliveryState? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, conversation_id, autor_id, content, created_at, client_tag, edited_at, deleted_for_all_at
+        case id, conversation_id, autor_id, content,
+             created_at, client_tag, edited_at, deleted_for_all_at
     }
 
-    public static func == (lhs: DMMessage, rhs: DMMessage) -> Bool { lhs.id == rhs.id }
-    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    public static func == (lhs: DMMessage, rhs: DMMessage) -> Bool {
+        lhs.id == rhs.id
+    }
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 }
 
 public struct DMConversation: Codable, Identifiable, Hashable {

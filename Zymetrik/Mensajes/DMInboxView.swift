@@ -4,8 +4,8 @@ struct DMInboxItem: Identifiable, Hashable {
     let id: UUID
     let conversation: DMConversation
     let otherPerfil: PerfilLite?
-    let lastMessagePreview: String?
-    let lastAt: Date?
+    var lastMessagePreview: String?
+    var lastAt: Date?
 }
 
 struct DMInboxView: View {
@@ -22,9 +22,12 @@ struct DMInboxView: View {
                 } else if let errorText {
                     VStack(spacing: 12) {
                         Text("Error").font(.headline)
-                        Text(errorText).foregroundColor(.secondary)
+                        Text(errorText)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
                         Button("Reintentar") { Task { await load() } }
                     }
+                    .padding()
                 } else if items.isEmpty {
                     ContentUnavailableView(
                         "Sin mensajes",
@@ -35,10 +38,14 @@ struct DMInboxView: View {
                     List(items) { it in
                         Button { pushChat = it } label: {
                             HStack(spacing: 12) {
-                                AvatarAsyncImage(url: URL(string: it.otherPerfil?.avatar_url ?? ""), size: 48)
+                                AvatarAsyncImage(
+                                    url: URL(string: it.otherPerfil?.avatar_url ?? ""),
+                                    size: 48
+                                )
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(it.otherPerfil?.username ?? "Conversación")
                                         .font(.headline)
+                                        .lineLimit(1)
                                     Text(it.lastMessagePreview ?? "—")
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
@@ -51,6 +58,7 @@ struct DMInboxView: View {
                                         .foregroundColor(.secondary)
                                 }
                             }
+                            .contentShape(Rectangle())
                         }
                     }
                     .listStyle(.plain)
@@ -89,9 +97,11 @@ struct DMInboxView: View {
         }
     }
 
-    // MARK: - Data
+    // MARK: - Data (carga + suscripción realtime de inbox)
     private func load() async {
-        loading = true; errorText = nil
+        loading = true
+        errorText = nil
+
         do {
             let svc = DMMessagingService.shared
             let myID = try await svc.currentUserID()
@@ -106,12 +116,10 @@ struct DMInboxView: View {
                         do {
                             async let members = svc.fetchMembers(conversationID: conv.id)
 
-                            // 🔹 Intenta obtener el ÚLTIMO mensaje real (DESC LIMIT 1)
                             let last: DMMessage?
                             do {
                                 last = try await svc.fetchLastMessage(conversationID: conv.id)
                             } catch {
-                                // Fallback si la RPC no existe: usa la antigua (ASC) y coge el .last
                                 let one = try await svc.fetchMessages(conversationID: conv.id, pageSize: 1)
                                 last = one.last
                             }
@@ -128,7 +136,7 @@ struct DMInboxView: View {
                                 lastAt: conv.last_message_at ?? last?.created_at
                             )
                         } catch {
-                            return nil // omitimos convs con fallo puntual
+                            return nil
                         }
                     }
                 }
@@ -137,13 +145,45 @@ struct DMInboxView: View {
                 }
             }
 
-            self.items = temp.sorted { (a, b) in
-                (a.lastAt ?? .distantPast) > (b.lastAt ?? .distantPast)
+            // Ordenar por más reciente
+            temp.sort { (a, b) in (a.lastAt ?? .distantPast) > (b.lastAt ?? .distantPast) }
+            self.items = temp
+
+            // Suscribir inbox a estas conversaciones
+            Task {
+                await DMMessagingService.shared.subscribeInbox(
+                    conversationIDs: self.items.map { $0.id },
+                    onConversationBumped: { convID in
+                        Task { await refreshConversationItem(convID) }
+                    }
+                )
             }
         } catch {
             self.errorText = error.localizedDescription
         }
+
         loading = false
+    }
+
+    /// Actualiza preview y reordena el inbox para una conversación “bumped”.
+    private func refreshConversationItem(_ convID: UUID) async {
+        do {
+            let svc = DMMessagingService.shared
+            let last = try await svc.fetchLastMessage(conversationID: convID)
+
+            await MainActor.run {
+                if let idx = items.firstIndex(where: { $0.id == convID }) {
+                    var it = items[idx]
+                    it.lastMessagePreview = last?.content ?? it.lastMessagePreview
+                    it.lastAt = last?.created_at ?? it.lastAt
+                    items[idx] = it
+                    // Reordenar por más reciente
+                    items.sort { (a, b) in (a.lastAt ?? .distantPast) > (b.lastAt ?? .distantPast) }
+                }
+            }
+        } catch {
+            // Silencioso; opcionalmente puedes loggear el error.
+        }
     }
 
     private func shortDate(_ date: Date) -> String {

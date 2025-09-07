@@ -30,7 +30,7 @@ struct ChatTopBar: View {
                 }
             }
             .padding(.vertical, 4)
-            .padding(.top, 2) // 👈 lo bajamos un poquito
+            .padding(.top, 2)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

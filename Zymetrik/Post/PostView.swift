@@ -3,7 +3,7 @@ import SwiftUI
 struct PostView: View {
     let post: Post
     var onPostEliminado: (() -> Void)?
-    var onGuardadoCambio: ((Bool) -> Void)? = nil  // 👈 NUEVO
+    var onGuardadoCambio: ((Bool) -> Void)? = nil
 
     @State private var ejercicioSeleccionado: EjercicioPostContenido?
     @State private var leDioLike = false
@@ -11,6 +11,10 @@ struct PostView: View {
     @State private var guardado = false
     @State private var mostrarComentarios = false
     @State private var mostrarConfirmacionEliminar = false
+
+    // Evita re-disparos en reappear (scroll)
+    @State private var didPrime = false
+    @State private var primeTask: Task<Void, Never>? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -36,19 +40,39 @@ struct PostView: View {
         }
         .padding()
         .onAppear {
-            ejercicioSeleccionado = post.contenido.first
-            Task {
-                await comprobarSiLeDioLike()
-                await cargarNumeroDeLikes()
-                await comprobarSiGuardado()
+            if !didPrime {
+                didPrime = true
+                ejercicioSeleccionado = post.contenido.first
+
+                // Paraleliza 3 llamadas; menos latencia percibida
+                primeTask?.cancel()
+                primeTask = Task {
+                    await primePostMeta()
+                }
             }
         }
+        .onDisappear { primeTask?.cancel() }
         .sheet(isPresented: $mostrarComentarios) {
             ComentariosView(postID: post.id)
         }
         .alert("¿Eliminar este post?", isPresented: $mostrarConfirmacionEliminar) {
             Button("Eliminar", role: .destructive) { eliminarPost() }
             Button("Cancelar", role: .cancel) {}
+        }
+    }
+
+    // MARK: - Prime de meta (paralelo)
+    private func primePostMeta() async {
+        async let liked: Bool = (try? await SupabaseService.shared.didLike(postID: post.id)) ?? false
+        async let count: Int  = (try? await SupabaseService.shared.countLikes(postID: post.id)) ?? 0
+        async let saved: Bool = (try? await SupabaseService.shared.didSave(postID: post.id)) ?? false
+
+        let (l, c, s) = await (liked, count, saved)
+
+        await MainActor.run {
+            leDioLike = l
+            numLikes = c
+            guardado = s
         }
     }
 
@@ -65,18 +89,6 @@ struct PostView: View {
     }
 
     // MARK: - Likes
-    @MainActor
-    private func comprobarSiLeDioLike() async {
-        do { leDioLike = try await SupabaseService.shared.didLike(postID: post.id) }
-        catch { print("❌ Error comprobando like: \(error)") }
-    }
-
-    @MainActor
-    private func cargarNumeroDeLikes() async {
-        do { numLikes = try await SupabaseService.shared.countLikes(postID: post.id) }
-        catch { print("❌ Error cargando número de likes: \(error)") }
-    }
-
     private func toggleLike() async {
         await MainActor.run {
             leDioLike.toggle()
@@ -94,25 +106,16 @@ struct PostView: View {
     }
 
     // MARK: - Guardados
-    @MainActor
-    private func comprobarSiGuardado() async {
-        do { guardado = try await SupabaseService.shared.didSave(postID: post.id) }
-        catch { print("❌ Error comprobando guardado: \(error)") }
-    }
-
     private func toggleSave() async {
-        // Optimista
         await MainActor.run { guardado.toggle() }
-
         do {
             try await SupabaseService.shared.setSaved(postID: post.id, saved: guardado)
-            // Notifica al padre SOLO si ha ido bien
             await MainActor.run { onGuardadoCambio?(guardado) }
         } catch {
             print("❌ Error al cambiar guardado: \(error)")
             await MainActor.run {
-                guardado.toggle() // revertir
-                onGuardadoCambio?(guardado) // notifica estado real
+                guardado.toggle()
+                onGuardadoCambio?(guardado)
             }
         }
     }
