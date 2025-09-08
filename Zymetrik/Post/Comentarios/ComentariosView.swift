@@ -139,18 +139,18 @@ struct ComentariosView: View {
         do {
             struct P: Encodable {
                 let p_post: UUID
-                let p_before: String?
                 let p_limit: Int
+                let p_before: Date?   // 👈 usa Date?, el SDK lo serializa a timestamptz
             }
-            let iso = ISO8601DateFormatter()
-            let p = P(
+
+            let params = P(
                 p_post: postID,
-                p_before: beforeCursor.map { iso.string(from: $0) },
-                p_limit: 50
+                p_limit: 50,
+                p_before: beforeCursor   // nil en primera página
             )
 
             let res = try await SupabaseManager.shared.client
-                .rpc("get_post_comments", params: p)
+                .rpc("api_get_post_comments", params: params)   // 👈 nuevo nombre
                 .execute()
 
             let page = try res.decodedList(to: Comentario.self)
@@ -168,8 +168,9 @@ struct ComentariosView: View {
             if page.isEmpty {
                 reachedEnd = true
             } else {
-                // RPC ordena DESC, como ordenamos ASC local, toma el "primero" (el más antiguo de la página DESC)
-                beforeCursor = page.first?.creado_en
+                // La RPC devuelve DESC; el más antiguo de la página es el último en DESC,
+                // pero para cursor "antes de" nos sirve el último de la página
+                beforeCursor = page.last?.creado_en
             }
         } catch is CancellationError {
             return
