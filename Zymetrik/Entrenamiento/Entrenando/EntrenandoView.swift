@@ -41,21 +41,28 @@ struct EntrenandoView: View {
                                     setsPorEjercicio[ejercicio.id] = nuevos
                                     persistDraft()
                                 },
-                                // onUpdateSet
-                                onUpdateSet: { index, rep, peso in
-                                    guard var lista = setsPorEjercicio[ejercicio.id], lista.indices.contains(index) else { return }
-                                    lista[index].repeticiones = rep
+                                onUpdateSet: { index, repeticiones, peso in
+                                    guard let lista = setsPorEjercicio[ejercicio.id], lista.indices.contains(index) else { return }
+                                    lista[index].repeticiones = repeticiones
                                     lista[index].peso = peso
                                     setsPorEjercicio[ejercicio.id] = lista
                                     persistDraft()
                                 },
-
-                                // onDeleteSet
                                 onDeleteSet: { index in
                                     guard var lista = setsPorEjercicio[ejercicio.id], lista.indices.contains(index) else { return }
                                     lista.remove(at: index)
                                     for (i, s) in lista.enumerated() { s.numero = i + 1 }
                                     setsPorEjercicio[ejercicio.id] = lista
+                                    persistDraft()
+                                },
+                                onDuplicateSet: { index in
+                                    guard var lista = setsPorEjercicio[ejercicio.id], lista.indices.contains(index) else { return }
+                                    let base = lista[index]
+                                    let dup = SetRegistro(numero: base.numero + 1, repeticiones: base.repeticiones, peso: base.peso)
+                                    lista.insert(dup, at: index + 1)
+                                    for (i, s) in lista.enumerated() { s.numero = i + 1 }
+                                    setsPorEjercicio[ejercicio.id] = lista
+                                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                                     persistDraft()
                                 }
                             )

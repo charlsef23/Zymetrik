@@ -1,69 +1,148 @@
 import SwiftUI
 
-struct SetRegistroView: View {
-    @State private var repeticiones: String
-    @State private var peso: String
-
-    let set: SetRegistro
+struct SetRegistroRow: View {
+    @ObservedObject var set: SetRegistro
     let onUpdate: (Int, Double) -> Void
-
-    init(set: SetRegistro, onUpdate: @escaping (Int, Double) -> Void) {
-        self.set = set
-        self.onUpdate = onUpdate
-        _repeticiones = State(initialValue: set.repeticiones > 0 ? "\(set.repeticiones)" : "")
-        _peso = State(initialValue: set.peso > 0 ? "\(set.peso)" : "")
-    }
+    let onDelete: (() -> Void)?
+    let onDuplicate: (() -> Void)?
+    @State private var isCompleted = false
+    @FocusState private var pesoFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Set \(set.numero)")
-                    .font(.subheadline.weight(.semibold))
+        HStack(spacing: 10) {
+            // Nº de set
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isCompleted ? Color.green.opacity(0.15) : Color.secondary.opacity(0.12))
+                Text("\(set.numero)")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+            }
+            .frame(width: 44, height: 44)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isCompleted ? Color.green.opacity(0.55) : Color.secondary.opacity(0.2), lineWidth: 1)
+            )
 
-                Spacer()
-
-                HStack(spacing: 16) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "repeat")
-                            .foregroundStyle(.blue)
-                        TextField("Reps", text: $repeticiones)
-                            .keyboardType(.numberPad)
-                            .frame(width: 48)
-                            .multilineTextAlignment(.center)
-                            .submitLabel(.done)
-                            .onChange(of: repeticiones) { _, _ in
-                                update()
-                            }
+            // Reps
+            HStack(spacing: 6) {
+                Label("Reps", systemImage: "repeat")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.blue)
+                Stepper(value: Binding(
+                    get: { set.repeticiones },
+                    set: { new in
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        set.repeticiones = max(0, new)
+                        onUpdate(set.repeticiones, set.peso)
                     }
+                ), in: 0...300) {
+                    Text("\(set.repeticiones)")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .frame(minWidth: 34, alignment: .trailing)
+                }
+                .labelsHidden()
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .background(.thinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
 
-                    HStack(spacing: 6) {
-                        Image(systemName: "scalemass")
-                            .foregroundStyle(.green)
-                        TextField("Peso", text: $peso)
-                            .keyboardType(.decimalPad)
-                            .frame(width: 64)
-                            .multilineTextAlignment(.center)
-                            .submitLabel(.done)
-                            .onChange(of: peso) { _, _ in
-                                update()
-                            }
+            // Peso
+            HStack(spacing: 6) {
+                Label("Peso", systemImage: "scalemass")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.green)
+                TextField("0.0", value: Binding(
+                    get: { set.peso },
+                    set: { new in
+                        set.peso = max(0, new.rounded(toPlaces: 2))
+                        onUpdate(set.repeticiones, set.peso)
                     }
+                ), format: .number.precision(.fractionLength(0...2)))
+                    .focused($pesoFocused)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 64)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button("Hecho") { pesoFocused = false }
+                        }
+                    }
+                Text("kg")
+                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .background(.thinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            Spacer(minLength: 0)
+
+            // Completar set
+            Button {
+                isCompleted.toggle()
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(isCompleted ? .success : .warning)
+            } label: {
+                Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isCompleted ? .green : .secondary)
+            }
+            .accessibilityLabel(isCompleted ? "Set completado" : "Marcar set como completado")
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            if let onDelete {
+                Button(role: .destructive) { onDelete() } label: {
+                    Label("Borrar", systemImage: "trash")
                 }
             }
+            if let onDuplicate {
+                Button { onDuplicate() } label: {
+                    Label("Duplicar", systemImage: "plus.square.on.square")
+                }.tint(.blue)
+            }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(.gray.opacity(0.2), lineWidth: 1)
-        )
+        // Presets rápidos
+        .contextMenu {
+            Button("x5 reps") {
+                let h = UIImpactFeedbackGenerator(style: .soft); h.impactOccurred()
+                set.repeticiones += 5
+                onUpdate(set.repeticiones, set.peso)
+            }
+            Button("x10 reps") {
+                let h = UIImpactFeedbackGenerator(style: .soft); h.impactOccurred()
+                set.repeticiones += 10
+                onUpdate(set.repeticiones, set.peso)
+            }
+            Divider()
+            Button("+2.5 kg") {
+                let h = UIImpactFeedbackGenerator(style: .soft); h.impactOccurred()
+                set.peso = (set.peso + 2.5).rounded(toPlaces: 2)
+                onUpdate(set.repeticiones, set.peso)
+            }
+            Button("+5 kg") {
+                let h = UIImpactFeedbackGenerator(style: .soft); h.impactOccurred()
+                set.peso = (set.peso + 5).rounded(toPlaces: 2)
+                onUpdate(set.repeticiones, set.peso)
+            }
+        }
     }
+}
 
-    private func update() {
-        // No empujes 0 si el usuario está borrando para escribir
-        let repes = Int(repeticiones) ?? (repeticiones.isEmpty ? set.repeticiones : 0)
-        let pesoValor = Double(peso.replacingOccurrences(of: ",", with: ".")) ?? (peso.isEmpty ? set.peso : 0)
-        onUpdate(repes, pesoValor)
+private extension Double {
+    func rounded(toPlaces places: Int) -> Double {
+        let p = pow(10.0, Double(places))
+        return (self * p).rounded() / p
     }
 }
