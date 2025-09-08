@@ -1,103 +1,96 @@
 import SwiftUI
+import Supabase
 
 public struct PerfilRow: View {
     public let perfil: PerfilResumen
-    public var showFollowButton: Bool = true
+    public let showFollowButton: Bool
 
-    @State private var isFollowing: Bool = false
-    @State private var loading = false
-    @State private var isMe = false
+    @State private var isFollowing = false
+    @State private var working = false
+    @State private var myUserID: String = ""
 
-    public init(perfil: PerfilResumen, showFollowButton: Bool = true) {
+    public init(perfil: PerfilResumen, showFollowButton: Bool) {
         self.perfil = perfil
         self.showFollowButton = showFollowButton
     }
 
     public var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             avatar(perfil.avatar_url)
+                .frame(width: 48, height: 48)
+                .clipShape(Circle())
+
             VStack(alignment: .leading, spacing: 2) {
-                Text(perfil.nombre).font(.headline)
-                Text("@\(perfil.username)").font(.caption).foregroundColor(.gray)
+                Text(perfil.nombre)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text("@\(perfil.username)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             Spacer()
 
-            if showFollowButton && !isMe {
+            if showFollowButton, !myUserID.isEmpty, myUserID != perfil.id {
                 Button(action: { Task { await toggleFollow() } }) {
                     Text(isFollowing ? "Siguiendo" : "Seguir")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
                         .background(isFollowing ? Color(.systemGray5) : Color.black)
                         .foregroundColor(isFollowing ? .black : .white)
                         .clipShape(Capsule())
                 }
-                .disabled(loading)
-            }
-
-            NavigationLink(destination: destinoPerfil(perfil)) {
-                Image(systemName: "chevron.right").foregroundColor(.secondary)
+                .disabled(working)
             }
         }
-        .padding(.vertical, 12)
         .padding(.horizontal)
-        .task { await prepare() }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task { await cargarEstadoInicial() }
     }
 
-    private func prepare() async {
+    private func cargarEstadoInicial() async {
         do {
-            let me = try await SupabaseManager.shared.client.auth.session.user.id.uuidString
-            isMe = (me == perfil.id)
-            isFollowing = try await FollowersService.shared.isFollowing(currentUserID: me, targetUserID: perfil.id)
+            myUserID = try await SupabaseManager.shared.client.auth.session.user.id.uuidString
+            isFollowing = try await FollowersService.shared.isFollowing(
+                currentUserID: myUserID,
+                targetUserID: perfil.id
+            )
         } catch {
             isFollowing = false
         }
     }
 
     private func toggleFollow() async {
-        guard !loading else { return }
-        loading = true
-        let prev = isFollowing
+        guard !myUserID.isEmpty, myUserID != perfil.id else { return }
+        working = true
+        let was = isFollowing
         isFollowing.toggle()
+
         do {
-            if prev {
+            if was {
                 _ = try await FollowersService.shared.unfollow(targetUserID: perfil.id)
-                FollowNotification.post(targetUserID: perfil.id, didFollow: false)
             } else {
                 _ = try await FollowersService.shared.follow(targetUserID: perfil.id)
-                FollowNotification.post(targetUserID: perfil.id, didFollow: true)
             }
         } catch {
-            isFollowing = prev
-            print("❌ toggleFollow error: \(error)")
+            // revertir si falla
+            isFollowing = was
+            print("❌ PerfilRow toggleFollow:", error)
         }
-        loading = false
-    }
-
-    @ViewBuilder
-    private func destinoPerfil(_ p: PerfilResumen) -> some View {
-        if isMe { PerfilView() } else { UserProfileView(username: p.username) }
+        working = false
     }
 
     @ViewBuilder
     private func avatar(_ urlString: String?) -> some View {
         if let urlString, let url = URL(string: urlString) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .empty: ProgressView().frame(width: 44, height: 44)
-                case .success(let img): img.resizable().frame(width: 44, height: 44).clipShape(Circle())
-                case .failure: fallbackAvatar
-                @unknown default: fallbackAvatar
-                }
-            }
+            AsyncImage(url: url) { img in
+                img.resizable()
+            } placeholder: { Color(.systemGray5) }
         } else {
-            fallbackAvatar
+            Image(systemName: "person.circle.fill")
+                .resizable()
+                .foregroundColor(.gray)
         }
-    }
-
-    private var fallbackAvatar: some View {
-        Image(systemName: "person.circle.fill")
-            .resizable().frame(width: 44, height: 44)
-            .foregroundColor(.gray)
     }
 }

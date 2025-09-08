@@ -27,10 +27,8 @@ struct UserProfileView: View {
                     avatar(avatarURL)
                         .frame(width: 90, height: 90)
                         .clipShape(Circle())
-
                     Text(nombre.isEmpty ? username : nombre)
                         .font(.title2).fontWeight(.bold)
-
                     Text(presentacion.isEmpty ? "📍 Entrenando cada día\n💪 Fitness · Salud · Comunidad" : presentacion)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -53,7 +51,7 @@ struct UserProfileView: View {
                     Spacer()
                 }
 
-                // Botón seguir (ocúltalo si es tu perfil)
+                // Botón seguir (ocultarlo si es mi propio perfil)
                 if !isMe && !profileUserID.isEmpty {
                     Button(action: { Task { await toggleFollow() } }) {
                         Text(isFollowing ? "Siguiendo" : "Seguir")
@@ -118,7 +116,6 @@ struct UserProfileView: View {
     }
 
     // MARK: - Data
-
     private func cargarPerfil() async {
         defer { isLoading = false }
         do {
@@ -184,27 +181,25 @@ struct UserProfileView: View {
     }
 
     // MARK: - Follow toggle
-
     private func toggleFollow() async {
-        guard !profileUserID.isEmpty else { return }
-        guard !isMe else { return }
-
+        guard !profileUserID.isEmpty, !isMe else { return }
         working = true
         let wasFollowing = isFollowing
-        // Optimistic UI
+
+        // UI optimista
         isFollowing.toggle()
         seguidoresCount += wasFollowing ? -1 : 1
 
         do {
             if wasFollowing {
-                _ = try await FollowersService.shared.unfollow(targetUserID: profileUserID)
-                FollowNotification.post(targetUserID: profileUserID, didFollow: false)
+                let result = try await FollowersService.shared.unfollow(targetUserID: profileUserID)
+                self.seguidoresCount = result.targetFollowers
             } else {
-                _ = try await FollowersService.shared.follow(targetUserID: profileUserID)
-                FollowNotification.post(targetUserID: profileUserID, didFollow: true)
+                let result = try await FollowersService.shared.follow(targetUserID: profileUserID)
+                self.seguidoresCount = result.targetFollowers
             }
         } catch {
-            // revert
+            // revertir si falla
             isFollowing = wasFollowing
             seguidoresCount += wasFollowing ? 1 : -1
             print("❌ toggleFollow error: \(error)")
@@ -213,7 +208,6 @@ struct UserProfileView: View {
     }
 
     // MARK: - UI helpers
-
     @ViewBuilder
     private func avatar(_ urlString: String?) -> some View {
         if let urlString, let url = URL(string: urlString) {

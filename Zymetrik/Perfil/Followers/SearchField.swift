@@ -1,8 +1,8 @@
 import SwiftUI
 
 public struct SearchField: View {
-    public var placeholder: String
-    @Binding public var text: String
+    let placeholder: String
+    @Binding var text: String
 
     public init(placeholder: String, text: Binding<String>) {
         self.placeholder = placeholder
@@ -10,7 +10,7 @@ public struct SearchField: View {
     }
 
     public var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundColor(.gray)
             TextField(placeholder, text: $text)
                 .textInputAutocapitalization(.never)
