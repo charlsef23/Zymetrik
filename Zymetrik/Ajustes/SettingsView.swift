@@ -5,6 +5,13 @@ struct SettingsView: View {
     @State private var mostrarShare = false
     @State private var esAdmin = false
 
+    // Estados para Cuenta
+    @State private var mostrandoConfirmCerrarSesion = false
+    @State private var cerrandoSesion = false
+    @State private var mostrandoConfirmEliminar = false
+    @State private var eliminandoCuenta = false
+    @State private var errorCuenta: String?
+
     private var client: SupabaseClient { SupabaseManager.shared.client }
 
     var body: some View {
@@ -46,36 +53,16 @@ struct SettingsView: View {
                             .init(icon: "book.fill", tint: .brown, title: "FAQ", destination: AnyView(Text("FAQView()")))
                         ]
                     )
-                    
+
                     // MARK: - Administración (solo admins)
                     if esAdmin {
                         SettingsSectionCard(
                             title: "Administración",
                             items: [
-                                .init(
-                                    icon: "tray.full.fill",
-                                    tint: .cyan,
-                                    title: "Feedback (Admin)",
-                                    destination: AnyView(AdminFeedbackListView())
-                                ),
-                                .init(
-                                    icon: "person.crop.circle.badge.exclam",
-                                    tint: .red,
-                                    title: "Moderación",
-                                    destination: AnyView(Text("ModeracionView()")) // ⬅️ placeholder
-                                ),
-                                .init(
-                                    icon: "chart.bar.fill",
-                                    tint: .orange,
-                                    title: "Métricas",
-                                    destination: AnyView(Text("MetricasView()")) // ⬅️ placeholder
-                                ),
-                                .init(
-                                    icon: "lock.doc.fill",
-                                    tint: .purple,
-                                    title: "Policies & RLS",
-                                    destination: AnyView(Text("PoliciesView()")) // ⬅️ placeholder
-                                )
+                                .init(icon: "tray.full.fill", tint: .cyan, title: "Feedback (Admin)", destination: AnyView(AdminFeedbackListView())),
+                                .init(icon: "person.crop.circle.badge.exclam", tint: .red, title: "Moderación", destination: AnyView(Text("ModeracionView()"))),
+                                .init(icon: "chart.bar.fill", tint: .orange, title: "Métricas", destination: AnyView(Text("MetricasView()"))),
+                                .init(icon: "lock.doc.fill", tint: .purple, title: "Policies & RLS", destination: AnyView(Text("PoliciesView()")))
                             ]
                         )
                     }
@@ -84,10 +71,33 @@ struct SettingsView: View {
                     SettingsSectionCard(
                         title: "Cuenta",
                         items: [
-                            .init(icon: "rectangle.portrait.and.arrow.forward", tint: .gray, title: "Cerrar sesión", destination: AnyView(Text("CerrarSesionView()"))),
-                            .init(icon: "trash.fill", tint: .red, title: "Eliminar cuenta", destination: AnyView(Text("EliminarCuentaView()")))
+                            // Cerrar sesión: acción (no navegación)
+                            .init(
+                                icon: "rectangle.portrait.and.arrow.forward",
+                                tint: .gray,
+                                title: cerrandoSesion ? "Cerrando sesión…" : "Cerrar sesión",
+                                trailing: nil,
+                                destination: nil,
+                                onTap: { mostrandoConfirmCerrarSesion = true }
+                            ),
+                            // Eliminar cuenta: acción (no navegación)
+                            .init(
+                                icon: "trash.fill",
+                                tint: .red,
+                                title: eliminandoCuenta ? "Eliminando…" : "Eliminar cuenta",
+                                trailing: nil,
+                                destination: nil,
+                                onTap: { mostrandoConfirmEliminar = true }
+                            )
                         ]
                     )
+
+                    if let errorCuenta {
+                        Text(errorCuenta)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal)
+                    }
                 }
                 .padding(.vertical, 16)
                 .padding(.horizontal)
@@ -97,8 +107,32 @@ struct SettingsView: View {
             .sheet(isPresented: $mostrarShare) {
                 ShareProfileView(username: "carlos", profileImage: Image("foto_perfil"))
             }
-            .task {
-                await cargarEsAdmin()
+            .task { await cargarEsAdmin() }
+            // Confirmación cerrar sesión
+            .confirmationDialog(
+                "¿Cerrar sesión?",
+                isPresented: $mostrandoConfirmCerrarSesion,
+                titleVisibility: .visible
+            ) {
+                Button(cerrandoSesion ? "Cerrando…" : "Cerrar sesión", role: .destructive) {
+                    cerrarSesion()
+                }.disabled(cerrandoSesion)
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("Se cerrará tu sesión en este dispositivo.")
+            }
+            // Confirmación eliminar cuenta
+            .confirmationDialog(
+                "¿Eliminar tu cuenta?",
+                isPresented: $mostrandoConfirmEliminar,
+                titleVisibility: .visible
+            ) {
+                Button(eliminandoCuenta ? "Eliminando…" : "Eliminar definitivamente", role: .destructive) {
+                    eliminarCuenta()
+                }.disabled(eliminandoCuenta)
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("Se eliminarán tu perfil y todos tus datos. Esta acción no se puede deshacer.")
             }
         }
     }
@@ -107,7 +141,6 @@ struct SettingsView: View {
     private func cargarEsAdmin() async {
         do {
             let user = try await client.auth.session.user
-
             let resp = try await client
                 .from("perfil")
                 .select("es_admin", head: false)
@@ -116,30 +149,89 @@ struct SettingsView: View {
                 .execute()
 
             struct Row: Decodable { let es_admin: Bool }
-
-            // En tu SDK, resp.data es Data (no opcional)
-            let data = resp.data
-            let rows = try JSONDecoder().decode([Row].self, from: data)
+            let rows = try JSONDecoder().decode([Row].self, from: resp.data)
             esAdmin = rows.first?.es_admin ?? false
-
         } catch {
             print("Error cargando es_admin:", error.localizedDescription)
             esAdmin = false
         }
     }
-}
-// MARK: - Models
 
+    // MARK: - Cuenta: Cerrar sesión
+    private func cerrarSesion() {
+        guard !cerrandoSesion else { return }
+        cerrandoSesion = true
+        errorCuenta = nil
+
+        Task {
+            do {
+                try await client.auth.signOut()
+                // Recomendado: que tu App/RootView observe onAuthStateChange y cambie al Login automáticamente.
+                // Aquí solo marcamos el estado local como completado.
+            } catch {
+                await MainActor.run { errorCuenta = "No se pudo cerrar sesión: \(error.localizedDescription)" }
+            }
+            await MainActor.run { cerrandoSesion = false }
+        }
+    }
+
+    // MARK: - Cuenta: Eliminar cuenta
+    private func eliminarCuenta() {
+        guard !eliminandoCuenta else { return }
+        eliminandoCuenta = true
+        errorCuenta = nil
+
+        Task {
+            do {
+                let user = try await client.auth.session.user
+                let uid = user.id.uuidString
+
+                // 1) Borra ficheros del usuario (si los tienes)
+                do {
+                    try await AccountDeletionService().deleteUserFiles(userId: uid)
+                } catch {
+                    // si falla, seguimos, pero el DELETE de auth.users podría fallar
+                    print("⚠️ No se pudieron borrar todos los ficheros: \(error)")
+                }
+
+                // 2) Ejecuta la RPC (hará los DELETEs y finalmente auth.users)
+                _ = try await client
+                    .rpc("delete_my_account")
+                    .execute()
+
+                // 3) Cierra sesión local (el JWT podría seguir “válido” hasta expirar)
+                try? await client.auth.signOut()
+
+                // Aquí tu RootView debería mandarte a Login automáticamente
+            } catch {
+                await MainActor.run {
+                    self.errorCuenta = "No se pudo eliminar la cuenta: \(error.localizedDescription)"
+                }
+            }
+            await MainActor.run { self.eliminandoCuenta = false }
+        }
+    }
+}
+
+// MARK: - Models & UI Components  (añade onTap)
 struct SettingsItem: Identifiable {
     let id = UUID()
     let icon: String
     let tint: Color
     let title: String
     var trailing: String? = nil
-    let destination: AnyView
-}
+    let destination: AnyView?
+    var onTap: (() -> Void)? = nil
 
-// MARK: - Components
+    init(icon: String, tint: Color, title: String, trailing: String? = nil, destination: AnyView? = nil, onTap: (() -> Void)? = nil) {
+        self.icon = icon
+        self.tint = tint
+        self.title = title
+        self.trailing = trailing
+        self.destination = destination
+        self.onTap = onTap
+    }
+}
 
 struct SettingsSectionCard: View {
     let title: String
@@ -155,19 +247,35 @@ struct SettingsSectionCard: View {
             VStack(spacing: 0) {
                 ForEach(items.indices, id: \.self) { i in
                     let item = items[i]
-                    NavigationLink {
-                        item.destination
-                    } label: {
-                        SettingsRow(
-                            icon: item.icon,
-                            tint: item.tint,
-                            title: item.title,
-                            trailing: item.trailing,
-                            isFirst: i == 0,
-                            isLast: i == items.count - 1
-                        )
+                    Group {
+                        if let dest = item.destination {
+                            NavigationLink { dest } label: {
+                                SettingsRow(
+                                    icon: item.icon,
+                                    tint: item.tint,
+                                    title: item.title,
+                                    trailing: item.trailing,
+                                    isFirst: i == 0,
+                                    isLast: i == items.count - 1
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button {
+                                item.onTap?()
+                            } label: {
+                                SettingsRow(
+                                    icon: item.icon,
+                                    tint: item.tint,
+                                    title: item.title,
+                                    trailing: item.trailing,
+                                    isFirst: i == 0,
+                                    isLast: i == items.count - 1
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .buttonStyle(.plain)
 
                     if i < items.count - 1 {
                         Divider().padding(.leading, 56)
@@ -221,6 +329,7 @@ struct SettingsRow: View {
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.tertiary)
+                .opacity(trailing == nil ? 0 : 1) // oculta si no aplica
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -238,8 +347,6 @@ struct SettingsRow: View {
     }
 }
 
-// MARK: - Helpers
-
 struct RoundedCorner: Shape {
     var radius: CGFloat = 12
     var corners: UIRectCorner = .allCorners
@@ -253,5 +360,3 @@ struct RoundedCorner: Shape {
         return Path(path.cgPath)
     }
 }
-
-
