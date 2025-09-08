@@ -8,34 +8,94 @@ struct ListaEjerciciosView: View {
 
     @State private var ejercicios: [Ejercicio] = []
     @State private var tipoSeleccionado: String = "Gimnasio"
-    @State private var seleccionados: Set<UUID> = []
+    @State private var filtroPartes: Set<String> = []      // Filtro por partes del cuerpo (categoria)
+    @State private var seleccionados: Set<UUID> = []       // Persistente por día
     @State private var cargando = false
 
-    // ⬅️ Añadimos "Favoritos"
+    // Añadimos "Favoritos"
     private let tipos = ["Gimnasio", "Cardio", "Funcional", "Favoritos"]
     @Namespace private var tipoAnimacion
 
-    // Agrupa por categoría con lógica especial para "Favoritos"
-    var ejerciciosFiltradosPorTipo: [String: [Ejercicio]] {
+    // Controla upserts para no spamear
+    @State private var pendingUpsertTask: Task<Void, Never>? = nil
+
+    // Partes disponibles según el tipo actual (y favoritos)
+    var partesDisponibles: [String] {
         let base: [Ejercicio]
         if tipoSeleccionado == "Favoritos" {
             base = ejercicios.filter { $0.esFavorito }
         } else {
             base = ejercicios.filter { $0.tipo == tipoSeleccionado }
         }
-        return Dictionary(grouping: base) { $0.categoria }
+        let set = Set(base.map { ($0.categoria.isEmpty ? "General" : $0.categoria) })
+        return set.sorted()
+    }
+
+    // Agrupa por categoría con lógica de tipo y filtro de partes
+    var ejerciciosFiltradosPorTipo: [String: [Ejercicio]] {
+        var base: [Ejercicio]
+        if tipoSeleccionado == "Favoritos" {
+            base = ejercicios.filter { $0.esFavorito }
+        } else {
+            base = ejercicios.filter { $0.tipo == tipoSeleccionado }
+        }
+        if !filtroPartes.isEmpty {
+            base = base.filter { filtroPartes.contains($0.categoria.isEmpty ? "General" : $0.categoria) }
+        }
+        return Dictionary(grouping: base) { $0.categoria.isEmpty ? "General" : $0.categoria }
+    }
+
+    // Recupera array de ejercicios desde el set seleccionado
+    var ejerciciosSeleccionadosHoy: [Ejercicio] {
+        ejercicios.filter { seleccionados.contains($0.id) }
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 20) {
+
+                    // Selector tipo
                     TipoSelectorView(
                         tipos: tipos,
                         tipoSeleccionado: $tipoSeleccionado,
                         tipoAnimacion: tipoAnimacion
                     )
 
+                    // Chips de filtro por parte del cuerpo
+                    if !partesDisponibles.isEmpty {
+                        BodyPartFilterChips(
+                            partesDisponibles: partesDisponibles,
+                            seleccionadas: $filtroPartes
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+
+                    // Estado selección hoy
+                    if !seleccionados.isEmpty {
+                        HStack(spacing: 8) {
+                            Image(systemName: "calendar.circle.fill")
+                            Text("\(seleccionados.count) seleccionados hoy")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Button(role: .destructive) {
+                                seleccionados.removeAll()
+                                persistPlanDebounced()
+                            } label: {
+                                Text("Quitar todos")
+                            }
+                            .font(.caption)
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color(.systemGray6))
+                        )
+                        .padding(.horizontal)
+                    }
+
+                    // Lista
                     if cargando {
                         ProgressView("Cargando ejercicios...")
                             .frame(maxWidth: .infinity)
@@ -50,9 +110,15 @@ struct ListaEjerciciosView: View {
                             },
                             onToggleFavorito: { id in
                                 toggleFavorito(ejercicioID: id)
+                            },
+                            onToggleSeleccion: { _ in
+                                // Persistir cada toggle con pequeña espera
+                                persistPlanDebounced()
                             }
                         )
                     }
+
+                    Spacer(minLength: 8)
                 }
                 .padding(.bottom, 40)
             }
@@ -65,7 +131,7 @@ struct ListaEjerciciosView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
-                        let elegidos = ejercicios.filter { seleccionados.contains($0.id) }
+                        let elegidos = ejerciciosSeleccionadosHoy
                         guard !elegidos.isEmpty else { return }
                         onGuardar(elegidos)
                         isPresented = false
@@ -77,6 +143,11 @@ struct ListaEjerciciosView: View {
             }
             .onAppear {
                 fetchEjercicios()
+                preloadPlanDelDia()   // carga selección persistida
+            }
+            // ✅ Sin deprecation en iOS 17, compatible con iOS 16
+            .onChangeCompat(of: fecha) { _, _ in
+                preloadPlanDelDia()
             }
         }
     }
@@ -84,11 +155,44 @@ struct ListaEjerciciosView: View {
     // MARK: - Data
     func fetchEjercicios() {
         Task {
+            cargando = true
+            defer { cargando = false }
             do {
                 let items = try await SupabaseService.shared.fetchEjerciciosConFavoritos()
                 await MainActor.run { self.ejercicios = items }
             } catch {
                 print("❌ Error al cargar ejercicios:", error)
+            }
+        }
+    }
+
+    /// Carga los ejercicios ya guardados en `entrenamientos_planeados` para la fecha dada
+    func preloadPlanDelDia() {
+        Task {
+            do {
+                let guardados = try await SupabaseService.shared.fetchPlan(fecha: fecha)
+                let ids = Set(guardados.map(\.id))
+                await MainActor.run {
+                    self.seleccionados = ids
+                }
+            } catch {
+                // Si no existe fila aun, simplemente no selecciona nada
+                print("ℹ️ Sin plan previo para el día o error:", error)
+            }
+        }
+    }
+
+    // MARK: - Persistencia inmediata con debounce
+    /// Llama a `upsertPlan(fecha, ejercicios:)` con un pequeño debounce para agrupar toques rápidos
+    func persistPlanDebounced() {
+        pendingUpsertTask?.cancel()
+        let selected = ejerciciosSeleccionadosHoy
+        pendingUpsertTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000) // ~0.45s
+            do {
+                try await SupabaseService.shared.upsertPlan(fecha: fecha, ejercicios: selected)
+            } catch {
+                print("❌ Error al upsert del plan:", error)
             }
         }
     }
@@ -104,6 +208,25 @@ struct ListaEjerciciosView: View {
             } catch {
                 await MainActor.run { ejercicios[idx].esFavorito.toggle() }
                 print("❌ Error al togglear favorito:", error)
+            }
+        }
+    }
+}
+
+// MARK: - Helper de compatibilidad iOS 16/17 para onChange
+extension View {
+    @ViewBuilder
+    func onChangeCompat<T: Equatable>(
+        of value: T,
+        perform action: @escaping (_ oldValue: T, _ newValue: T) -> Void
+    ) -> some View {
+        if #available(iOS 17.0, *) {
+            self.onChange(of: value) { oldValue, newValue in
+                action(oldValue, newValue)
+            }
+        } else {
+            self.onChange(of: value) { newValue in
+                action(newValue, newValue) // iOS 16 no expone oldValue
             }
         }
     }

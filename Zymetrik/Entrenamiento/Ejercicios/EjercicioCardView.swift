@@ -11,44 +11,47 @@ struct EjercicioCardView: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             // Fondo + borde (verde si seleccionado)
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 18)
                 .fill(fondoTarjeta(for: tipoSeleccionado))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(seleccionado ? Color.green : Color.black.opacity(0.05),
-                                lineWidth: seleccionado ? 3 : 0.5)
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(seleccionado ? Color.green.opacity(0.7) : Color.black.opacity(0.06),
+                                lineWidth: seleccionado ? 2.5 : 1)
                 )
-                .shadow(color: Color.black.opacity(0.05), radius: 6, x: 0, y: 3)
+                .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
 
             HStack(spacing: 14) {
                 AsyncImage(url: URL(string: ejercicio.imagen_url ?? "")) { phase in
                     switch phase {
                     case .empty:
-                        ProgressView().frame(width: 80, height: 80)
+                        ProgressView().frame(width: 76, height: 76)
                     case .success(let image):
                         image.resizable().scaledToFill()
                     case .failure:
                         Image(systemName: "photo")
                             .resizable()
                             .scaledToFit()
-                            .padding(20)
+                            .padding(18)
                             .foregroundColor(.gray)
                     @unknown default:
                         EmptyView()
                     }
                 }
-                .frame(width: 80, height: 80)
+                .frame(width: 76, height: 76)
                 .background(Color.gray.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
+                        .stroke(Color.black.opacity(0.06), lineWidth: 1)
                 )
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(ejercicio.nombre)
-                        .font(.headline)
-                        .lineLimit(1)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(ejercicio.nombre)
+                            .font(.system(.headline, design: .rounded)).bold()
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
 
                     Text(ejercicio.descripcion)
                         .font(.subheadline)
@@ -61,6 +64,17 @@ struct EjercicioCardView: View {
                     }
                 }
                 Spacer()
+
+                // Check visual de selección
+                ZStack {
+                    Circle()
+                        .fill(seleccionado ? Color.green.opacity(0.15) : Color.black.opacity(0.06))
+                        .frame(width: 28, height: 28)
+                    Image(systemName: seleccionado ? "checkmark" : "plus")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(seleccionado ? .green : .secondary)
+                }
+                .accessibilityLabel(seleccionado ? "Seleccionado" : "No seleccionado")
             }
             .padding(12)
 
@@ -74,6 +88,7 @@ struct EjercicioCardView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: seleccionado)
     }
 
     func fondoTarjeta(for tipo: String) -> LinearGradient {
