@@ -52,6 +52,7 @@ struct EntrenamientoView: View {
 
                 Spacer()
 
+                // Dentro de body, zona del botón:
                 if esHoy, !ejerciciosDelDia.isEmpty {
                     NavigationLink(
                         destination: EntrenandoView(
@@ -64,9 +65,10 @@ struct EntrenamientoView: View {
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(Color.green)
-                            .foregroundColor(.white)
-                            .cornerRadius(12)
+                            .foregroundStyle(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                             .padding()
+                            .accessibilityLabel("Comenzar entrenamiento de hoy")
                     }
                 }
             }
