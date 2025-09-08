@@ -1,6 +1,8 @@
 import Foundation
 import Supabase
 
+// MARK: - Servicio principal
+
 struct SupabaseService {
     static let shared = SupabaseService()
     let client = SupabaseManager.shared.client
@@ -30,8 +32,6 @@ struct SupabaseService {
         let user = try await client.auth.session.user
         let userId = user.id
         let fechaISO = fecha.formatted(.iso8601)
-
-        print("📌 Preparando publicación directa sin tabla entrenamiento")
 
         var ejerciciosContenido: [EjercicioPostContenido] = []
 
@@ -74,12 +74,11 @@ struct SupabaseService {
             .from("posts")
             .insert(post)
             .execute()
-
-        print("✅ Publicación realizada con ejercicios y sets en contenido JSONB")
     }
 }
 
 // MARK: - Modelos
+
 struct PostNuevo: Encodable {
     let id: UUID
     let autor_id: UUID
@@ -159,9 +158,8 @@ class SetRegistro: Identifiable, ObservableObject {
     }
 }
 
-// MARK: - Helpers (decodificador flexible de fechas)
+// MARK: - Decoder flexible (sin estáticas en genéricos)
 
-// Contenedor no genérico para poder tener una estática almacenada
 fileprivate enum _SupabaseDecoders {
     static let flexible: JSONDecoder = {
         let decoder = JSONDecoder()
@@ -220,7 +218,16 @@ extension Date {
     }
 }
 
+// MARK: - Utilidades internas
+
+fileprivate func dateAtStartOfDayISO8601(_ d: Date) -> Date {
+    var cal = Calendar(identifier: .iso8601)
+    cal.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+    return cal.startOfDay(for: d)
+}
+
 // MARK: - Eliminar post
+
 extension SupabaseService {
     func eliminarPost(postID: UUID) async throws {
         _ = try await client
@@ -228,12 +235,11 @@ extension SupabaseService {
             .delete()
             .eq("id", value: postID.uuidString)
             .execute()
-
-        print("✅ Post eliminado correctamente en Supabase")
     }
 }
 
 // MARK: - Sesiones por ejercicio (RPC api_get_sesiones)
+
 extension SupabaseService {
     struct SesionPorPostDTO: Decodable {
         let post_id: UUID
@@ -274,6 +280,7 @@ extension SupabaseService {
 }
 
 // MARK: - Planes (upsert/fetch)
+
 extension SupabaseService {
     func upsertPlan(fecha: Date, ejercicios: [Ejercicio]) async throws {
         let user = try await client.auth.session.user
@@ -286,7 +293,8 @@ extension SupabaseService {
         }
 
         let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
-        let row = PlanRow(autor_id: userId, fecha: df.string(from: fecha.stripTime()), ejercicios: ejercicios)
+        let onlyDay = dateAtStartOfDayISO8601(fecha)
+        let row = PlanRow(autor_id: userId, fecha: df.string(from: onlyDay), ejercicios: ejercicios)
 
         try await client
             .from("entrenamientos_planeados")
@@ -298,11 +306,11 @@ extension SupabaseService {
         let user = try await client.auth.session.user
         let userId = user.id
         let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
-        let day = df.string(from: fecha.stripTime())
+        let day = df.string(from: dateAtStartOfDayISO8601(fecha))
 
         struct PlanRowDec: Decodable { let ejercicios: [Ejercicio] }
 
-        let res = try await client
+        let r: PlanRowDec = try await client
             .from("entrenamientos_planeados")
             .select("ejercicios")
             .eq("autor_id", value: userId.uuidString)
@@ -311,11 +319,12 @@ extension SupabaseService {
             .execute()
             .decoded(to: PlanRowDec.self)
 
-        return res.ejercicios
+        return r.ejercicios
     }
 }
 
 // MARK: - Favoritos (fetch, toggle, set)
+
 extension SupabaseService {
     func fetchEjerciciosConFavoritos() async throws -> [Ejercicio] {
         let client = self.client
@@ -332,7 +341,7 @@ extension SupabaseService {
         async let favoritosReq: [FavoritoID] = client
             .from("ejercicios_favoritos")
             .select("ejercicio_id")
-            .eq("autor_id", value: userId)
+            .eq("autor_id", value: userId.uuidString)
             .execute()
             .decodedList(to: FavoritoID.self)
 
@@ -355,7 +364,7 @@ extension SupabaseService {
         let rows: [FavoritoID] = try await client
             .from("ejercicios_favoritos")
             .select("ejercicio_id")
-            .eq("autor_id", value: userId)
+            .eq("autor_id", value: userId.uuidString)
             .execute()
             .decodedList(to: FavoritoID.self)
 
@@ -384,81 +393,83 @@ extension SupabaseService {
             _ = try await client
                 .from("ejercicios_favoritos")
                 .delete()
-                .eq("autor_id", value: userId)
-                .eq("ejercicio_id", value: ejercicioID)
+                .eq("autor_id", value: userId.uuidString)
+                .eq("ejercicio_id", value: ejercicioID.uuidString)
                 .execute()
         }
     }
 }
 
-// MARK: - Likes
+// MARK: - Likes (por usuario, usando RPC api_toggle_like)
+
 extension SupabaseService {
+
+    struct ToggleLikeResult: Decodable {
+        let liked: Bool
+        let likes_count: Int
+    }
+
+    /// Llama a la RPC api_toggle_like. Si `like` es nil, hace toggle.
+    func toggleLikeRPC(postID: UUID, like: Bool?) async throws -> ToggleLikeResult {
+        struct P: Encodable {
+            let p_post: UUID
+            let p_like: Bool?
+        }
+        let res = try await client
+            .rpc("api_toggle_like", params: P(p_post: postID, p_like: like))
+            .single()
+            .execute()
+        return try res.decoded(to: ToggleLikeResult.self)
+    }
+
+    /// Compatibilidad: setLike ahora delega en la RPC (no toca tabla directamente).
+    func setLike(postID: UUID, like: Bool) async throws {
+        _ = try await toggleLikeRPC(postID: postID, like: like)
+    }
+
+    /// ¿El usuario actual ha dado like a este post?
     func didLike(postID: UUID) async throws -> Bool {
         let userId = try await client.auth.session.user.id
-        let res = try await client
+        struct Row: Decodable { let post_id: UUID }
+        let rows: [Row] = try await client
             .from("post_likes")
             .select("post_id", head: false)
             .eq("post_id", value: postID.uuidString)
             .eq("autor_id", value: userId.uuidString)
             .limit(1)
             .execute()
-
-        struct Row: Decodable { let post_id: UUID }
-        let rows = try res.decodedList(to: Row.self)
+            .decodedList(to: Row.self)
         return !rows.isEmpty
     }
 
+    /// Conteo de likes: usa posts.likes_count (mantenido por triggers)
     func countLikes(postID: UUID) async throws -> Int {
-        let res = try await client
-            .from("post_likes")
-            .select("post_id", head: true, count: .exact)
-            .eq("post_id", value: postID.uuidString)
+        struct R: Decodable { let likes_count: Int }
+        let r: R = try await client
+            .from("posts")
+            .select("likes_count")
+            .eq("id", value: postID.uuidString)
+            .single()
             .execute()
-        return res.count ?? 0
-    }
-
-    func setLike(postID: UUID, like: Bool) async throws {
-        let userId = try await client.auth.session.user.id
-
-        if like {
-            _ = try await client
-                .from("post_likes")
-                .upsert([
-                    "post_id": postID.uuidString,
-                    "autor_id": userId.uuidString
-                ], onConflict: "post_id,autor_id")
-                .execute()
-        } else {
-            _ = try await client
-                .from("post_likes")
-                .delete()
-                .eq("post_id", value: postID.uuidString)
-                .eq("autor_id", value: userId.uuidString)
-                .execute()
-        }
-    }
-
-    @discardableResult
-    func toggleLike(postID: UUID, currentlyLiked: Bool) async throws -> Bool {
-        try await setLike(postID: postID, like: !currentlyLiked)
-        return !currentlyLiked
+            .decoded(to: R.self)
+        return r.likes_count
     }
 }
 
 // MARK: - Guardados
+
 extension SupabaseService {
     func didSave(postID: UUID) async throws -> Bool {
         let userId = try await client.auth.session.user.id
-        let res = try await client
+        struct Row: Decodable { let post_id: UUID }
+        let rows: [Row] = try await client
             .from("post_guardados")
             .select("post_id", head: false)
             .eq("post_id", value: postID.uuidString)
             .eq("autor_id", value: userId.uuidString)
             .limit(1)
             .execute()
-
-        struct Row: Decodable { let post_id: UUID }
-        let rows = try res.decodedList(to: Row.self)
+            .decodedList(to: Row.self)
         return !rows.isEmpty
     }
 

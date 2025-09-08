@@ -263,41 +263,31 @@ private extension PostView {
 
     // ✅ Optimista seguro + clamp (nunca < 0) + rollback simétrico
     func toggleLike() async {
-        let newValue = !leDioLike  // lo que queremos dejar finalmente
-
-        // Aplicación optimista
+        // Optimistic UI
         await MainActor.run {
-            if newValue {
-                // Pasamos de no-like -> like
-                if !leDioLike { numLikes += 1 }
-            } else {
-                // Pasamos de like -> no-like
-                if leDioLike { numLikes = max(0, numLikes - 1) }
-            }
-            leDioLike = newValue
+            leDioLike.toggle()
+            numLikes += leDioLike ? 1 : -1
         }
 
-        // Persistencia
         do {
-            try await SupabaseService.shared.setLike(postID: post.id, like: newValue)
-            if newValue {
+            // p_like = leDioLike (fuerza estado), o pasa nil para toggle server-side
+            let r = try await SupabaseService.shared.toggleLikeRPC(postID: post.id, like: leDioLike)
+            await MainActor.run {
+                // Corrige por si la UI y el servidor difieren
+                leDioLike = r.liked
+                numLikes  = r.likes_count
+            }
+            if r.liked {
                 UIImpactFeedbackGenerator().impactOccurred(intensity: 0.7)
             }
         } catch {
-            // Rollback si falla
+            print("❌ Error al cambiar like: \(error)")
+            // Revert UI si falló
             await MainActor.run {
-                if newValue {
-                    // habíamos sumado; revertimos
-                    numLikes = max(0, numLikes - 1)
-                    leDioLike = false
-                } else {
-                    // habíamos restado; revertimos
-                    numLikes += 1
-                    leDioLike = true
-                }
+                leDioLike.toggle()
+                numLikes += leDioLike ? 1 : -1
             }
             UINotificationFeedbackGenerator().notificationOccurred(.error)
-            print("❌ Error al cambiar like: \(error)")
         }
     }
 

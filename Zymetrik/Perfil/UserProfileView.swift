@@ -3,101 +3,71 @@ import Supabase
 
 struct UserProfileView: View {
     let username: String
-    
+
     @State private var nombre: String = ""
     @State private var avatarURL: String?
     @State private var presentacion: String = ""
     @State private var isLoading = true
     @State private var error: String?
-    
+
     @State private var selectedTab: PerfilTab = .entrenamientos
     @State private var isFollowing = false
-    @State private var showFollowers = false
-    @State private var showFollowing = false
-    
     @State private var numeroDePosts = 0
     @State private var seguidoresCount = 0
     @State private var seguidosCount = 0
     @State private var profileUserID: String = ""
-    
+    @State private var isMe = false
+    @State private var working = false
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 // Foto y nombre
                 VStack(spacing: 8) {
-                    if let avatarURL = avatarURL, let url = URL(string: avatarURL) {
-                        AsyncImage(url: url) { image in
-                            image.resizable()
-                        } placeholder: {
-                            ProgressView()
-                        }
+                    avatar(avatarURL)
                         .frame(width: 90, height: 90)
                         .clipShape(Circle())
-                    } else {
-                        Image(systemName: "person.circle.fill")
-                            .resizable()
-                            .frame(width: 90, height: 90)
-                            .foregroundColor(.gray)
-                    }
-                    
-                    Text(nombre)
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    
+
+                    Text(nombre.isEmpty ? username : nombre)
+                        .font(.title2).fontWeight(.bold)
+
                     Text(presentacion.isEmpty ? "📍 Entrenando cada día\n💪 Fitness · Salud · Comunidad" : presentacion)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                 }
                 .padding(.top)
-                
+
                 // Contadores
                 HStack {
                     Spacer()
-                    VStack {
-                        Text("\(numeroDePosts)")
-                            .font(.headline)
-                        Text("Entrenos")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                    counter(title: "Entrenos", value: numeroDePosts)
                     Spacer()
                     NavigationLink(destination: ListaSeguidoresView(userID: profileUserID)) {
-                        VStack {
-                            Text("\(seguidoresCount)")
-                                .font(.headline)
-                            Text("Seguidores")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        counter(title: "Seguidores", value: seguidoresCount)
                     }
                     Spacer()
                     NavigationLink(destination: ListaSeguidosView(userID: profileUserID)) {
-                        VStack {
-                            Text("\(seguidosCount)")
-                                .font(.headline)
-                            Text("Siguiendo")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        counter(title: "Siguiendo", value: seguidosCount)
                     }
                     Spacer()
                 }
-                
-                // Botón seguir
-                Button(action: {
-                    Task { await toggleFollow() }
-                }) {
-                    Text(isFollowing ? "Siguiendo" : "Seguir")
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(isFollowing ? Color(.systemGray5) : Color.black)
-                        .foregroundColor(isFollowing ? .black : .white)
-                        .cornerRadius(10)
+
+                // Botón seguir (ocúltalo si es tu perfil)
+                if !isMe && !profileUserID.isEmpty {
+                    Button(action: { Task { await toggleFollow() } }) {
+                        Text(isFollowing ? "Siguiendo" : "Seguir")
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(isFollowing ? Color(.systemGray5) : Color.black)
+                            .foregroundColor(isFollowing ? .black : .white)
+                            .cornerRadius(10)
+                    }
+                    .disabled(working)
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
-                
+
                 // Tabs
                 HStack {
                     ForEach(PerfilTab.allCases, id: \.self) { tab in
@@ -110,16 +80,15 @@ struct UserProfileView: View {
                                 .padding(.vertical, 6)
                                 .padding(.horizontal, 16)
                                 .background(
-                                    Capsule()
-                                        .fill(selectedTab == tab ? Color(.systemGray5) : Color.clear)
+                                    Capsule().fill(selectedTab == tab ? Color(.systemGray5) : Color.clear)
                                 )
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .padding(.vertical, 10)
-                
-                // Contenido según tab
+
+                // Contenido
                 Group {
                     switch selectedTab {
                     case .entrenamientos:
@@ -134,7 +103,7 @@ struct UserProfileView: View {
                             .frame(height: 180)
                             .overlay(Text("📊 Gráfico de estadísticas").foregroundColor(.secondary))
                     case .logros:
-                        Text("🏅 Logros del usuario (conectado más adelante)")
+                        Text("🏅 Logros del usuario (próximamente)")
                     }
                 }
                 .padding(.horizontal)
@@ -142,128 +111,124 @@ struct UserProfileView: View {
         }
         .navigationTitle(username)
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            Task {
-                await cargarPerfil()
-                await verificarEstadoDeSeguimiento()
-                await contarSeguidoresYSeguidos()
-                await contarPosts()
-            }
+        .task {
+            await cargarPerfil()
+            await prepararEstado()
         }
     }
-    
-    // MARK: - Cargar perfil desde Supabase
-    func cargarPerfil() async {
+
+    // MARK: - Data
+
+    private func cargarPerfil() async {
+        defer { isLoading = false }
         do {
-            let response = try await SupabaseManager.shared.client
+            let res = try await SupabaseManager.shared.client
                 .from("perfil")
-                .select()
+                .select("id,nombre,username,presentacion,avatar_url")
                 .eq("username", value: username)
                 .single()
                 .execute()
-            
-            let data = response.data
-            
-            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                self.nombre = json["nombre"] as? String ?? username
-                self.presentacion = json["presentacion"] as? String ?? ""
-                self.avatarURL = json["avatar_url"] as? String
-                self.profileUserID = json["id"] as? String ?? ""
+
+            struct Row: Decodable {
+                let id: String
+                let nombre: String?
+                let username: String
+                let presentacion: String?
+                let avatar_url: String?
             }
+            let row = try res.decoded(to: Row.self)
+
+            profileUserID = row.id
+            nombre = row.nombre ?? row.username
+            presentacion = row.presentacion ?? ""
+            avatarURL = row.avatar_url
+
+            // Contadores
+            async let postsCount: Int = {
+                let r = try await SupabaseManager.shared.client
+                    .from("posts")
+                    .select("id", count: .exact)
+                    .eq("autor_id", value: row.id)
+                    .execute()
+                return r.count ?? 0
+            }()
+
+            async let followersCount: Int = {
+                try await FollowersService.shared.countFollowers(userID: row.id)
+            }()
+
+            async let followingCount: Int = {
+                try await FollowersService.shared.countFollowing(userID: row.id)
+            }()
+
+            let (p, f1, f2) = try await (postsCount, followersCount, followingCount)
+            numeroDePosts = p
+            seguidoresCount = f1
+            seguidosCount = f2
+
         } catch {
             self.error = "No se pudo cargar el perfil: \(error.localizedDescription)"
         }
-        
-        isLoading = false
-    }
-    
-    // ✅ CORREGIDO: Verificar estado de seguimiento correctamente
-    func verificarEstadoDeSeguimiento() async {
-        guard let currentUserID = try? await SupabaseManager.shared.client.auth.session.user.id.uuidString else { return }
-
-        do {
-            let response = try await SupabaseManager.shared.client
-                .from("followers")
-                .select()
-                .eq("follower_id", value: currentUserID)
-                .eq("followed_id", value: profileUserID)
-                .execute()
-
-            let jsonArray = try JSONSerialization.jsonObject(with: response.data) as? [[String: Any]]
-            isFollowing = (jsonArray?.isEmpty == false)
-        } catch {
-            print("❌ Error al verificar seguimiento: \(error)")
-        }
     }
 
-    // MARK: - Alternar seguir/dejar de seguir
-    func toggleFollow() async {
-        guard let currentUserID = try? await SupabaseManager.shared.client.auth.session.user.id.uuidString else { return }
-
+    private func prepararEstado() async {
         do {
-            if isFollowing {
-                try await SupabaseManager.shared.client
-                    .from("followers")
-                    .delete()
-                    .eq("follower_id", value: currentUserID)
-                    .eq("followed_id", value: profileUserID)
-                    .execute()
-            } else {
-                _ = try await SupabaseManager.shared.client
-                    .from("followers")
-                    .insert([
-                        "follower_id": currentUserID,
-                        "followed_id": profileUserID
-                    ])
-                    .execute()
+            let me = try await SupabaseManager.shared.client.auth.session.user.id.uuidString
+            isMe = (me == profileUserID)
+            if !isMe && !profileUserID.isEmpty {
+                isFollowing = try await FollowersService.shared.isFollowing(currentUserID: me, targetUserID: profileUserID)
             }
-
-            isFollowing.toggle()
-            await contarSeguidoresYSeguidos()
         } catch {
-            print("❌ Error al alternar seguimiento: \(error)")
+            isFollowing = false
         }
     }
 
-    // MARK: - Contar seguidores y seguidos
-    func contarSeguidoresYSeguidos() async {
-        do {
-            // Contar SEGUIDORES (quién sigue a este usuario)
-            let seguidoresResp = try await SupabaseManager.shared.client
-                .from("followers")
-                .select("follower_id", count: .exact)
-                .eq("followed_id", value: profileUserID)
-                .execute()
-            seguidoresCount = seguidoresResp.count ?? 0
+    // MARK: - Follow toggle
 
-            // Contar SEGUIDOS (a quién sigue este usuario)
-            let seguidosResp = try await SupabaseManager.shared.client
-                .from("followers")
-                .select("followed_id", count: .exact)
-                .eq("follower_id", value: profileUserID)
-                .execute()
-            seguidosCount = seguidosResp.count ?? 0
-
-        } catch {
-            print("❌ Error al contar seguidores/seguidos: \(error)")
-        }
-    }
-    
-    // MARK: - Contar posts subidos por el usuario
-    func contarPosts() async {
+    private func toggleFollow() async {
         guard !profileUserID.isEmpty else { return }
+        guard !isMe else { return }
+
+        working = true
+        let wasFollowing = isFollowing
+        // Optimistic UI
+        isFollowing.toggle()
+        seguidoresCount += wasFollowing ? -1 : 1
 
         do {
-            let response = try await SupabaseManager.shared.client
-                .from("posts")
-                .select("id", count: .exact)
-                .eq("autor_id", value: profileUserID)
-                .execute()
-            
-            numeroDePosts = response.count ?? 0
+            if wasFollowing {
+                _ = try await FollowersService.shared.unfollow(targetUserID: profileUserID)
+                FollowNotification.post(targetUserID: profileUserID, didFollow: false)
+            } else {
+                _ = try await FollowersService.shared.follow(targetUserID: profileUserID)
+                FollowNotification.post(targetUserID: profileUserID, didFollow: true)
+            }
         } catch {
-            print("❌ Error al contar posts: \(error.localizedDescription)")
-            numeroDePosts = 0
+            // revert
+            isFollowing = wasFollowing
+            seguidoresCount += wasFollowing ? 1 : -1
+            print("❌ toggleFollow error: \(error)")
+        }
+        working = false
+    }
+
+    // MARK: - UI helpers
+
+    @ViewBuilder
+    private func avatar(_ urlString: String?) -> some View {
+        if let urlString, let url = URL(string: urlString) {
+            AsyncImage(url: url) { img in
+                img.resizable()
+            } placeholder: { ProgressView() }
+        } else {
+            Image(systemName: "person.circle.fill").resizable().foregroundColor(.gray)
+        }
+    }
+
+    private func counter(title: String, value: Int) -> some View {
+        VStack {
+            Text("\(value)").font(.headline)
+            Text(title).font(.caption).foregroundColor(.secondary)
         }
     }
 }

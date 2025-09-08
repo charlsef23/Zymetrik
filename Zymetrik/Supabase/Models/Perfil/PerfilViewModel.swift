@@ -1,67 +1,79 @@
 import Foundation
-import SwiftUI
 import Supabase
 
-enum PerfilTab: String, CaseIterable {
-    case entrenamientos = "Entrenos"
-    case estadisticas = "Estadísticas"
-    case logros = "Logros"
-}
-
-// MARK: - DTO del perfil (ajusta campos si tu tabla cambia)
-struct PerfilDTO: Decodable {
-    let id: String
-    let nombre: String?
-    let username: String?
-    let presentacion: String?
-    let enlaces: String?
-    let avatar_url: String?
-}
-
 @MainActor
-final class PerfilViewModel: ObservableObject {
-    // Estado que antes estaba en la vista
-    @Published var userID: String = ""
-    @Published var nombre: String = "Cargando..."
-    @Published var username: String = "..."
-    @Published var presentacion: String = ""
-    @Published var enlaces: String = ""
-    @Published var imagenPerfilURL: String? = nil
+public final class PerfilViewModel: ObservableObject {
 
-    @Published var numeroDePosts: Int = 0
-    @Published var seguidoresCount: Int = 0
-    @Published var siguiendoCount: Int = 0
+    // Datos
+    @Published public var userID: String = ""
+    @Published public var nombre: String = "Cargando..."
+    @Published public var username: String = "..."
+    @Published public var presentacion: String = ""
+    @Published public var enlaces: String = ""
+    @Published public var imagenPerfilURL: String? = nil
+
+    // Contadores
+    @Published public var numeroDePosts: Int = 0
+    @Published public var seguidoresCount: Int = 0
+    @Published public var siguiendoCount: Int = 0
+
+    // Estado
+    @Published public var isLoading: Bool = false
+    @Published public var errorText: String? = nil
+    @Published public var lastUpdated: Date? = nil
 
     private var client: SupabaseClient { SupabaseManager.shared.client }
+    private var followObserver: NSObjectProtocol?
 
-    // MARK: - Punto de entrada
-    func cargarDatosCompletos() async {
+    public init() {
+        // Escucha cambios de follow para refrescar contadores
+        followObserver = NotificationCenter.default.addObserver(
+            forName: .followStateChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { await self.cargarContadoresSeguidores() }
+        }
+    }
+
+    deinit {
+        if let token = followObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
+
+    // MARK: - API
+    public func cargarDatosCompletos() async {
+        isLoading = true
+        errorText = nil
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.cargarDatosIniciales() }
             group.addTask { await self.cargarContadoresSeguidores() }
             group.addTask { await self.cargarNumeroDePosts() }
         }
+        isLoading = false
+        lastUpdated = Date()
     }
 
-    // MARK: - Cargar datos iniciales
-    func cargarDatosIniciales() async {
+    public func refrescar() async { await cargarDatosCompletos() }
+
+    public func cargarDatosIniciales() async {
         do {
             _ = try await client.auth.session
             await cargarPerfilDesdeSupabase()
         } catch {
             print("❌ Error al obtener sesión: \(error)")
+            self.errorText = "No hay sesión activa."
         }
     }
 
-    // MARK: - Cargar perfil desde Supabase
-    // Reemplaza TODO el método por este:
-    func cargarPerfilDesdeSupabase() async {
+    public func cargarPerfilDesdeSupabase() async {
         do {
             let session = try await client.auth.session
             let uid = session.user.id.uuidString
             self.userID = uid
 
-            // Pide columnas explícitas para que no infiera Void
             let response = try await client
                 .from("perfil")
                 .select("id,nombre,username,presentacion,enlaces,avatar_url")
@@ -69,11 +81,8 @@ final class PerfilViewModel: ObservableObject {
                 .single()
                 .execute()
 
-            // Decodifica con JSONDecoder desde response.data
-            // En supabase-swift, data suele ser Data (no opcional)
             let data = response.data
 
-            // Intenta decodificar a tu DTO
             if let perfil = try? JSONDecoder().decode(PerfilDTO.self, from: data) {
                 self.nombre = perfil.nombre ?? ""
                 self.username = perfil.username ?? ""
@@ -83,7 +92,6 @@ final class PerfilViewModel: ObservableObject {
                 return
             }
 
-            // Como fallback (por si llega con keys inesperadas)
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 self.nombre = json["nombre"] as? String ?? ""
                 self.username = json["username"] as? String ?? ""
@@ -96,10 +104,11 @@ final class PerfilViewModel: ObservableObject {
 
         } catch {
             print("❌ Error al cargar perfil: \(error)")
+            self.errorText = "Error al cargar perfil."
         }
     }
-    // MARK: - Cargar seguidores y siguiendo
-    func cargarContadoresSeguidores() async {
+
+    public func cargarContadoresSeguidores() async {
         do {
             let session = try await client.auth.session
             let uid = session.user.id.uuidString
@@ -120,11 +129,11 @@ final class PerfilViewModel: ObservableObject {
 
         } catch {
             print("❌ Error al cargar contadores: \(error)")
+            self.errorText = "Error al cargar contadores."
         }
     }
 
-    // MARK: - Cargar número de posts
-    func cargarNumeroDePosts() async {
+    public func cargarNumeroDePosts() async {
         do {
             let session = try await client.auth.session
             let uid = session.user.id.uuidString
@@ -138,6 +147,7 @@ final class PerfilViewModel: ObservableObject {
             self.numeroDePosts = response.count ?? 0
         } catch {
             print("❌ Error al contar posts: \(error)")
+            self.errorText = "Error al contar posts."
         }
     }
 }
