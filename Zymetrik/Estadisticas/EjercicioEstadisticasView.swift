@@ -17,7 +17,7 @@ struct TotalesComparativa {
     }
 }
 
-// MARK: - Vista principal (DISEÑO NUEVO, sin línea arriba)
+// MARK: - Vista principal
 
 struct EjercicioEstadisticasView: View {
     let ejercicio: EjercicioPostContenido
@@ -38,27 +38,46 @@ struct EjercicioEstadisticasView: View {
         return Double(ejercicio.totalRepeticiones) / Double(ejercicio.totalSeries)
     }
 
-    // Grid adaptativa para las cards compactas
+    // ---- 1RM estimado ----
+    private var oneRMActual: Double {
+        estimar1RMActual(
+            kgPorSerie: kgPorSerie,
+            repsPorSerie: repsPorSerie,
+            totalPeso: ejercicio.totalPeso,
+            totalSeries: ejercicio.totalSeries
+        )
+    }
+    private var oneRMPrevio: Double? { estimar1RMPrevio(comparativaAnterior) }
+    private var oneRMDelta: Double? {
+        guard let prev = oneRMPrevio, prev != 0 else { return nil }
+        return ((oneRMActual - prev) / prev) * 100.0
+    }
+
+    // Grid adaptativa
     private var columns: [GridItem] { [GridItem(.adaptive(minimum: 150), spacing: 12)] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
 
-            // Header limpio (sin barra/linea)
+            // Header
             VStack(alignment: .leading, spacing: 6) {
                 Text(ejercicio.nombre)
                     .font(.system(.title3, design: .rounded).weight(.semibold))
                     .lineLimit(1)
+                Text("Estadísticas")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.secondary)
             }
 
-            // HERO: carga total
+            // HERO: 1RM en lila
             HeroMetric(
-                title: "Kg totales",
-                valueText: formatNumber(ejercicio.totalPeso) + " kg",
-                delta: delta(for: .kg)
+                title: "1RM estimado",
+                valueText: formatNumber(oneRMActual) + " kg",
+                delta: oneRMDelta,
+                tint: .purple
             )
 
-            // Tiles con micro-barra de progreso
+            // Tiles: Series, Reps, Kg
             HStack(spacing: 12) {
                 ProgressMetricTile(
                     title: "Series",
@@ -83,7 +102,7 @@ struct EjercicioEstadisticasView: View {
                 )
             }
 
-            // Medias por set en cards compactas (2 columnas)
+            // Medias por set
             LazyVGrid(columns: columns, spacing: 12) {
                 CompactStatCard(
                     title: "Kg por set",
@@ -116,11 +135,9 @@ struct EjercicioEstadisticasView: View {
         .background(GlassCardBackground())
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .shadow(color: .black.opacity(0.08), radius: 18, x: 0, y: 8)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Estadísticas de \(ejercicio.nombre)")
     }
 
-    // MARK: - Deltas & helpers
+    // MARK: - Helpers
 
     enum Campo { case series, reps, kg }
 
@@ -136,12 +153,10 @@ struct EjercicioEstadisticasView: View {
         }
     }
 
-    /// Progreso normalizado 0..1 frente a la sesión previa
     private func progress(actual: Double, prev: Double) -> Double {
-        guard prev > 0 else { return 1 }         // sin previa -> lleno
+        guard prev > 0 else { return 1 }
         let ratio = actual / prev
-        let normalized = min(max(ratio, 0.0), 1.25) / 1.25 // cap a +25%
-        return normalized
+        return min(max(ratio, 0.0), 1.25) / 1.25
     }
 
     private func inferPrevKgPerSet() -> Double? {
@@ -170,7 +185,30 @@ struct EjercicioEstadisticasView: View {
     }
 }
 
-// MARK: - Fondo “glass” seguro (sin material)
+// MARK: - 1RM Helpers
+
+private func oneRMEpley(peso: Double, reps: Int) -> Double {
+    guard reps > 0 else { return peso }
+    return peso * (1.0 + Double(reps) / 30.0)
+}
+
+private func estimar1RMActual(kgPorSerie: Double, repsPorSerie: Double, totalPeso: Double, totalSeries: Int) -> Double {
+    let mediaGlobalSet = totalSeries > 0 ? totalPeso / Double(totalSeries) : 0
+    let pesoRef = max(kgPorSerie, mediaGlobalSet)
+    let repsRef = max(1, Int(round(repsPorSerie)))
+    return oneRMEpley(peso: pesoRef, reps: repsRef)
+}
+
+private func estimar1RMPrevio(_ comp: TotalesComparativa?) -> Double? {
+    guard let c = comp else { return nil }
+    guard let kgSet = c.kgPorSerie, let repsSet = c.repsPorSerie else { return nil }
+    let mediaGlobalSet = c.series > 0 ? c.kg / Double(c.series) : 0
+    let pesoRef = max(kgSet, mediaGlobalSet)
+    let repsRef = max(1, Int(round(repsSet)))
+    return oneRMEpley(peso: pesoRef, reps: repsRef)
+}
+
+// MARK: - Fondo glass
 
 private struct GlassCardBackground: View {
     @Environment(\.colorScheme) private var scheme
@@ -192,20 +230,21 @@ private struct GlassCardBackground: View {
     }
 }
 
-// MARK: - Hero metric
+// MARK: - Hero metric (con tint configurable)
 
 private struct HeroMetric: View {
     let title: String
     let valueText: String
     let delta: Double?
+    var tint: Color = .purple
 
     var body: some View {
         ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
+                .fill(tint.opacity(0.15))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+                        .stroke(tint.opacity(0.25), lineWidth: 1)
                 )
 
             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -220,7 +259,7 @@ private struct HeroMetric: View {
                 }
                 Spacer()
                 if let d = delta {
-                    DeltaBadge(d: d)
+                    DeltaBadge(d: d, tint: tint)
                 }
             }
             .padding(16)
@@ -229,13 +268,13 @@ private struct HeroMetric: View {
     }
 }
 
-// MARK: - Tile con barra de progreso
+// MARK: - ProgressMetricTile
 
 private struct ProgressMetricTile: View {
     let title: String
     let valueText: String
     let tint: Color
-    let progress: Double    // 0..1
+    let progress: Double
     let delta: Double?
 
     var body: some View {
@@ -262,7 +301,6 @@ private struct ProgressMetricTile: View {
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .monospacedDigit()
 
-                // barra de progreso sutil
                 ProgressBar(percent: progress, tint: tint)
 
                 if let d = delta {
@@ -276,7 +314,7 @@ private struct ProgressMetricTile: View {
 }
 
 private struct ProgressBar: View {
-    let percent: Double  // 0..1
+    let percent: Double
     let tint: Color
 
     var body: some View {
@@ -302,7 +340,7 @@ private struct ProgressBar: View {
     }
 }
 
-// MARK: - Cards compactas 2 columnas
+// MARK: - CompactStatCard
 
 private struct CompactStatCard: View {
     let title: String
@@ -339,7 +377,7 @@ private struct CompactStatCard: View {
     }
 }
 
-// MARK: - Badges de delta (texto solo)
+// MARK: - DeltaBadge
 
 private struct DeltaBadge: View {
     let d: Double
@@ -364,13 +402,6 @@ private struct DeltaBadge: View {
             .foregroundStyle(
                 same ? Color.secondary
                      : (up ? (tint ?? .accentColor) : .red)
-            )
-            .accessibilityLabel(
-                Text(
-                    same ? "Sin cambio"
-                         : (up ? "Mejora \(abs(d).formatted(.number.precision(.fractionLength(1)))) por ciento"
-                               : "Empeora \(abs(d).formatted(.number.precision(.fractionLength(1)))) por ciento")
-                )
             )
     }
 }
