@@ -12,7 +12,7 @@ struct EntrenandoView: View {
     @State private var mostrarLogro = false
     @State private var logroDesbloqueado: LogroConEstado?
 
-    // Nuevo: confirmación de publicación
+    // Confirmación de publicación
     @State private var mostrarConfirmarPublicacion = false
     @State private var publicando = false
 
@@ -34,65 +34,84 @@ struct EntrenandoView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(spacing: 16) {
-                        ForEach(ejercicios) { ejercicio in
-                            EjercicioRegistroView(
-                                ejercicio: ejercicio,
-                                sets: setsPorEjercicio[ejercicio.id] ?? [],
-                                onAddSet: {
-                                    var nuevos = setsPorEjercicio[ejercicio.id] ?? []
-                                    let nuevo = SetRegistro(numero: (nuevos.last?.numero ?? 0) + 1, repeticiones: 10, peso: 0)
-                                    nuevos.append(nuevo)
-                                    setsPorEjercicio[ejercicio.id] = nuevos
-                                },
-                                onUpdateSet: { index, rep, peso in
-                                    guard let lista = setsPorEjercicio[ejercicio.id], lista.indices.contains(index) else { return }
-                                    lista[index].repeticiones = rep
-                                    lista[index].peso = peso
-                                    setsPorEjercicio[ejercicio.id] = lista
-                                },
-                                onDeleteSet: { index in
-                                    guard var lista = setsPorEjercicio[ejercicio.id], lista.indices.contains(index) else { return }
-                                    lista.remove(at: index)
-                                    for (i, s) in lista.enumerated() { s.numero = i + 1 }
-                                    setsPorEjercicio[ejercicio.id] = lista
-                                },
-                                onDuplicateSet: { index in
-                                    guard var lista = setsPorEjercicio[ejercicio.id], lista.indices.contains(index) else { return }
-                                    let base = lista[index]
-                                    let dup = SetRegistro(numero: base.numero + 1, repeticiones: base.repeticiones, peso: base.peso)
-                                    lista.insert(dup, at: index + 1)
-                                    for (i, s) in lista.enumerated() { s.numero = i + 1 }
-                                    setsPorEjercicio[ejercicio.id] = lista
-                                }
-                            )
-                        }
-                        Spacer(minLength: 120)
+        VStack(spacing: 0) {
+            // LISTA + BOTÓN (el botón está dentro del scroll, al final)
+            ScrollView {
+                VStack(spacing: 16) {
+                    ForEach(ejercicios) { ejercicio in
+                        EjercicioRegistroView(
+                            ejercicio: ejercicio,
+                            sets: setsPorEjercicio[ejercicio.id] ?? [],
+                            onAddSet: {
+                                var nuevos = setsPorEjercicio[ejercicio.id] ?? []
+                                let nuevo = SetRegistro(
+                                    numero: (nuevos.last?.numero ?? 0) + 1,
+                                    repeticiones: 10,
+                                    peso: 0
+                                )
+                                nuevos.append(nuevo)
+                                setsPorEjercicio[ejercicio.id] = nuevos
+                            },
+                            onUpdateSet: { index, rep, peso in
+                                guard let lista = setsPorEjercicio[ejercicio.id],
+                                      lista.indices.contains(index) else { return }
+                                lista[index].repeticiones = rep
+                                lista[index].peso = peso
+                                setsPorEjercicio[ejercicio.id] = lista
+                            },
+                            onDeleteSet: { index in
+                                guard var lista = setsPorEjercicio[ejercicio.id],
+                                      lista.indices.contains(index) else { return }
+                                lista.remove(at: index)
+                                for (i, s) in lista.enumerated() { s.numero = i + 1 }
+                                setsPorEjercicio[ejercicio.id] = lista
+                            },
+                            onDuplicateSet: { index in
+                                guard var lista = setsPorEjercicio[ejercicio.id],
+                                      lista.indices.contains(index) else { return }
+                                let base = lista[index]
+                                let dup = SetRegistro(
+                                    numero: base.numero + 1,
+                                    repeticiones: base.repeticiones,
+                                    peso: base.peso
+                                )
+                                lista.insert(dup, at: index + 1)
+                                for (i, s) in lista.enumerated() { s.numero = i + 1 }
+                                setsPorEjercicio[ejercicio.id] = lista
+                            }
+                        )
                     }
-                    .padding(.top, 60)
-                }
 
-                CronometroView(tiempo: $tiempo, timerActivo: $timerActivo, temporizador: $temporizador)
+                    // BOTÓN PUBLICAR — integrado en el scroll
+                    Button {
+                        if hayContenidoReal {
+                            mostrarConfirmarPublicacion = true
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "paperplane.fill")
+                                .font(.headline)
+                            Text("Publicar entrenamiento")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(hayContenidoReal ? Color.black : Color.gray)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .padding(.horizontal)
+                    }
+                    .disabled(!hayContenidoReal || publicando)
+                    .opacity(publicando ? 0.7 : 1)
+
+                    // Espacio para respirar antes del cronómetro
+                    Spacer(minLength: 12)
+                }
+                .padding(.top, 8)
             }
 
-            // Botón publicar -> ahora lanza confirmación
-            Button {
-                if hayContenidoReal {
-                    mostrarConfirmarPublicacion = true
-                }
-            } label: {
-                Image(systemName: "paperplane.fill")   // 👈 icono anterior (enviar)
-                    .font(.title2.weight(.semibold))
-                    .foregroundColor(.white)
-                    .padding()
-                    .background((hayContenidoReal ? Color.black : Color.gray).opacity(publicando ? 0.6 : 1))
-                    .clipShape(Circle())
-            }
-            .padding()
-            .disabled(!hayContenidoReal || publicando)
+            // CRONÓMETRO (se mantiene fuera del scroll)
+            CronometroView(tiempo: $tiempo, timerActivo: $timerActivo, temporizador: $temporizador)
         }
         .navigationBarHidden(true)
         .onAppear {
@@ -125,7 +144,6 @@ struct EntrenandoView: View {
     // MARK: - Publicación
 
     private func confirmarYPublicar() {
-        // Ahora sí: si confirmas, detenemos el cronómetro y publicamos
         temporizador?.invalidate()
         timerActivo = false
         publicando = true
@@ -147,7 +165,6 @@ struct EntrenandoView: View {
                     mostrarLogro = true
                 }
 
-                // Feedback y salida
                 UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                 dismiss()
             } catch {
