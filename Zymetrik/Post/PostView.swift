@@ -16,6 +16,7 @@ struct PostView: View {
     @State private var mostrarShare = false
 
     // Animación corazón
+    @State private var mostrarLikers = false
     @State private var showHeart = false
     @Namespace private var heartNS
 
@@ -88,7 +89,8 @@ struct PostView: View {
                 guardado: $guardado,
                 mostrarComentarios: $mostrarComentarios,
                 toggleLike: toggleLike,
-                toggleSave: toggleSave
+                toggleSave: toggleSave,
+                onShowLikers: { mostrarLikers = true } // 👈 abrir lista
             )
         }
         .padding(14)
@@ -117,6 +119,11 @@ struct PostView: View {
         }
         .sheet(isPresented: $mostrarShare) {
             ShareSheet(items: [shareText()])
+        }
+        .sheet(isPresented: $mostrarLikers) {                 // 👈 hoja de likers
+            LikersListView(postID: post.id)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .alert("¿Eliminar este post?", isPresented: $mostrarConfirmacionEliminar) {
             Button("Eliminar", role: .destructive) { eliminarPost() }
@@ -174,27 +181,27 @@ struct PostView: View {
             return dict
         }
 
-        // Lanza en paralelo
-        async let metaTask = SupabaseService.shared.fetchPostMeta(postID: postID) // throws
+        // Lanza en paralelo SOLO imágenes (no lanzables)
         async let avatarTask: UIImage? = loadAvatarImage(url: avatarURL, existing: existingAvatar)
         async let thumbsTask: [UUID: UIImage] = loadThumbs(ejercicios: ejercicios, existing: existingCache)
 
-        // Recoge resultados
-        let avatar = await avatarTask
-        let thumbs = await thumbsTask
-        let meta: SupabaseService.PostMeta?
+        // Pide la meta con try/await directo (evita ambigüedad de async let + throws)
+        var meta: SupabaseService.PostMetaResponse? = nil
         do {
-            meta = try await metaTask
+            meta = try await SupabaseService.shared.fetchPostMeta(postID: postID)
         } catch {
             meta = nil
         }
+
+        // Recoge resultados de imágenes
+        let avatar = await avatarTask
+        let thumbs = await thumbsTask
 
         await MainActor.run {
             if let m = meta {
                 leDioLike = m.liked
                 guardado  = m.saved
-                // 👇 clamp para evitar negativos por cualquier motivo
-                numLikes  = max(0, m.likes_count)
+                numLikes  = max(0, m.likes_count) // clamp defensivo
             }
             if let avatar { avatarImage = avatar }
             imageCache.merge(thumbs) { old, _ in old }
@@ -263,17 +270,14 @@ private extension PostView {
 
     // ✅ Optimista seguro + clamp (nunca < 0) + rollback simétrico
     func toggleLike() async {
-        // Optimistic UI
         await MainActor.run {
             leDioLike.toggle()
             numLikes += leDioLike ? 1 : -1
         }
 
         do {
-            // p_like = leDioLike (fuerza estado), o pasa nil para toggle server-side
             let r = try await SupabaseService.shared.toggleLikeRPC(postID: post.id, like: leDioLike)
             await MainActor.run {
-                // Corrige por si la UI y el servidor difieren
                 leDioLike = r.liked
                 numLikes  = r.likes_count
             }
@@ -282,7 +286,6 @@ private extension PostView {
             }
         } catch {
             print("❌ Error al cambiar like: \(error)")
-            // Revert UI si falló
             await MainActor.run {
                 leDioLike.toggle()
                 numLikes += leDioLike ? 1 : -1

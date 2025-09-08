@@ -40,6 +40,27 @@ extension SupabaseService {
     }
 }
 
+// MARK: - Post Meta (liked/saved/contadores via RPC)
+
+extension SupabaseService {
+    struct PostMetaResponse: Decodable {
+        let liked: Bool
+        let saved: Bool
+        let likes_count: Int
+        let comments_count: Int
+    }
+
+    /// Carga la metadata de un post para el usuario actual (liked/saved + contadores).
+    func fetchPostMeta(postID: UUID) async throws -> PostMetaResponse {
+        struct P: Encodable { let p_post: UUID }
+        let res = try await client
+            .rpc("api_get_post_meta", params: P(p_post: postID))
+            .single()
+            .execute()
+        return try res.decoded(to: PostMetaResponse.self)
+    }
+}
+
 // MARK: - Likes (por usuario, usando RPC api_toggle_like)
 
 extension SupabaseService {

@@ -8,58 +8,50 @@ struct PostActionsView: View {
 
     let toggleLike: () async -> Void
     let toggleSave: () async -> Void
-
-    init(
-        leDioLike: Binding<Bool>,
-        numLikes: Binding<Int>,
-        guardado: Binding<Bool>,
-        mostrarComentarios: Binding<Bool>,
-        toggleLike: @escaping () async -> Void,
-        toggleSave: @escaping () async -> Void
-    ) {
-        self._leDioLike = leDioLike
-        self._numLikes = numLikes
-        self._guardado = guardado
-        self._mostrarComentarios = mostrarComentarios
-        self.toggleLike = toggleLike
-        self.toggleSave = toggleSave
-    }
+    let onShowLikers: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 20) {
+        HStack {
+            // ❤️ Like + contador pegados
+            HStack(spacing: 4) {
                 Button {
                     Task { await toggleLike() }
                 } label: {
                     Image(systemName: leDioLike ? "heart.fill" : "heart")
-                        .font(.title3)
-                        .foregroundColor(leDioLike ? .red : .primary)
-                        .accessibilityLabel(leDioLike ? "Quitar me gusta" : "Dar me gusta")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(leDioLike ? .red : .primary)
+                        .symbolEffect(.bounce, value: leDioLike)
                 }
+                .buttonStyle(.plain)
 
-                Button {
-                    mostrarComentarios = true
-                } label: {
-                    Image(systemName: "bubble.right")
-                        .font(.title3)
-                        .accessibilityLabel("Abrir comentarios")
+                Button(action: onShowLikers) {
+                    Text("\(max(0, numLikes))")
+                        .font(.system(.subheadline, design: .rounded))
+                        .fontWeight(.semibold)
                 }
-
-                Spacer()
-
-                Button {
-                    Task { await toggleSave() }
-                } label: {
-                    Image(systemName: guardado ? "bookmark.fill" : "bookmark")
-                        .font(.title3)
-                        .accessibilityLabel(guardado ? "Quitar guardado" : "Guardar post")
-                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Usuarios a los que les gusta")
             }
 
-            Text("\(numLikes) me gusta")
-                .font(.subheadline.bold())
-                .foregroundStyle(.primary)
-                .accessibilityLabel(Text("\(numLikes) me gusta"))
+            // 💬 Comentarios al lado de los likes
+            Button { mostrarComentarios = true } label: {
+                Image(systemName: "message")
+                    .font(.system(size: 18, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 16)
+
+            Spacer()
+
+            // 🔖 Guardar a la derecha
+            Button {
+                Task { await toggleSave() }
+            } label: {
+                Image(systemName: guardado ? "bookmark.fill" : "bookmark")
+                    .font(.system(size: 18, weight: .semibold))
+            }
+            .buttonStyle(.plain)
         }
+        .padding(.horizontal, 6)
     }
 }
