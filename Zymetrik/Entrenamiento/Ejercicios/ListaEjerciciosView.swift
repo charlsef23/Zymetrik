@@ -8,44 +8,36 @@ struct ListaEjerciciosView: View {
 
     @State private var ejercicios: [Ejercicio] = []
     @State private var tipoSeleccionado: String = "Gimnasio"
-    @State private var filtroPartes: Set<String> = []      // Filtro por partes del cuerpo (categoria)
-    @State private var seleccionados: Set<UUID> = []       // Persistente por día
+    @State private var filtroPartes: Set<String> = []      // filtro por partes del cuerpo (categoria)
+    @State private var seleccionados: Set<UUID> = []       // persistencia por día
     @State private var cargando = false
 
-    // Añadimos "Favoritos"
     private let tipos = ["Gimnasio", "Cardio", "Funcional", "Favoritos"]
     @Namespace private var tipoAnimacion
-
-    // Controla upserts para no spamear
     @State private var pendingUpsertTask: Task<Void, Never>? = nil
 
-    // Partes disponibles según el tipo actual (y favoritos)
+    // Partes disponibles según tipo actual
     var partesDisponibles: [String] {
-        let base: [Ejercicio]
-        if tipoSeleccionado == "Favoritos" {
-            base = ejercicios.filter { $0.esFavorito }
-        } else {
-            base = ejercicios.filter { $0.tipo == tipoSeleccionado }
-        }
-        let set = Set(base.map { ($0.categoria.isEmpty ? "General" : $0.categoria) })
-        return set.sorted()
+        let base: [Ejercicio] = (tipoSeleccionado == "Favoritos")
+        ? ejercicios.filter { $0.esFavorito }
+        : ejercicios.filter { $0.tipo == tipoSeleccionado }
+
+        let set = Set(base.map { $0.categoria.isEmpty ? "General" : $0.categoria })
+        return set.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
-    // Agrupa por categoría con lógica de tipo y filtro de partes
-    var ejerciciosFiltradosPorTipo: [String: [Ejercicio]] {
-        var base: [Ejercicio]
-        if tipoSeleccionado == "Favoritos" {
-            base = ejercicios.filter { $0.esFavorito }
-        } else {
-            base = ejercicios.filter { $0.tipo == tipoSeleccionado }
-        }
+    // Lista final: filtra por tipo + partes y ordena A→Z
+    var ejerciciosFiltradosYOrdenados: [Ejercicio] {
+        var base: [Ejercicio] = (tipoSeleccionado == "Favoritos")
+        ? ejercicios.filter { $0.esFavorito }
+        : ejercicios.filter { $0.tipo == tipoSeleccionado }
+
         if !filtroPartes.isEmpty {
             base = base.filter { filtroPartes.contains($0.categoria.isEmpty ? "General" : $0.categoria) }
         }
-        return Dictionary(grouping: base) { $0.categoria.isEmpty ? "General" : $0.categoria }
+        return base.sorted { $0.nombre.localizedCaseInsensitiveCompare($1.nombre) == .orderedAscending }
     }
 
-    // Recupera array de ejercicios desde el set seleccionado
     var ejerciciosSeleccionadosHoy: [Ejercicio] {
         ejercicios.filter { seleccionados.contains($0.id) }
     }
@@ -53,19 +45,19 @@ struct ListaEjerciciosView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 16) {
 
-                    // Selector tipo
-                    TipoSelectorView(
+                    // TIPOS (chips con iconos)
+                    TipoChipsBar(
                         tipos: tipos,
-                        tipoSeleccionado: $tipoSeleccionado,
-                        tipoAnimacion: tipoAnimacion
+                        seleccionado: $tipoSeleccionado,
+                        namespace: tipoAnimacion
                     )
 
-                    // Chips de filtro por parte del cuerpo
+                    // PARTES DEL CUERPO (chips mejorados)
                     if !partesDisponibles.isEmpty {
-                        BodyPartFilterChips(
-                            partesDisponibles: partesDisponibles,
+                        PartesCuerpoChips(
+                            partes: partesDisponibles,
                             seleccionadas: $filtroPartes
                         )
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -73,49 +65,40 @@ struct ListaEjerciciosView: View {
 
                     // Estado selección hoy
                     if !seleccionados.isEmpty {
-                        HStack(spacing: 8) {
-                            Image(systemName: "calendar.circle.fill")
-                            Text("\(seleccionados.count) seleccionados hoy")
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Button(role: .destructive) {
-                                seleccionados.removeAll()
-                                persistPlanDebounced()
-                            } label: {
-                                Text("Quitar todos")
-                            }
-                            .font(.caption)
+                        SeleccionResumen(count: seleccionados.count) {
+                            seleccionados.removeAll()
+                            persistPlanDebounced()
                         }
-                        .padding(.horizontal)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(.systemGray6))
-                        )
                         .padding(.horizontal)
                     }
 
-                    // Lista
+                    // Lista simple sin títulos por categoría (solo tarjetas)
                     if cargando {
                         ProgressView("Cargando ejercicios...")
                             .frame(maxWidth: .infinity)
                             .padding(.top, 24)
                     } else {
-                        EjerciciosAgrupadosView(
-                            ejerciciosFiltradosPorTipo: ejerciciosFiltradosPorTipo,
-                            tipoSeleccionado: tipoSeleccionado,
-                            seleccionados: $seleccionados,
-                            isFavorito: { id in
-                                ejercicios.first(where: { $0.id == id })?.esFavorito ?? false
-                            },
-                            onToggleFavorito: { id in
-                                toggleFavorito(ejercicioID: id)
-                            },
-                            onToggleSeleccion: { _ in
-                                // Persistir cada toggle con pequeña espera
-                                persistPlanDebounced()
+                        LazyVStack(spacing: 14) {
+                            ForEach(ejerciciosFiltradosYOrdenados) { ejercicio in
+                                EjercicioCardView(
+                                    ejercicio: ejercicio,
+                                    seleccionado: seleccionados.contains(ejercicio.id),
+                                    esFavorito: ejercicio.esFavorito,
+                                    onToggleFavorito: { toggleFavorito(ejercicioID: ejercicio.id) }
+                                )
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    if seleccionados.contains(ejercicio.id) {
+                                        seleccionados.remove(ejercicio.id)
+                                    } else {
+                                        seleccionados.insert(ejercicio.id)
+                                    }
+                                    persistPlanDebounced()
+                                }
                             }
-                        )
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 4)
                     }
 
                     Spacer(minLength: 8)
@@ -124,7 +107,6 @@ struct ListaEjerciciosView: View {
             }
             .background(Color(.systemGroupedBackground))
             .ignoresSafeArea(edges: .bottom)
-            .navigationTitle("Seleccionar ejercicios")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") { isPresented = false }
@@ -143,9 +125,8 @@ struct ListaEjerciciosView: View {
             }
             .onAppear {
                 fetchEjercicios()
-                preloadPlanDelDia()   // carga selección persistida
+                preloadPlanDelDia()
             }
-            // ✅ Sin deprecation en iOS 17, compatible con iOS 16
             .onChangeCompat(of: fecha) { _, _ in
                 preloadPlanDelDia()
             }
@@ -166,7 +147,6 @@ struct ListaEjerciciosView: View {
         }
     }
 
-    /// Carga los ejercicios ya guardados en `entrenamientos_planeados` para la fecha dada
     func preloadPlanDelDia() {
         Task {
             do {
@@ -176,14 +156,12 @@ struct ListaEjerciciosView: View {
                     self.seleccionados = ids
                 }
             } catch {
-                // Si no existe fila aun, simplemente no selecciona nada
                 print("ℹ️ Sin plan previo para el día o error:", error)
             }
         }
     }
 
-    // MARK: - Persistencia inmediata con debounce
-    /// Llama a `upsertPlan(fecha, ejercicios:)` con un pequeño debounce para agrupar toques rápidos
+    // MARK: - Persistencia (debounce)
     func persistPlanDebounced() {
         pendingUpsertTask?.cancel()
         let selected = ejerciciosSeleccionadosHoy
@@ -197,7 +175,7 @@ struct ListaEjerciciosView: View {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Favoritos
     func toggleFavorito(ejercicioID: UUID) {
         guard let idx = ejercicios.firstIndex(where: { $0.id == ejercicioID }) else { return }
         ejercicios[idx].esFavorito.toggle()

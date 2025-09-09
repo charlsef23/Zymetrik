@@ -18,9 +18,22 @@
 		19B5453E2DADB6520004E203 /* Zymetrik.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zymetrik.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		19F541D42E6FA5F40076C6CE /* Exceptions for "Zymetrik" folder in "Zymetrik" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Entrenamiento/Ejercicios/View+OnChangeCompat.swift",
+			);
+			target = 19B5453D2DADB6520004E203 /* Zymetrik */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		19B545402DADB6520004E203 /* Zymetrik */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				19F541D42E6FA5F40076C6CE /* Exceptions for "Zymetrik" folder in "Zymetrik" target */,
+			);
 			path = Zymetrik;
 			sourceTree = "<group>";
 		};

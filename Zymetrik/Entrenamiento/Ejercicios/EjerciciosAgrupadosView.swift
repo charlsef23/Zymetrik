@@ -7,20 +7,33 @@ struct EjerciciosAgrupadosView: View {
 
     var isFavorito: (UUID) -> Bool
     var onToggleFavorito: (UUID) -> Void
-    var onToggleSeleccion: (UUID) -> Void   // ⬅️ nuevo: notifica para persistir
+    var onToggleSeleccion: (UUID) -> Void = { _ in } // opcional
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 28) {
-            ForEach(ejerciciosFiltradosPorTipo.sorted(by: { $0.key < $1.key }), id: \.key) { categoria, items in
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(categoria)
-                        .font(.title2.bold())
-                        .padding(.horizontal)
+        // 1) Precalculamos las claves ordenadas (categorías)
+        let categoriasOrdenadas: [String] = {
+            let keys = Array(ejerciciosFiltradosPorTipo.keys)
+            return keys.sorted { a, b in
+                a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+            }
+        }()
 
-                    ForEach(items.sorted(by: { $0.nombre.localizedCaseInsensitiveCompare($1.nombre) == .orderedAscending })) { ejercicio in
+        return LazyVStack(alignment: .leading, spacing: 20) {
+            ForEach(categoriasOrdenadas, id: \.self) { categoria in
+                // 2) Obtenemos y ordenamos los items de esta categoría
+                let items: [Ejercicio] = ejerciciosFiltradosPorTipo[categoria] ?? []
+                let itemsOrdenados: [Ejercicio] = items.sorted { lhs, rhs in
+                    lhs.nombre.localizedCaseInsensitiveCompare(rhs.nombre) == .orderedAscending
+                }
+
+                // Si no quieres mostrar el título de categoría, comenta el Text siguiente
+                // Text(categoria).font(.title2.bold()).padding(.horizontal)
+
+                // 3) Render de tarjetas
+                VStack(spacing: 14) {
+                    ForEach(itemsOrdenados) { ejercicio in
                         EjercicioCardView(
                             ejercicio: ejercicio,
-                            tipoSeleccionado: tipoSeleccionado,
                             seleccionado: seleccionados.contains(ejercicio.id),
                             esFavorito: isFavorito(ejercicio.id),
                             onToggleFavorito: { onToggleFavorito(ejercicio.id) }
@@ -32,10 +45,11 @@ struct EjerciciosAgrupadosView: View {
                             } else {
                                 seleccionados.insert(ejercicio.id)
                             }
-                            onToggleSeleccion(ejercicio.id) // ⬅️ persistir
+                            onToggleSeleccion(ejercicio.id)
                         }
                     }
                 }
+                .padding(.horizontal)
             }
         }
     }

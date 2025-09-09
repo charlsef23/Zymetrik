@@ -1,13 +1,13 @@
 import SwiftUI
 
-struct BodyPartFilterChips: View {
-    let partesDisponibles: [String]
+struct PartesCuerpoChips: View {
+    let partes: [String]
     @Binding var seleccionadas: Set<String>
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                ForEach(partesDisponibles, id: \.self) { parte in
+                ForEach(partes, id: \.self) { parte in
                     let isOn = seleccionadas.contains(parte)
                     Button {
                         if isOn { seleccionadas.remove(parte) } else { seleccionadas.insert(parte) }
@@ -18,7 +18,7 @@ struct BodyPartFilterChips: View {
                             if isOn { Image(systemName: "checkmark.circle.fill").font(.caption2) }
                         }
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 9)
                         .background(
                             Capsule()
                                 .fill(isOn ? Color.accentColor.opacity(0.18) : Color(.systemGray6))
@@ -26,8 +26,8 @@ struct BodyPartFilterChips: View {
                         .overlay(
                             Capsule().stroke(isOn ? Color.accentColor : Color.gray.opacity(0.35), lineWidth: 1)
                         )
+                        .foregroundColor(isOn ? .accentColor : .primary)
                     }
-                    .foregroundColor(isOn ? .accentColor : .primary)
                 }
 
                 if !seleccionadas.isEmpty {
@@ -40,15 +40,15 @@ struct BodyPartFilterChips: View {
                         }
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 9)
                         .background(Capsule().fill(Color.red.opacity(0.12)))
-                        .overlay(Capsule().stroke(Color.red.opacity(0.5), lineWidth: 1))
+                        .overlay(Capsule().stroke(Color.red.opacity(0.45), lineWidth: 1))
                         .foregroundColor(.red)
                     }
                 }
             }
             .padding(.horizontal)
         }
-        .padding(.top, 4)
+        .padding(.top, 2)
     }
 }
