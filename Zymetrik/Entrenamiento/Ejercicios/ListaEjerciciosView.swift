@@ -12,6 +12,9 @@ struct ListaEjerciciosView: View {
     @State private var seleccionados: Set<UUID> = []       // persistencia por día
     @State private var cargando = false
 
+    // Rutinas
+    @State private var mostrarRutinaSheet = false
+
     private let tipos = ["Gimnasio", "Cardio", "Funcional", "Favoritos"]
     @Namespace private var tipoAnimacion
     @State private var pendingUpsertTask: Task<Void, Never>? = nil
@@ -47,7 +50,7 @@ struct ListaEjerciciosView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
 
-                    // TIPOS (chips con iconos)
+                    // TIPOS (chips con iconos – Favoritos en amarillo)
                     TipoChipsBar(
                         tipos: tipos,
                         seleccionado: $tipoSeleccionado,
@@ -107,6 +110,7 @@ struct ListaEjerciciosView: View {
             }
             .background(Color(.systemGroupedBackground))
             .ignoresSafeArea(edges: .bottom)
+            .navigationTitle("Seleccionar ejercicios")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") { isPresented = false }
@@ -122,13 +126,46 @@ struct ListaEjerciciosView: View {
                     }
                     .disabled(seleccionados.isEmpty)
                 }
+                // ⬅️ Ahora el botón rutina está arriba en la barra
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        mostrarRutinaSheet = true
+                    } label: {
+                        Label("Rutina", systemImage: "calendar.badge.plus")
+                    }
+                    .disabled(seleccionados.isEmpty)
+                }
             }
             .onAppear {
                 fetchEjercicios()
                 preloadPlanDelDia()
             }
+            // Compatibilidad iOS 16/17
             .onChangeCompat(of: fecha) { _, _ in
                 preloadPlanDelDia()
+            }
+        }
+        // Hoja para elegir días/semana y programar rutina
+        .sheet(isPresented: $mostrarRutinaSheet) {
+            RoutineDaysSheet { selectedWeekdays, weeksCount in
+                let ejerciciosElegidos = ejerciciosSeleccionadosHoy
+                guard !ejerciciosElegidos.isEmpty else { return }
+                Task {
+                    do {
+                        try await TrainingRoutineScheduler.scheduleRoutine(
+                            startFrom: fecha,
+                            weekdays: selectedWeekdays,
+                            weeks: weeksCount,
+                            ejercicios: ejerciciosElegidos
+                        )
+                        await MainActor.run {
+                            mostrarRutinaSheet = false
+                            isPresented = false
+                        }
+                    } catch {
+                        print("❌ Error programando rutina:", error)
+                    }
+                }
             }
         }
     }
@@ -191,7 +228,7 @@ struct ListaEjerciciosView: View {
     }
 }
 
-// MARK: - Helper de compatibilidad iOS 16/17 para onChange
+// MARK: - Helper iOS 16/17 para onChange
 extension View {
     @ViewBuilder
     func onChangeCompat<T: Equatable>(
