@@ -1,3 +1,4 @@
+// MARK: - PostView.swift
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -13,7 +14,11 @@ struct PostView: View {
     @State private var guardado = false
     @State private var mostrarComentarios = false
     @State private var mostrarConfirmacionEliminar = false
+
+    // Compartir
     @State private var mostrarShare = false
+    @State private var mostrarShareOptions = false
+    @State private var shareError: String? = nil
 
     // Animación corazón
     @State private var mostrarLikers = false
@@ -25,7 +30,7 @@ struct PostView: View {
     @State private var primeTask: Task<Void, Never>? = nil
     @State private var isReady = false
 
-    // Cachés de imágenes predescargadas
+    // Cache de avatar para el nuevo sistema
     @State private var avatarImage: UIImage? = nil
     @State private var imageCache: [UUID: UIImage] = [:]
 
@@ -62,10 +67,11 @@ struct PostView: View {
     // MARK: - Contenido real
     private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
-            PostHeader(
+            // Header mejorado (username + tiempo en una línea)
+            PostHeaderMejorado(
                 post: post,
                 onEliminar: { mostrarConfirmacionEliminar = true },
-                onCompartir: { mostrarShare = true },
+                onCompartir: { mostrarShareOptions = true }, // abre opciones
                 preloadedAvatar: avatarImage
             )
 
@@ -90,7 +96,7 @@ struct PostView: View {
                 mostrarComentarios: $mostrarComentarios,
                 toggleLike: toggleLike,
                 toggleSave: toggleSave,
-                onShowLikers: { mostrarLikers = true } // 👈 abrir lista
+                onShowLikers: { mostrarLikers = true }
             )
         }
         .padding(14)
@@ -112,15 +118,24 @@ struct PostView: View {
                 Task { await doubleTapLike() }
             }
         )
+        // Sheets / Alerts
         .sheet(isPresented: $mostrarComentarios) {
             ComentariosView(postID: post.id)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $mostrarShare) {
-            ShareSheet(items: [shareText()])
+        .sheet(isPresented: $mostrarShareOptions) {
+            ShareOptionsView(
+                onSystemShare: { mostrarShare = true },
+                onWhatsApp:    { shareToWhatsApp() },
+                onInstagram:   { shareToInstagramStories() }
+            )
+            .presentationDetents([.medium])
         }
-        .sheet(isPresented: $mostrarLikers) {                 // 👈 hoja de likers
+        .sheet(isPresented: $mostrarShare) {
+            ShareSheet(items: shareItems())
+        }
+        .sheet(isPresented: $mostrarLikers) {
             LikersListView(postID: post.id)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -129,35 +144,110 @@ struct PostView: View {
             Button("Eliminar", role: .destructive) { eliminarPost() }
             Button("Cancelar", role: .cancel) {}
         }
+        .alert("No se pudo compartir", isPresented: .constant(shareError != nil)) {
+            Button("OK") { shareError = nil }
+        } message: {
+            Text(shareError ?? "")
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Post de @\(post.username)"))
     }
 
-    // MARK: - Carga total (meta + imágenes)
+    // MARK: - Share helpers
+
+    private func shareText() -> String {
+        "Entrenamiento de @\(post.username) • \(post.fecha.timeAgoDisplay())"
+    }
+
+    private func shareItems() -> [Any] {
+        var items: [Any] = [shareText()]
+        if let firstID = post.contenido.first?.id, let img = imageCache[firstID] {
+            items.append(img)
+        }
+        return items
+    }
+
+    private func shareToWhatsApp() {
+        let text = shareText()
+        guard let url = URL(string: "whatsapp://send?text=\(text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"),
+              UIApplication.shared.canOpenURL(url) else {
+            shareError = "Parece que WhatsApp no está instalado."
+            return
+        }
+        UIApplication.shared.open(url)
+    }
+
+    private func shareToInstagramStories() {
+        guard let urlScheme = URL(string: "instagram-stories://share"),
+              UIApplication.shared.canOpenURL(urlScheme) else {
+            shareError = "Instagram no está instalado."
+            return
+        }
+
+        // Usamos la primera imagen del post; si no hay, generamos 1x1 transparente
+        let stickerImage: UIImage = {
+            if let firstID = post.contenido.first?.id, let img = imageCache[firstID] {
+                return img
+            } else {
+                return UIGraphicsImageRenderer(size: .init(width: 1, height: 1)).image { _ in }
+            }
+        }()
+
+        guard let pngData = stickerImage.pngData() else {
+            shareError = "No se pudo preparar la imagen para Instagram."
+            return
+        }
+
+        let pasteboardItems: [[String: Any]] = [[
+            "com.instagram.sharedSticker.stickerImage": pngData,
+            "com.instagram.sharedSticker.backgroundTopColor": "#1F1F1F",
+            "com.instagram.sharedSticker.backgroundBottomColor": "#1F1F1F",
+            // "com.instagram.sharedSticker.contentURL": "https://tuapp.example/post/\(post.id.uuidString)"
+        ]]
+
+        UIPasteboard.general.setItems(pasteboardItems, options: [
+            UIPasteboard.OptionsKey.expirationDate: Date().addingTimeInterval(60)
+        ])
+
+        UIApplication.shared.open(urlScheme)
+    }
+
+    // MARK: - Carga total (meta + imágenes) - Integrado con cache de avatares
     private func primeAll() async {
         isReady = false
 
-        // Copias inmutables para no capturar `self` en funciones @Sendable
         let postID = post.id
         let autorID = post.autor_id
-        let avatarURL = post.avatar_url.flatMap { URL(string: $0) }
+        let avatarURL = post.avatar_url?.validHTTPURL
         let ejercicios = post.contenido
         let existingAvatar = self.avatarImage
         let existingCache = self.imageCache
 
-        // Prefetch ya disponible (no concurrente)
-        if avatarImage == nil, let preA = await FeedPrefetcher.shared.avatar(for: autorID) {
-            avatarImage = preA
+        // Intentar obtener del cache de avatares primero
+        if avatarImage == nil {
+            if let cacheKey = post.avatar_url, let cachedAvatar = AvatarCache.shared.getImage(forKey: cacheKey) {
+                avatarImage = cachedAvatar
+            } else if let preA = await FeedPrefetcher.shared.avatar(for: autorID) {
+                avatarImage = preA
+                if let avatarURL = post.avatar_url {
+                    AvatarCache.shared.setImage(preA, forKey: avatarURL)
+                }
+            }
         }
+
+        // Prefetch de imágenes del carrusel
         if imageCache.isEmpty, let preI = await FeedPrefetcher.shared.images(for: postID) {
             imageCache = preI
         }
 
-        // Helpers concurrentes, @Sendable y sin capturar self
         @Sendable func loadAvatarImage(url: URL?, existing: UIImage?) async -> UIImage? {
             if let existing { return existing }
             if let url {
-                return await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 40, height: 40))
+                let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 60, height: 60))
+                if let img = img {
+                    AvatarCache.shared.setImage(img, forKey: url.absoluteString)
+                }
+                return img
             }
             return nil
         }
@@ -167,7 +257,7 @@ struct PostView: View {
             await withTaskGroup(of: (UUID, UIImage?)?.self) { group in
                 for e in ejercicios {
                     guard existing[e.id] == nil else { continue }
-                    if let s = e.imagen_url, let url = URL(string: s) {
+                    if let s = e.imagen_url, let url = s.validHTTPURL {
                         group.addTask {
                             let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 120, height: 120))
                             return (e.id, img)
@@ -181,11 +271,9 @@ struct PostView: View {
             return dict
         }
 
-        // Lanza en paralelo SOLO imágenes (no lanzables)
         async let avatarTask: UIImage? = loadAvatarImage(url: avatarURL, existing: existingAvatar)
         async let thumbsTask: [UUID: UIImage] = loadThumbs(ejercicios: ejercicios, existing: existingCache)
 
-        // Pide la meta con try/await directo (evita ambigüedad de async let + throws)
         var meta: SupabaseService.PostMetaResponse? = nil
         do {
             meta = try await SupabaseService.shared.fetchPostMeta(postID: postID)
@@ -193,7 +281,6 @@ struct PostView: View {
             meta = nil
         }
 
-        // Recoge resultados de imágenes
         let avatar = await avatarTask
         let thumbs = await thumbsTask
 
@@ -201,7 +288,7 @@ struct PostView: View {
             if let m = meta {
                 leDioLike = m.liked
                 guardado  = m.saved
-                numLikes  = max(0, m.likes_count) // clamp defensivo
+                numLikes  = max(0, m.likes_count)
             }
             if let avatar { avatarImage = avatar }
             imageCache.merge(thumbs) { old, _ in old }
@@ -214,7 +301,7 @@ struct PostView: View {
         await withTaskGroup(of: (UUID, UIImage?)?.self) { group in
             for e in ejercicios {
                 guard existing[e.id] == nil else { continue }
-                if let s = e.imagen_url, let url = URL(string: s) {
+                if let s = e.imagen_url, let url = s.validHTTPURL {
                     group.addTask(priority: .userInitiated) {
                         let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 120, height: 120))
                         return (e.id, img)
@@ -229,12 +316,89 @@ struct PostView: View {
     }
 }
 
+// MARK: - PostHeader (username + tiempo a la derecha, sin línea gris)
+private struct PostHeaderMejorado: View {
+    let post: Post
+    let onEliminar: () -> Void
+    let onCompartir: () -> Void
+    let preloadedAvatar: UIImage?
+    
+    @State private var showMenuOpciones = false
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Avatar
+            NavigationLink {
+                UserProfileView(username: post.username)
+            } label: {
+                Group {
+                    if let preloadedAvatar = preloadedAvatar {
+                        AvatarAsyncImage(
+                            url: nil,
+                            size: 44,
+                            preloaded: preloadedAvatar,
+                            showBorder: true,
+                            borderColor: .white,
+                            borderWidth: 2,
+                            enableHaptics: true
+                        )
+                    } else {
+                        AvatarAsyncImage(
+                            url: post.avatar_url.validHTTPURL,
+                            size: 44,
+                            showBorder: true,
+                            borderColor: .white,
+                            borderWidth: 2,
+                            enableHaptics: true
+                        )
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            
+            // Username + • + tiempo (una sola línea)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 6) {
+                    Text(post.username)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text("•")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text(post.fecha.timeAgoDisplay())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            Button {
+                showMenuOpciones = true
+                HapticManager.shared.lightImpact()
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(Color(.systemGray6))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .confirmationDialog("Opciones del post", isPresented: $showMenuOpciones) {
+            Button("Compartir") { onCompartir() }
+            Button("Reportar", role: .destructive) { /* TODO: lógica reporte */ }
+            Button("Cancelar", role: .cancel) {}
+        }
+    }
+}
+
 // MARK: - Lógica UI
 private extension PostView {
-    func shareText() -> String {
-        "Entrenamiento de @\(post.username) • \(post.fecha.timeAgoDisplay())"
-    }
-
     func doubleTapLike() async {
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
         if !leDioLike {
@@ -268,7 +432,6 @@ private extension PostView {
         }
     }
 
-    // ✅ Optimista seguro + clamp (nunca < 0) + rollback simétrico
     func toggleLike() async {
         await MainActor.run {
             leDioLike.toggle()
@@ -282,7 +445,7 @@ private extension PostView {
                 numLikes  = r.likes_count
             }
             if r.liked {
-                UIImpactFeedbackGenerator().impactOccurred(intensity: 0.7)
+                HapticManager.shared.mediumImpact()
             }
         } catch {
             print("❌ Error al cambiar like: \(error)")
@@ -290,7 +453,7 @@ private extension PostView {
                 leDioLike.toggle()
                 numLikes += leDioLike ? 1 : -1
             }
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            HapticManager.shared.error()
         }
     }
 
@@ -299,14 +462,14 @@ private extension PostView {
         do {
             try await SupabaseService.shared.setSaved(postID: post.id, saved: guardado)
             await MainActor.run { onGuardadoCambio?(guardado) }
-            UIImpactFeedbackGenerator().impactOccurred(intensity: 0.4)
+            HapticManager.shared.lightImpact()
         } catch {
             print("❌ Error al cambiar guardado: \(error)")
             await MainActor.run {
                 guardado.toggle()
                 onGuardadoCambio?(guardado)
             }
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            HapticManager.shared.error()
         }
     }
 }

@@ -3,11 +3,11 @@ import Supabase
 
 struct PerfilEntrenamientosView: View {
     let profileID: String? // nil para el perfil actual
-
+    
     @State private var posts: [Post] = []
     @State private var cargando = true
     @State private var error: String?
-
+    
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
@@ -32,7 +32,7 @@ struct PerfilEntrenamientosView: View {
         .background(Color(.systemBackground).ignoresSafeArea())
         .task { await cargarPosts() }
     }
-
+    
     func cargarPosts() async {
         do {
             let currentID: String
@@ -41,19 +41,19 @@ struct PerfilEntrenamientosView: View {
             } else {
                 currentID = try await SupabaseManager.shared.client.auth.session.user.id.uuidString
             }
-
+            
             let response = try await SupabaseManager.shared.client
-                .from("posts")
+                .from("posts_enriched") // 👈 usamos la vista
                 .select("""
-                    id, fecha, autor_id, avatar_url, username, contenido
+                    id, fecha, autor_id, username, avatar_url, contenido, likes_count, comments_count
                 """)
                 .eq("autor_id", value: currentID)
                 .order("fecha", ascending: false)
                 .execute()
-
+            
             self.posts = try response.decodedList(to: Post.self)
             self.cargando = false
-
+            
         } catch {
             self.error = "Error al cargar posts: \(error.localizedDescription)"
             self.cargando = false

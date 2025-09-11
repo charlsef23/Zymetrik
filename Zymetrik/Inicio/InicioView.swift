@@ -4,6 +4,7 @@ struct InicioView: View {
     @State private var posts: [Post] = []
     @State private var seleccion = "Para ti"
     @State private var cargando = true
+    @State private var errorMsg: String? = nil   // 👈 para mostrar errores
 
     // Paginación
     @State private var isLoadingMore = false
@@ -58,9 +59,31 @@ struct InicioView: View {
                 .padding(.top, 16)
                 .padding(.horizontal)
 
-                // Lista
+                // Lista / Estado
                 if cargando {
-                    ProgressView().padding()
+                    ProgressView("Cargando…").padding()
+                } else if let errorMsg {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.largeTitle)
+                            .foregroundColor(.orange)
+                        Text("No se pudo cargar el feed")
+                            .font(.headline)
+                        Text(errorMsg)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                        Button {
+                            Task { await initialSafeLoad() }
+                        } label: {
+                            Text("Reintentar")
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
+                                .background(Color.accentColor.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.top, 24)
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 24) {
@@ -82,9 +105,31 @@ struct InicioView: View {
                 Spacer()
             }
             .task {
+                // Carga inicial defensiva con try/catch
                 if posts.isEmpty {
-                    await refresh()
+                    await initialSafeLoad()
                 }
+            }
+        }
+    }
+
+    // MARK: - Carga inicial defensiva (usa fetchPosts con try/catch)
+    private func initialSafeLoad() async {
+        await MainActor.run {
+            cargando = true
+            errorMsg = nil
+        }
+        do {
+            // 👇 Aquí va exactamente el bloque que me pediste, integrado
+            posts = try await SupabaseService.shared.fetchPosts()
+            await MainActor.run { cargando = false }
+            // Una vez cargado “seguro”, activamos tu pipeline de paginación RPC
+            restartFeed()
+        } catch {
+            await MainActor.run {
+                cargando = false
+                errorMsg = "No se pudo cargar el feed: \(error.localizedDescription)"
+                print("❌ fetchPosts error:", error)
             }
         }
     }
@@ -99,8 +144,7 @@ struct InicioView: View {
         reachedEnd = false
         beforeCursor = nil
         lastRequestedCursor = nil
-        posts = []
-        cargando = true
+        cargando = posts.isEmpty   // si ya tenemos posts de la carga segura, no mostramos spinner
 
         let currentGen = feedGeneration
         loadTask = Task { [currentGen] in
@@ -117,7 +161,9 @@ struct InicioView: View {
             reachedEnd = false
             beforeCursor = nil
             lastRequestedCursor = nil
+            // si ya hay posts, mantenemos la UI; si no, muestra spinner
             cargando = posts.isEmpty
+            errorMsg = nil
         }
 
         let currentGen = feedGeneration
@@ -194,13 +240,17 @@ struct InicioView: View {
                 }
             }
         } catch is CancellationError {
-            // Silenciamos cancelaciones por cambios de vista/refresh
             return
         } catch let urlErr as URLError where urlErr.code == .cancelled {
-            // Silenciamos NSURLErrorDomain Code -999
             return
         } catch {
-            print("Error al cargar feed: \(error)")
+            print("Error al cargar feed (RPC): \(error)")
+            // Si la RPC falla en una carga inicial, muestra el error si no hay posts
+            await MainActor.run {
+                if posts.isEmpty {
+                    errorMsg = "No se pudo cargar el feed (RPC): \(error.localizedDescription)"
+                }
+            }
         }
     }
 }

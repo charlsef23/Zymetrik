@@ -1,28 +1,27 @@
+// MARK: - PerfilView.swift
 import SwiftUI
-import Supabase
 
 struct PerfilView: View {
     @StateObject private var vm = PerfilViewModel()
-
+    @State private var showEditarPerfil = false
     @State private var selectedTab: PerfilTab = .entrenamientos
     @State private var showAjustes = false
-    @State private var showEditarPerfil = false
-
+    
     let esVerificado = true
-
+    
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 16) {
                     headerBar
                         .padding(.horizontal)
-
+                    
                     profileInfoSection
                         .padding(.horizontal)
-
+                    
                     tabsBar
                         .padding(.horizontal)
-
+                    
                     // Contenido de pestañas — full-bleed (sin padding horizontal)
                     tabContent
                         .padding(.vertical, 4)
@@ -30,7 +29,6 @@ struct PerfilView: View {
                 .padding(.bottom, 16)
             }
             .background(Color(.systemBackground).ignoresSafeArea())
-            // ⬇️ Quitado el navigationTitle centrado
             .sheet(isPresented: $showEditarPerfil) {
                 EditarPerfilView(
                     nombre: $vm.nombre,
@@ -53,23 +51,23 @@ struct PerfilView: View {
 // MARK: - Subvistas
 
 private extension PerfilView {
-    // Header superior: username + verificado + ajustes (solo izquierda muestra username)
+    // Header superior: username + verificado + ajustes
     var headerBar: some View {
         HStack {
             HStack(spacing: 6) {
                 Text(vm.username)
                     .font(.title)
                     .fontWeight(.bold)
-
+                
                 if esVerificado {
                     Image(systemName: "checkmark.seal.fill")
                         .foregroundColor(.verificado)
                         .font(.system(size: 20))
                 }
             }
-
+            
             Spacer()
-
+            
             Button {
                 showAjustes = true
             } label: {
@@ -80,24 +78,26 @@ private extension PerfilView {
             .buttonStyle(.plain)
         }
     }
-
+    
     // Avatar + nombre + presentación + acciones + contadores
     var profileInfoSection: some View {
         VStack(spacing: 12) {
-            AvatarView(urlString: vm.imagenPerfilURL)
-
+            // Avatar mejorado con todas las funcionalidades
+            AvatarAsyncImage.profile(url: vm.imagenPerfilURL)
+                .avatarStyle(isOnline: true, showActivity: true)
+            
             HStack(spacing: 6) {
                 Text(vm.nombre)
                     .font(.title3)
                     .fontWeight(.semibold)
-
+                
                 if esVerificado {
                     Image(systemName: "checkmark.seal.fill")
                         .foregroundColor(.verificado)
                         .font(.system(size: 16))
                 }
             }
-
+            
             if !vm.presentacion.isEmpty {
                 Text(vm.presentacion)
                     .font(.subheadline)
@@ -111,13 +111,12 @@ private extension PerfilView {
                     Link(destination: url) {
                         Text(vm.enlaces)
                             .font(.subheadline)
-                            .foregroundColor(.blue) // estilo típico de link
+                            .foregroundColor(.blue)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
                             .underline()
                     }
                 } else {
-                    // Si no es URL válida, mostrar como texto normal
                     Text(vm.enlaces)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -125,18 +124,19 @@ private extension PerfilView {
                         .frame(maxWidth: .infinity)
                 }
             }
-
+            
             actionButtons
-
+            
             countersRow
         }
     }
-
+    
     // Botones: Editar perfil + Compartir
     var actionButtons: some View {
         HStack {
             Button {
                 showEditarPerfil = true
+                HapticManager.shared.lightImpact()
             } label: {
                 Text("Editar perfil")
                     .font(.subheadline)
@@ -148,7 +148,7 @@ private extension PerfilView {
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
-
+            
             NavigationLink {
                 ShareProfileView(username: vm.username, profileImage: Image(systemName: "person"))
             } label: {
@@ -164,7 +164,7 @@ private extension PerfilView {
             .buttonStyle(.plain)
         }
     }
-
+    
     // Contadores: Entrenos / Seguidores / Siguiendo
     var countersRow: some View {
         HStack {
@@ -208,13 +208,14 @@ private extension PerfilView {
             Spacer()
         }
     }
-
+    
     // Tabs
     var tabsBar: some View {
         HStack {
             ForEach(PerfilTab.allCases, id: \.self) { tab in
                 Button {
                     selectedTab = tab
+                    HapticManager.shared.selection()
                 } label: {
                     Text(tab.rawValue)
                         .fontWeight(selectedTab == tab ? .bold : .regular)
@@ -229,7 +230,7 @@ private extension PerfilView {
             }
         }
     }
-
+    
     // Contenido por tab (borderless)
     @ViewBuilder
     var tabContent: some View {
@@ -241,40 +242,5 @@ private extension PerfilView {
         case .logros:
             PerfilLogrosView(perfilId: nil)
         }
-    }
-}
-
-// MARK: - Avatar
-
-private struct AvatarView: View {
-    let urlString: String?
-
-    var body: some View {
-        Group {
-            if let urlString, let url = URL(string: urlString) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView().frame(width: 84, height: 84)
-                    case .success(let image):
-                        image.resizable().frame(width: 84, height: 84).clipShape(Circle())
-                    case .failure:
-                        defaultAvatar
-                    @unknown default:
-                        defaultAvatar
-                    }
-                }
-            } else {
-                defaultAvatar
-            }
-        }
-    }
-
-    private var defaultAvatar: some View {
-        Image(systemName: "person.circle.fill")
-            .resizable()
-            .frame(width: 84, height: 84)
-            .clipShape(Circle())
-            .foregroundColor(.gray)
     }
 }

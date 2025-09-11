@@ -7,24 +7,19 @@ struct SupabaseService {
     static let shared = SupabaseService()
     let client = SupabaseManager.shared.client
 
-    // Feed de posts
+    // Feed de posts (desde la vista posts_enriched)
     func fetchPosts(id: UUID? = nil, limit: Int = 20) async throws -> [Post] {
-        var query = client
-            .from("posts")
-            .select("""
-                id, fecha, autor_id, avatar_url, username, contenido
-            """, head: false)
+        var q = client
+            .from("posts_enriched")
+            .select("id, fecha, autor_id, username, avatar_url, contenido, likes_count, comments_count")
 
-        if let id = id {
-            query = query.eq("id", value: id.uuidString)
-        }
+        if let id { q = q.eq("id", value: id.uuidString) }
 
-        let response = try await query
+        let res = try await q
             .order("fecha", ascending: false)
             .limit(limit)
             .execute()
-
-        return try response.decodedList(to: Post.self)
+        return try res.decodedList(to: Post.self)
     }
 }
 
@@ -188,7 +183,7 @@ extension SupabaseService {
     }
 }
 
-// MARK: - Modelos base (no específicos de entrenamiento)
+// MARK: - Modelos base
 
 struct Post: Identifiable, Decodable {
     let id: UUID
@@ -196,7 +191,7 @@ struct Post: Identifiable, Decodable {
     let autor_id: UUID
     let avatar_url: String?
     let username: String
-    let contenido: [EjercicioPostContenido]   // definido en el archivo de Training
+    let contenido: [EjercicioPostContenido]
 }
 
 struct Perfil: Identifiable, Codable, Equatable {
@@ -206,7 +201,7 @@ struct Perfil: Identifiable, Codable, Equatable {
     let avatar_url: String?
 }
 
-// MARK: - Decoder flexible (comparte para todo el módulo)
+// MARK: - Decoder flexible
 
 enum _SupabaseDecoders {
     static let flexible: JSONDecoder = {
@@ -215,23 +210,20 @@ enum _SupabaseDecoders {
             let container = try decoder.singleValueContainer()
             let raw = try container.decode(String.self)
 
-            // 1) ISO8601 con fracciones
             let isoFrac = ISO8601DateFormatter()
             isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds, .withColonSeparatorInTimeZone]
             if let d = isoFrac.date(from: raw) { return d }
 
-            // 2) ISO8601 sin fracciones
             let iso = ISO8601DateFormatter()
             iso.formatOptions = [.withInternetDateTime, .withColonSeparatorInTimeZone]
             if let d = iso.date(from: raw) { return d }
 
-            // 3) Fallbacks RFC3339 comunes
             let formats = [
                 "yyyy-MM-dd'T'HH:mm:ssXXXXX",
                 "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX",
                 "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXXXX",
                 "yyyy-MM-dd HH:mm:ssXXXXX",
-                "yyyy-MM-dd" // permite guardar "solo día" => 00:00Z
+                "yyyy-MM-dd"
             ]
             let df = DateFormatter()
             df.locale = Locale(identifier: "en_US_POSIX")
@@ -269,7 +261,6 @@ extension Date {
     }
 }
 
-/// Inicio de día en UTC (útil para guardar "solo día")
 func dateAtStartOfDayISO8601(_ d: Date) -> Date {
     var cal = Calendar(identifier: .iso8601)
     cal.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt

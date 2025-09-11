@@ -3,8 +3,12 @@ import ImageIO
 import UniformTypeIdentifiers
 
 enum FastImageLoader {
-    /// Descarga con caché y hace downsample al tamaño pedido.
     static func downsampledImage(from url: URL, targetSize: CGSize) async -> UIImage? {
+        // Esquemas permitidos
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+            return nil
+        }
         var request = URLRequest(url: url)
         request.cachePolicy = .returnCacheDataElseLoad
         do {
@@ -15,15 +19,13 @@ enum FastImageLoader {
         }
     }
 
-    /// Downsample a partir de datos en memoria.
     static func downsampledImage(data: Data, targetSize: CGSize) async -> UIImage? {
+        guard !data.isEmpty else { return nil }
         let scale = await MainActor.run { UIScreen.main.scale }
         let maxDimensionInPixels = max(targetSize.width, targetSize.height) * scale
 
-        // kUTTypeJPEG está deprecado → usa UniformTypeIdentifiers
         let srcOptions: [CFString: Any] = [
-            kCGImageSourceShouldCache: false,
-            kCGImageSourceTypeIdentifierHint: UTType.jpeg.identifier as CFString
+            kCGImageSourceShouldCache: false
         ]
 
         guard let src = CGImageSourceCreateWithData(data as CFData, srcOptions as CFDictionary) else {

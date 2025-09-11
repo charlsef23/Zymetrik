@@ -1,9 +1,9 @@
 import UIKit
 
+// MARK: - FeedPrefetcher (PATCH)
 actor FeedPrefetcher {
     static let shared = FeedPrefetcher()
 
-    // cache in-memory simple (podrías usar NSCache)
     private var cache: [UUID: [UUID: UIImage]] = [:] // postID -> (ejercicioID -> image)
     private var avatarCache: [UUID: UIImage] = [:]    // autor_id -> avatar
 
@@ -19,28 +19,28 @@ actor FeedPrefetcher {
     }
 
     private func prefetchPost(_ post: Post) async {
-        // avatar
-        if avatarCache[post.autor_id] == nil, let a = post.avatar_url, let url = URL(string: a) {
-            if let img = await FastImageLoader.downsampledImage(from: url, targetSize: CGSize(width: 40, height: 40)) {
+        // Avatar
+        if avatarCache[post.autor_id] == nil,
+           let url = post.avatar_url.validHTTPURL { // 👈 valida http(s)
+            if let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 40, height: 40)) {
                 avatarCache[post.autor_id] = img
             }
         }
 
-        // thumbnails
+        // Thumbnails ejercicios
         var imgs: [UUID: UIImage] = [:]
         await withTaskGroup(of: (UUID, UIImage?)?.self) { group in
             for e in post.contenido {
-                if let s = e.imagen_url, let url = URL(string: s) {
+                if let s = e.imagen_url,
+                   let url = s.validHTTPURL { // 👈 valida http(s)
                     group.addTask(priority: .utility) {
-                        let img = await FastImageLoader.downsampledImage(from: url, targetSize: CGSize(width: 120, height: 120))
+                        let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 120, height: 120))
                         return (e.id, img)
                     }
                 }
             }
             for await pair in group {
-                if let (id, img) = pair, let img {
-                    imgs[id] = img
-                }
+                if let (id, img) = pair, let img { imgs[id] = img }
             }
         }
         cache[post.id] = imgs
