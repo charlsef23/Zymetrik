@@ -38,7 +38,7 @@ struct UserProfileView: View {
                         .font(.title2)
                         .fontWeight(.bold)
 
-                    Text(presentacion.isEmpty ? "📍 Entrenando cada día\n💪 Fitness · Salud · Comunidad" : presentacion)
+                    Text(presentacion.isEmpty ? "" : presentacion)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)

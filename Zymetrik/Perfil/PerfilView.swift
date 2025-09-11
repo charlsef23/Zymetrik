@@ -105,6 +105,26 @@ private extension PerfilView {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
             }
+            
+            if !vm.enlaces.isEmpty {
+                if let url = URL(string: vm.enlaces.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    Link(destination: url) {
+                        Text(vm.enlaces)
+                            .font(.subheadline)
+                            .foregroundColor(.blue) // estilo típico de link
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .underline()
+                    }
+                } else {
+                    // Si no es URL válida, mostrar como texto normal
+                    Text(vm.enlaces)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
+            }
 
             actionButtons
 
