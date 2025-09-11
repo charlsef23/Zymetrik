@@ -24,8 +24,11 @@ struct UserProfileView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
+                // ⬅️ Header con username solo a la izquierda (como PerfilView)
+                headerBar
+                    .padding(.horizontal)
 
-                // Header
+                // Info de perfil
                 VStack(spacing: 8) {
                     avatar(avatarURL)
                         .frame(width: 90, height: 90)
@@ -86,7 +89,7 @@ struct UserProfileView: View {
                         } label: {
                             Text(tab.rawValue)
                                 .fontWeight(selectedTab == tab ? .bold : .regular)
-                                .foregroundColor(selectedTab == tab ? .black : .gray)
+                                .foregroundColor(selectedTab == tab ? .primary : .gray)
                                 .padding(.vertical, 6)
                                 .padding(.horizontal, 16)
                                 .background(
@@ -100,16 +103,26 @@ struct UserProfileView: View {
 
                 // Contenido (borderless / full-bleed)
                 tabContent
-                    .padding(.vertical, 4) // sin padding horizontal → full-bleed
+                    .padding(.vertical, 4)
             }
             .padding(.bottom, 16)
         }
         .background(Color(.systemBackground).ignoresSafeArea())
-        .navigationTitle(username)
-        .navigationBarTitleDisplayMode(.inline)
+        // ⬇️ Quitado el navigationTitle centrado
         .task {
             await cargarPerfil()
             await prepararEstado()
+        }
+    }
+
+    // MARK: - Header (igual estilo que PerfilView)
+    private var headerBar: some View {
+        HStack {
+            Text("@\(username)")
+                .font(.title)
+                .fontWeight(.bold)
+
+            Spacer()
         }
     }
 
@@ -149,7 +162,7 @@ struct UserProfileView: View {
     @ViewBuilder
     private var logrosContent: some View {
         if let perfilUUID {
-            PerfilLogrosView(perfilId: perfilUUID)  
+            PerfilLogrosView(perfilId: perfilUUID)
         } else {
             ProgressView().padding()
         }

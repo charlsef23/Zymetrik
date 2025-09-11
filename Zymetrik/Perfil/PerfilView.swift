@@ -30,8 +30,7 @@ struct PerfilView: View {
                 .padding(.bottom, 16)
             }
             .background(Color(.systemBackground).ignoresSafeArea())
-            .navigationTitle(vm.username)
-            .navigationBarTitleDisplayMode(.inline)
+            // ⬇️ Quitado el navigationTitle centrado
             .sheet(isPresented: $showEditarPerfil) {
                 EditarPerfilView(
                     nombre: $vm.nombre,
@@ -54,7 +53,7 @@ struct PerfilView: View {
 // MARK: - Subvistas
 
 private extension PerfilView {
-    // Header superior: username + verificado + ajustes
+    // Header superior: username + verificado + ajustes (solo izquierda muestra username)
     var headerBar: some View {
         HStack {
             HStack(spacing: 6) {
@@ -216,21 +215,16 @@ private extension PerfilView {
     var tabContent: some View {
         switch selectedTab {
         case .entrenamientos:
-            // Full-bleed: no añadimos padding horizontal aquí
             PerfilEntrenamientosView(profileID: nil)
-
         case .estadisticas:
-            // Full-bleed: ahora PerfilEstadisticasView admite perfilId
             PerfilEstadisticasView(perfilId: nil)
-
         case .logros:
-            // Full-bleed: versión compatible con self/otro usuario
             PerfilLogrosView(perfilId: nil)
         }
     }
 }
 
-// MARK: - Avatar aislado (simplifica AsyncImage para el compilador)
+// MARK: - Avatar
 
 private struct AvatarView: View {
     let urlString: String?
@@ -241,13 +235,9 @@ private struct AvatarView: View {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
-                        ProgressView()
-                            .frame(width: 84, height: 84)
+                        ProgressView().frame(width: 84, height: 84)
                     case .success(let image):
-                        image
-                            .resizable()
-                            .frame(width: 84, height: 84)
-                            .clipShape(Circle())
+                        image.resizable().frame(width: 84, height: 84).clipShape(Circle())
                     case .failure:
                         defaultAvatar
                     @unknown default:
