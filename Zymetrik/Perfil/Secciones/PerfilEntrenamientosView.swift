@@ -9,28 +9,28 @@ struct PerfilEntrenamientosView: View {
     @State private var error: String?
 
     var body: some View {
-        VStack {
-            if cargando {
-                ProgressView("Cargando entrenamientos...")
-                    .padding()
-            } else if let error = error {
-                Text("❌ \(error)").foregroundColor(.red)
-            } else if posts.isEmpty {
-                Text("Este usuario no ha subido entrenamientos aún.")
-                    .foregroundColor(.gray)
-                    .padding()
-            } else {
-                LazyVStack(spacing: 24) {
+        ScrollView {
+            LazyVStack(spacing: 16) {
+                if cargando {
+                    ProgressView("Cargando entrenamientos…")
+                        .padding(.vertical, 24)
+                } else if let error {
+                    Text("❌ \(error)").foregroundColor(.red).padding(.vertical, 16)
+                } else if posts.isEmpty {
+                    Text("Este usuario no ha subido entrenamientos aún.")
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 24)
+                } else {
                     ForEach(posts) { post in
                         PostView(post: post)
+                        // Sin padding extra → se respetará el estilo del post
                     }
                 }
-                .padding(.horizontal)
             }
+            .padding(.vertical, 12)      // nada de padding horizontal → full-bleed
         }
-        .task {
-            await cargarPosts()
-        }
+        .background(Color(.systemBackground).ignoresSafeArea())
+        .task { await cargarPosts() }
     }
 
     func cargarPosts() async {

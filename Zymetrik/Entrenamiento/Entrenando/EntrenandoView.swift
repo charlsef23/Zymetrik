@@ -39,54 +39,12 @@ struct EntrenandoView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     ForEach(ejercicios) { ejercicio in
-                        EjercicioRegistroView(
-                            ejercicio: ejercicio,
-                            sets: setsPorEjercicio[ejercicio.id] ?? [],
-                            onAddSet: {
-                                var nuevos = setsPorEjercicio[ejercicio.id] ?? []
-                                let nuevo = SetRegistro(
-                                    numero: (nuevos.last?.numero ?? 0) + 1,
-                                    repeticiones: 10,
-                                    peso: 0
-                                )
-                                nuevos.append(nuevo)
-                                setsPorEjercicio[ejercicio.id] = nuevos
-                            },
-                            onUpdateSet: { index, rep, peso in
-                                guard let lista = setsPorEjercicio[ejercicio.id],
-                                      lista.indices.contains(index) else { return }
-                                lista[index].repeticiones = rep
-                                lista[index].peso = peso
-                                setsPorEjercicio[ejercicio.id] = lista
-                            },
-                            onDeleteSet: { index in
-                                guard var lista = setsPorEjercicio[ejercicio.id],
-                                      lista.indices.contains(index) else { return }
-                                lista.remove(at: index)
-                                for (i, s) in lista.enumerated() { s.numero = i + 1 }
-                                setsPorEjercicio[ejercicio.id] = lista
-                            },
-                            onDuplicateSet: { index in
-                                guard var lista = setsPorEjercicio[ejercicio.id],
-                                      lista.indices.contains(index) else { return }
-                                let base = lista[index]
-                                let dup = SetRegistro(
-                                    numero: base.numero + 1,
-                                    repeticiones: base.repeticiones,
-                                    peso: base.peso
-                                )
-                                lista.insert(dup, at: index + 1)
-                                for (i, s) in lista.enumerated() { s.numero = i + 1 }
-                                setsPorEjercicio[ejercicio.id] = lista
-                            }
-                        )
+                        registroView(for: ejercicio)
                     }
 
                     // BOTÓN PUBLICAR — integrado en el scroll
                     Button {
-                        if hayContenidoReal {
-                            mostrarConfirmarPublicacion = true
-                        }
+                        if hayContenidoReal { mostrarConfirmarPublicacion = true }
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "paperplane.fill")
@@ -126,9 +84,7 @@ struct EntrenandoView: View {
         }
         // Alert de confirmación
         .alert("¿Publicar entrenamiento?", isPresented: $mostrarConfirmarPublicacion) {
-            Button("Publicar", role: .destructive) {
-                confirmarYPublicar()
-            }
+            Button("Publicar", role: .destructive) { confirmarYPublicar() }
             Button("Seguir entrenando", role: .cancel) { }
         } message: {
             Text(resumenPublicacion)
@@ -136,9 +92,56 @@ struct EntrenandoView: View {
         // Logro a pantalla completa si aplica
         .fullScreenCover(isPresented: $mostrarLogro) {
             if let logro = logroDesbloqueado {
-                LogroDesbloqueadoView(logro: logro) { mostrarLogro = false }
+                LogroDesbloqueadoView(logro: logro) {
+                    // Cierra overlay y vista al continuar
+                    mostrarLogro = false
+                    dismiss()
+                }
             }
         }
+    }
+
+    // MARK: - Subvistas
+
+    /// Extrae el contenido de cada ejercicio para aliviar al compilador.
+    private func registroView(for ejercicio: Ejercicio) -> some View {
+        EjercicioRegistroView(
+            ejercicio: ejercicio,
+            sets: setsPorEjercicio[ejercicio.id] ?? [],
+            onAddSet: {
+                withSets(of: ejercicio.id) { lista in
+                    let siguiente = (lista.last?.numero ?? 0) + 1
+                    lista.append(SetRegistro(numero: siguiente, repeticiones: 10, peso: 0))
+                }
+            },
+            onUpdateSet: { index, rep, peso in
+                withSets(of: ejercicio.id) { lista in
+                    guard lista.indices.contains(index) else { return }
+                    lista[index].repeticiones = rep
+                    lista[index].peso = peso
+                }
+            },
+            onDeleteSet: { index in
+                withSets(of: ejercicio.id) { lista in
+                    guard lista.indices.contains(index) else { return }
+                    lista.remove(at: index)
+                    reindex(&lista)
+                }
+            },
+            onDuplicateSet: { index in
+                withSets(of: ejercicio.id) { lista in
+                    guard lista.indices.contains(index) else { return }
+                    let base = lista[index]
+                    let dup = SetRegistro(
+                        numero: base.numero + 1,
+                        repeticiones: base.repeticiones,
+                        peso: base.peso
+                    )
+                    lista.insert(dup, at: index + 1)
+                    reindex(&lista)
+                }
+            }
+        )
     }
 
     // MARK: - Publicación
@@ -150,27 +153,57 @@ struct EntrenandoView: View {
 
         Task {
             do {
+                // 1) Publicar el entrenamiento
                 try await SupabaseService.shared.publicarEntrenamiento(
                     fecha: fecha,
                     ejercicios: ejercicios,
                     setsPorEjercicio: setsPorEjercicio
                 )
 
-                // Analiza y posibles logros
-                await SupabaseService.shared.analizarYDesbloquearLogros()
+                // 2) Premiar desde servidor (sincronizado por usuario)
+                let nuevos = await SupabaseService.shared.awardAchievementsRPC()
 
-                let logros = try await SupabaseService.shared.fetchLogrosCompletos()
-                if let nuevo = logros.first(where: { $0.desbloqueado && ($0.fecha?.isInLast(seconds: 8) ?? false) }) {
-                    logroDesbloqueado = nuevo
-                    mostrarLogro = true
+                if !nuevos.isEmpty {
+                    // 3) Cargar catálogo con estado y mostrar overlay del primero
+                    let logros = try await SupabaseService.shared.fetchLogrosCompletos()
+                    if let primeroID = nuevos.first,
+                       let modelo = logros.first(where: { $0.id == primeroID }) {
+                        await MainActor.run {
+                            logroDesbloqueado = modelo
+                            mostrarLogro = true
+                            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                        }
+                        publicando = false
+                        // Importante: no hacemos dismiss aquí; se hará al cerrar el overlay
+                        return
+                    }
                 }
 
-                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                dismiss()
+                // 4) Si no hay logros nuevos, cerrar normalmente
+                await MainActor.run {
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                    dismiss()
+                }
             } catch {
                 print("❌ Error al publicar entrenamiento:", error)
             }
             publicando = false
+        }
+    }
+
+    // MARK: - Helpers de sets
+
+    /// Obtiene y muta los sets de un ejercicio, reasignando al diccionario.
+    private func withSets(of ejercicioID: UUID, mutate: (inout [SetRegistro]) -> Void) {
+        var copia = setsPorEjercicio[ejercicioID] ?? []
+        mutate(&copia)
+        setsPorEjercicio[ejercicioID] = copia
+    }
+
+    /// Reindexa el campo `numero` de los sets tras insertar/borrar.
+    private func reindex(_ lista: inout [SetRegistro]) {
+        for i in lista.indices {
+            lista[i].numero = i + 1
         }
     }
 

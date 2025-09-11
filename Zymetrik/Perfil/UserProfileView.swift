@@ -19,16 +19,22 @@ struct UserProfileView: View {
     @State private var isMe = false
     @State private var working = false
 
+    private var perfilUUID: UUID? { UUID(uuidString: profileUserID) }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                // Foto y nombre
+            LazyVStack(spacing: 16) {
+
+                // Header
                 VStack(spacing: 8) {
                     avatar(avatarURL)
                         .frame(width: 90, height: 90)
                         .clipShape(Circle())
+
                     Text(nombre.isEmpty ? username : nombre)
-                        .font(.title2).fontWeight(.bold)
+                        .font(.title2)
+                        .fontWeight(.bold)
+
                     Text(presentacion.isEmpty ? "📍 Entrenando cada día\n💪 Fitness · Salud · Comunidad" : presentacion)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -41,19 +47,25 @@ struct UserProfileView: View {
                     Spacer()
                     counter(title: "Entrenos", value: numeroDePosts)
                     Spacer()
-                    NavigationLink(destination: ListaSeguidoresView(userID: profileUserID)) {
+                    NavigationLink {
+                        ListaSeguidoresView(userID: profileUserID)
+                    } label: {
                         counter(title: "Seguidores", value: seguidoresCount)
                     }
                     Spacer()
-                    NavigationLink(destination: ListaSeguidosView(userID: profileUserID)) {
+                    NavigationLink {
+                        ListaSeguidosView(userID: profileUserID)
+                    } label: {
                         counter(title: "Siguiendo", value: seguidosCount)
                     }
                     Spacer()
                 }
 
-                // Botón seguir (ocultarlo si es mi propio perfil)
+                // Seguir / Siguiendo (oculto en propio perfil)
                 if !isMe && !profileUserID.isEmpty {
-                    Button(action: { Task { await toggleFollow() } }) {
+                    Button {
+                        Task { await toggleFollow() }
+                    } label: {
                         Text(isFollowing ? "Siguiendo" : "Seguir")
                             .fontWeight(.semibold)
                             .frame(maxWidth: .infinity)
@@ -86,27 +98,13 @@ struct UserProfileView: View {
                 }
                 .padding(.vertical, 10)
 
-                // Contenido
-                Group {
-                    switch selectedTab {
-                    case .entrenamientos:
-                        if !profileUserID.isEmpty {
-                            PerfilEntrenamientosView(profileID: profileUserID)
-                        } else {
-                            ProgressView().padding()
-                        }
-                    case .estadisticas:
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(.systemGray6))
-                            .frame(height: 180)
-                            .overlay(Text("📊 Gráfico de estadísticas").foregroundColor(.secondary))
-                    case .logros:
-                        Text("🏅 Logros del usuario (próximamente)")
-                    }
-                }
-                .padding(.horizontal)
+                // Contenido (borderless / full-bleed)
+                tabContent
+                    .padding(.vertical, 4) // sin padding horizontal → full-bleed
             }
+            .padding(.bottom, 16)
         }
+        .background(Color(.systemBackground).ignoresSafeArea())
         .navigationTitle(username)
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -115,7 +113,50 @@ struct UserProfileView: View {
         }
     }
 
+    // MARK: - Tab content
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selectedTab {
+        case .entrenamientos:
+            entrenosContent
+        case .estadisticas:
+            estadisticasContent
+        case .logros:
+            logrosContent
+        }
+    }
+
+    @ViewBuilder
+    private var entrenosContent: some View {
+        if !profileUserID.isEmpty {
+            PerfilEntrenamientosView(profileID: profileUserID)
+        } else {
+            ProgressView().padding()
+        }
+    }
+
+    @ViewBuilder
+    private var estadisticasContent: some View {
+        if let perfilUUID {
+            PerfilEstadisticasView(perfilId: perfilUUID)
+        } else {
+            ProgressView("Cargando estadísticas…")
+                .padding(.vertical, 24)
+        }
+    }
+
+    @ViewBuilder
+    private var logrosContent: some View {
+        if let perfilUUID {
+            PerfilLogrosView(perfilId: perfilUUID)  
+        } else {
+            ProgressView().padding()
+        }
+    }
+
     // MARK: - Data
+
     private func cargarPerfil() async {
         defer { isLoading = false }
         do {
@@ -133,6 +174,7 @@ struct UserProfileView: View {
                 let presentacion: String?
                 let avatar_url: String?
             }
+
             let row = try res.decoded(to: Row.self)
 
             profileUserID = row.id
@@ -181,6 +223,7 @@ struct UserProfileView: View {
     }
 
     // MARK: - Follow toggle
+
     private func toggleFollow() async {
         guard !profileUserID.isEmpty, !isMe else { return }
         working = true
@@ -208,14 +251,30 @@ struct UserProfileView: View {
     }
 
     // MARK: - UI helpers
+
     @ViewBuilder
     private func avatar(_ urlString: String?) -> some View {
         if let urlString, let url = URL(string: urlString) {
-            AsyncImage(url: url) { img in
-                img.resizable()
-            } placeholder: { ProgressView() }
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .empty:
+                    ProgressView()
+                case .success(let image):
+                    image.resizable()
+                case .failure:
+                    Image(systemName: "person.circle.fill")
+                        .resizable()
+                        .foregroundColor(.gray)
+                @unknown default:
+                    Image(systemName: "person.circle.fill")
+                        .resizable()
+                        .foregroundColor(.gray)
+                }
+            }
         } else {
-            Image(systemName: "person.circle.fill").resizable().foregroundColor(.gray)
+            Image(systemName: "person.circle.fill")
+                .resizable()
+                .foregroundColor(.gray)
         }
     }
 

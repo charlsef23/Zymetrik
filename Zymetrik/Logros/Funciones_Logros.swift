@@ -1,13 +1,3 @@
-//
-//  FuncionesLogros.swift
-//  Zymetrik
-//
-//  Extensiones de SupabaseService para logros:
-//  - fetchLogrosCompletos()
-//  - desbloquearLogro(logroID:) -> Bool
-//  - analizarYDesbloquearLogros() -> [UUID]
-//
-
 import Foundation
 import Supabase
 
@@ -17,7 +7,7 @@ extension SupabaseService {
     func fetchLogrosCompletos() async throws -> [LogroConEstado] {
         let userID = try await client.auth.session.user.id.uuidString
 
-        // 1) Logros definidos
+        // 1) Logros definidos (incluye color si existe)
         let logrosResponse = try await client
             .from("logros")
             .select()
@@ -26,7 +16,7 @@ extension SupabaseService {
 
         let logros = try logrosResponse.decodedList(to: Logro.self)
 
-        // 2) Logros del usuario
+        // 2) Logros del usuario actual
         let desbloqueadosResponse = try await client
             .from("logros_usuario")
             .select("logro_id, conseguido_en")
@@ -38,7 +28,7 @@ extension SupabaseService {
             uniqueKeysWithValues: desbloqueados.map { ($0.logro_id, $0.conseguido_en) }
         )
 
-        // 3) Mezcla
+        // 3) Combinar catálogo + estado del usuario
         return logros.map { logro in
             LogroConEstado(
                 id: logro.id,
@@ -53,7 +43,7 @@ extension SupabaseService {
     }
 }
 
-// MARK: - Insertar (si no existe) un logro desbloqueado para el usuario actual
+// MARK: - Utilidad opcional: Insertar (si no existe) un logro para el usuario actual
 extension SupabaseService {
     /// Inserta el logro en `logros_usuario` si no existía.
     /// - Returns: `true` si se insertó (nuevo); `false` si ya estaba desbloqueado.
@@ -71,7 +61,7 @@ extension SupabaseService {
             return true
         } catch {
             if let e = error as? PostgrestError {
-                // Cubre variantes típicas de violación de unicidad/duplicado
+                // Variantes típicas de unicidad/duplicado
                 if e.message.localizedCaseInsensitiveContains("duplicate")
                     || e.message.localizedCaseInsensitiveContains("already exists")
                     || (e.hint?.localizedCaseInsensitiveContains("already exists") ?? false) {
@@ -84,47 +74,32 @@ extension SupabaseService {
     }
 }
 
-// MARK: - Analizar hitos del usuario y devolver los logros recién desbloqueados
+// MARK: - Recomendado: sincronizar logros por usuario en servidor (RPC)
 extension SupabaseService {
-    /// Analiza los posts del usuario y desbloquea logros. Devuelve los IDs desbloqueados en esta pasada.
-    @discardableResult
-    func analizarYDesbloquearLogros() async -> [UUID] {
-        var nuevos: [UUID] = []
-
+    /// Llama al RPC `award_achievements()` y devuelve los IDs de logros recién desbloqueados.
+    func awardAchievementsRPC() async -> [UUID] {
         do {
-            let posts = try await fetchPosts()
-            guard !posts.isEmpty else { return [] }
+            let response = try await client
+                .rpc("award_achievements")
+                .execute()
 
-            // Suponiendo que Post.contenido es una colección de ejercicios con totalPeso
-            let entrenamientos = posts.flatMap { $0.contenido }
+            let data = response.data // <- no opcional en tu SDK
 
-            let totalEntrenamientos = posts.count
-            let totalKg = entrenamientos.reduce(0.0) { $0 + $1.totalPeso }
-
-            // 1) Primer entreno
-            if totalEntrenamientos >= 1,
-               (try? await desbloquearLogro(logroID: LogrosID.primerEntreno)) == true {
-                nuevos.append(LogrosID.primerEntreno)
+            // Si el body viene vacío o "null", no hay nuevos logros
+            if data.isEmpty {
+                return []
+            }
+            if let s = String(data: data, encoding: .utf8),
+               s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "null" {
+                return []
             }
 
-            // 2) Cinco entrenos
-            if totalEntrenamientos >= 5,
-               (try? await desbloquearLogro(logroID: LogrosID.cincoEntrenos)) == true {
-                nuevos.append(LogrosID.cincoEntrenos)
-            }
-
-            // 3) Mil Kg acumulados
-            if totalKg >= 1000,
-               (try? await desbloquearLogro(logroID: LogrosID.milKg)) == true {
-                nuevos.append(LogrosID.milKg)
-            }
-
-            print("✅ Análisis de logros completado. Nuevos: \(nuevos)")
-            return nuevos
+            // El RPC devuelve uuid[] -> JSON array puro
+            let ids = try JSONDecoder().decode([UUID].self, from: data)
+            return ids
         } catch {
-            print("❌ Error al analizar logros:", error)
+            print("❌ RPC award_achievements falló:", error)
             return []
         }
     }
 }
-

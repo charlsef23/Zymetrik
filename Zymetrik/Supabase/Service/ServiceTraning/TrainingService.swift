@@ -116,7 +116,7 @@ extension SupabaseService {
         struct PostNuevo: Encodable {
             let id: UUID
             let autor_id: UUID
-            let fecha: String     // yyyy-MM-dd (Postgres lo convertirá a 00:00Z)
+            let fecha: String     // yyyy-MM-dd
             let avatar_url: String?
             let username: String
             let contenido: [EjercicioPostContenido]
@@ -132,47 +132,6 @@ extension SupabaseService {
         )
 
         try await client.from("posts").insert(post).execute()
-    }
-}
-
-// MARK: - Sesiones por ejercicio (RPC api_get_sesiones)
-
-extension SupabaseService {
-    struct SesionPorPostDTO: Decodable {
-        let post_id: UUID
-        let fecha: String            // "YYYY-MM-DD"
-        let ejercicio_id: UUID
-        let sets_count: Int
-        let repeticiones_total: Int
-        let peso_total: Double
-    }
-
-    private struct GetSesionesParams: Encodable {
-        let _ejercicio: UUID
-        let _autor: UUID?
-    }
-
-    func obtenerSesionesPara(ejercicioID: UUID, autorId: UUID? = nil) async throws -> [SesionEjercicio] {
-        let res = try await client
-            .rpc(
-                "api_get_sesiones",
-                params: GetSesionesParams(_ejercicio: ejercicioID, _autor: autorId)
-            )
-            .execute()
-
-        let dtos: [SesionPorPostDTO] = try res.decodedList(to: SesionPorPostDTO.self)
-
-        let df = DateFormatter()
-        df.calendar = .init(identifier: .iso8601)
-        df.locale = .init(identifier: "en_US_POSIX")
-        df.dateFormat = "yyyy-MM-dd"
-
-        let sesiones: [SesionEjercicio] = dtos.compactMap { dto in
-            guard let d = df.date(from: dto.fecha) else { return nil }
-            return SesionEjercicio(fecha: d, pesoTotal: dto.peso_total)
-        }
-
-        return sesiones.sorted { $0.fecha < $1.fecha }
     }
 }
 
@@ -294,5 +253,28 @@ extension SupabaseService {
                 .eq("ejercicio_id", value: ejercicioID.uuidString)
                 .execute()
         }
+    }
+}
+
+extension SupabaseService {
+    func fetchPostsDelUsuario(autorId: UUID? = nil) async throws -> [Post] {
+        var query = client
+            .from("posts")
+            .select("""
+                id, fecha, autor_id, avatar_url, username, contenido, likes_count, comments_count
+            """, head: false)
+
+        if let autorId {
+            query = query.eq("autor_id", value: autorId.uuidString)
+        } else {
+            let user = try await client.auth.session.user
+            query = query.eq("autor_id", value: user.id.uuidString)
+        }
+
+        let response = try await query
+            .order("fecha", ascending: false)
+            .execute()
+
+        return try response.decodedList(to: Post.self)
     }
 }
