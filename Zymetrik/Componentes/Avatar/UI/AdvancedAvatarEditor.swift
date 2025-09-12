@@ -5,13 +5,17 @@ struct AdvancedAvatarEditor: View {
     let originalImage: UIImage
     let onSave: (UIImage) -> Void
     let onCancel: () -> Void
-    
+
     @State private var selectedFilter: AvatarFilter = .none
     @State private var brightness: Double = 0
     @State private var contrast: Double = 1
     @State private var saturation: Double = 1
     @State private var isProcessing = false
-    
+
+    // NUEVO
+    @State private var quarterTurns: Int = 0
+    @State private var autoFaceCenter: Bool = true
+
     private let imageProcessor = ImageProcessor()
     
     var body: some View {
@@ -27,7 +31,7 @@ struct AdvancedAvatarEditor: View {
                     // Adjustments Section
                     adjustmentsSection
                     
-                    // Action Buttons
+                    // Action Buttons (👇 añadido)
                     actionButtons
                 }
                 .padding()
@@ -37,16 +41,11 @@ struct AdvancedAvatarEditor: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancelar") {
-                        onCancel()
-                    }
+                    Button("Cancelar") { onCancel() }
                 }
-                
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar") {
-                        saveImage()
-                    }
-                    .disabled(isProcessing)
+                    Button("Guardar") { saveImage() }
+                        .disabled(isProcessing)
                 }
             }
         }
@@ -61,7 +60,6 @@ struct AdvancedAvatarEditor: View {
                     Circle()
                         .fill(Color(.systemGray6))
                         .frame(width: 200, height: 200)
-                    
                     ProgressView("Procesando...")
                         .tint(.blue)
                 }
@@ -73,8 +71,7 @@ struct AdvancedAvatarEditor: View {
                     .clipShape(Circle())
                     .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
                     .overlay(
-                        Circle()
-                            .stroke(Color.white, lineWidth: 4)
+                        Circle().stroke(Color.white, lineWidth: 4)
                     )
             }
         }
@@ -83,22 +80,15 @@ struct AdvancedAvatarEditor: View {
     private var filtersSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Filtros")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
+                Text("Filtros").font(.headline).fontWeight(.semibold)
                 Spacer()
-                
                 if selectedFilter != .none {
                     ResetButton {
-                        withAnimation(.easeInOut) {
-                            selectedFilter = .none
-                        }
+                        withAnimation(.easeInOut) { selectedFilter = .none }
                         HapticManager.shared.lightImpact()
                     }
                 }
             }
-            
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(AvatarFilter.allCases, id: \.self) { filter in
@@ -106,9 +96,7 @@ struct AdvancedAvatarEditor: View {
                             filter: filter,
                             isSelected: selectedFilter == filter
                         ) {
-                            withAnimation(.easeInOut) {
-                                selectedFilter = filter
-                            }
+                            withAnimation(.easeInOut) { selectedFilter = filter }
                             HapticManager.shared.selection()
                         }
                     }
@@ -121,47 +109,44 @@ struct AdvancedAvatarEditor: View {
     private var adjustmentsSection: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
-                Text("Ajustes")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
+                Text("Ajustes").font(.headline).fontWeight(.semibold)
                 Spacer()
-                
-                if brightness != 0 || contrast != 1 || saturation != 1 {
+                if brightness != 0 || contrast != 1 || saturation != 1 || quarterTurns != 0 {
                     ResetButton {
-                        withAnimation(.easeInOut) {
-                            resetAdjustments()
-                        }
+                        withAnimation(.easeInOut) { resetAdjustments() }
                         HapticManager.shared.lightImpact()
                     }
                 }
             }
-            
+
+            // NUEVOS CONTROLES
+            Toggle("Auto-centrar en rostro", isOn: $autoFaceCenter)
+                .tint(.blue)
+
+            HStack(spacing: 12) {
+                Button {
+                    quarterTurns = (quarterTurns + 1) % 4
+                    HapticManager.shared.selection()
+                } label: {
+                    Label("Rotar 90º", systemImage: "rotate.right")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Sliders
             VStack(spacing: 16) {
-                AdjustmentSlider(
-                    title: "Brillo",
-                    value: $brightness,
-                    range: -0.5...0.5,
-                    icon: "sun.max"
-                )
-                
-                AdjustmentSlider(
-                    title: "Contraste",
-                    value: $contrast,
-                    range: 0.5...2.0,
-                    icon: "circle.lefthalf.filled"
-                )
-                
-                AdjustmentSlider(
-                    title: "Saturación",
-                    value: $saturation,
-                    range: 0...2.0,
-                    icon: "paintpalette"
-                )
+                AdjustmentSlider(title: "Brillo", value: $brightness, range: -0.5...0.5, icon: "sun.max")
+                AdjustmentSlider(title: "Contraste", value: $contrast, range: 0.5...2.0, icon: "circle.lefthalf.filled")
+                AdjustmentSlider(title: "Saturación", value: $saturation, range: 0...2.0, icon: "paintpalette")
             }
         }
     }
-    
+
+    // Botones inferiores (Cancelar / Guardar)
     private var actionButtons: some View {
         HStack(spacing: 16) {
             Button("Cancelar") {
@@ -173,7 +158,7 @@ struct AdvancedAvatarEditor: View {
             .padding(.vertical, 12)
             .background(Color(.systemGray6))
             .clipShape(Capsule())
-            
+
             Button("Guardar") {
                 saveImage()
             }
@@ -182,54 +167,54 @@ struct AdvancedAvatarEditor: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(
-                isProcessing ? Color.gray : Color.blue
-            )
+            .background(isProcessing ? Color.gray : Color.blue)
             .clipShape(Capsule())
             .disabled(isProcessing)
         }
     }
     
-    // MARK: - Computed Properties
-    
+    // MARK: - Imagen procesada
     private var processedImage: UIImage {
-        var image = selectedFilter.apply(to: originalImage)
-        image = imageProcessor.adjustImage(
-            image,
-            brightness: brightness,
-            contrast: contrast,
-            saturation: saturation
-        )
-        return ImageCropper.cropToSquare(image, size: 400)
+        // 1) Normaliza orientación
+        var image = originalImage.normalizedUp()
+        // 2) Filtros/Ajustes
+        image = selectedFilter.apply(to: image)
+        image = imageProcessor.adjustImage(image, brightness: brightness, contrast: contrast, saturation: saturation)
+        // 3) Rotación manual
+        image = image.rotated(quarterTurns: quarterTurns)
+        // 4) Recorte final
+        if autoFaceCenter {
+            return ImageCropper.smartCrop(image, to: CGSize(width: 400, height: 400))
+        } else {
+            return ImageCropper.centerSquare(image, size: 400)
+        }
     }
-    
-    // MARK: - Methods
-    
+
+    // MARK: - Acciones
     private func resetAdjustments() {
         brightness = 0
         contrast = 1
         saturation = 1
+        quarterTurns = 0
+        autoFaceCenter = true
     }
-    
+
     private func saveImage() {
         guard !isProcessing else { return }
-        
         isProcessing = true
         HapticManager.shared.mediumImpact()
-        
         Task {
-            let finalImage = await processImageAsync()
-            
+            let final = await processImageAsync()
             await MainActor.run {
-                onSave(finalImage)
+                onSave(final)
                 isProcessing = false
                 HapticManager.shared.success()
             }
         }
     }
-    
+
     private func processImageAsync() async -> UIImage {
-        return await withCheckedContinuation { continuation in
+        await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = self.processedImage
                 continuation.resume(returning: result)

@@ -8,6 +8,7 @@ struct CronometroView: View {
     @State private var esTemporizador = false
     @State private var tiempoRestante = 0
     @State private var mostrarSelectorTiempo = false
+    @State private var tiempoInicialTemporizador = 0   // 👈 nuevo: recuerda lo elegido
 
     var body: some View {
         VStack(spacing: 16) {
@@ -18,7 +19,7 @@ struct CronometroView: View {
 
                 Text(formatearTiempo(segundos: esTemporizador ? tiempoRestante : tiempo))
                     .font(.system(size: 36, weight: .bold, design: .monospaced))
-                    .foregroundColor(.black)
+                    .foregroundColor(.primary)
 
                 HStack {
                     Spacer()
@@ -38,7 +39,7 @@ struct CronometroView: View {
             .padding(.horizontal)
 
             HStack(spacing: 16) {
-                Button(action: resetTimer) {
+                Button(action: resetTimerPreservandoTemporizador) {
                     Text("X Cancel")
                         .fontWeight(.bold)
                         .frame(maxWidth: .infinity)
@@ -62,12 +63,23 @@ struct CronometroView: View {
             .padding(.bottom, 8)
         }
         .background(Color.white.ignoresSafeArea(edges: .bottom))
+        // 👇 Usar el selector que sí acepta callback
         .sheet(isPresented: $mostrarSelectorTiempo) {
-            SelectorTiempoView { minutos, segundos in
-                tiempoRestante = (minutos * 60) + segundos
+            SelectorTiempoAppleStyle { horas, minutos, segundos in
+                let total = horas * 3600 + minutos * 60 + segundos
+                tiempoInicialTemporizador = total
+                tiempoRestante = total
                 esTemporizador = true
-                resetTimer()
+                // detenemos cualquier timer previo y dejamos listo para iniciar
+                temporizador?.invalidate()
+                temporizador = nil
+                timerActivo = false
             }
+        }
+        .onDisappear {
+            temporizador?.invalidate()
+            temporizador = nil
+            timerActivo = false
         }
     }
 
@@ -77,15 +89,18 @@ struct CronometroView: View {
             timerActivo = false
         } else {
             if esTemporizador {
+                // Cuenta atrás
                 temporizador = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
                     if tiempoRestante > 0 {
                         tiempoRestante -= 1
                     } else {
                         timerActivo = false
                         temporizador?.invalidate()
+                        temporizador = nil
                     }
                 }
             } else {
+                // Cronómetro ascendente
                 temporizador = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
                     tiempo += 1
                 }
@@ -94,11 +109,13 @@ struct CronometroView: View {
         }
     }
 
-    private func resetTimer() {
+    // 👉 Ahora, si es temporizador, vuelve al valor inicial elegido en lugar de poner 0
+    private func resetTimerPreservandoTemporizador() {
         temporizador?.invalidate()
+        temporizador = nil
         timerActivo = false
         if esTemporizador {
-            tiempoRestante = 0
+            tiempoRestante = tiempoInicialTemporizador
         } else {
             tiempo = 0
         }
