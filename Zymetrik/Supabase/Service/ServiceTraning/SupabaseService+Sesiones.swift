@@ -48,3 +48,23 @@ extension SupabaseService {
         return sesiones.sorted { $0.fecha < $1.fecha }
     }
 }
+
+enum ISO8601 {
+    static let zFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.calendar = Calendar(identifier: .gregorian)
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(secondsFromGMT: 0)
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        return df
+    }()
+}
+
+extension Date {
+    func startOfDayUTC() -> Date {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        let comps = cal.dateComponents([.year,.month,.day], from: self)
+        return cal.date(from: comps)!
+    }
+}

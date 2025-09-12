@@ -60,9 +60,6 @@ final class SetRegistro: Identifiable, ObservableObject {
 // MARK: - Publicar entrenamiento (post con contenido de ejercicios)
 
 extension SupabaseService {
-    /// Publica un post de entrenamiento con ejercicios/sets.
-    /// - Filtra sets vacíos (0 repeticiones y 0 peso).
-    /// - Normaliza la fecha al inicio del día (UTC) para coherencia con estadísticas.
     func publicarEntrenamiento(
         fecha: Date,
         ejercicios: [Ejercicio],
@@ -71,23 +68,17 @@ extension SupabaseService {
         let user = try await client.auth.session.user
         let userId = user.id
 
-        // Normaliza a "solo día"
-        let df = DateFormatter()
-        df.calendar = .init(identifier: .iso8601)
-        df.locale = .init(identifier: "en_US_POSIX")
-        df.dateFormat = "yyyy-MM-dd"
-        let fechaSoloDia = df.string(from: dateAtStartOfDayISO8601(fecha))
+        // Normaliza a inicio de día UTC y formatea a ISO Z
+        let fechaUTC = fecha.startOfDayUTC()
+        let fechaISOZ = ISO8601.zFormatter.string(from: fechaUTC)
 
         var ejerciciosContenido: [EjercicioPostContenido] = []
-
         for ejercicio in ejercicios {
             let setsSrc = setsPorEjercicio[ejercicio.id] ?? []
             let sets = setsSrc
                 .filter { $0.repeticiones > 0 || $0.peso > 0 }
                 .map { SetPost(repeticiones: $0.repeticiones, peso: $0.peso) }
-
             guard !sets.isEmpty else { continue }
-
             ejerciciosContenido.append(
                 EjercicioPostContenido(
                     id: ejercicio.id,
@@ -100,32 +91,35 @@ extension SupabaseService {
                 )
             )
         }
-
         guard !ejerciciosContenido.isEmpty else {
-            throw NSError(domain: "publicarEntrenamiento", code: 400, userInfo: [NSLocalizedDescriptionKey: "No hay sets válidos para publicar."])
+            throw NSError(domain: "publicarEntrenamiento", code: 400,
+                          userInfo: [NSLocalizedDescriptionKey: "No hay sets válidos para publicar."])
         }
 
-        let perfil = try await client
+        struct PerfilLigero: Decodable {
+            let id: UUID
+            let username: String
+            let avatar_url: String?
+        }
+        let perfil: PerfilLigero = try await client
             .from("perfil")
-            .select("id, username, nombre, avatar_url")
+            .select("id, username, avatar_url")
             .eq("id", value: userId.uuidString)
             .single()
             .execute()
-            .decoded(to: Perfil.self)
+            .decoded(to: PerfilLigero.self)
 
         struct PostNuevo: Encodable {
-            let id: UUID
             let autor_id: UUID
-            let fecha: String     // yyyy-MM-dd
+            let fecha: String           // ISO8601 Z -> timestamptz
             let avatar_url: String?
             let username: String
             let contenido: [EjercicioPostContenido]
         }
 
         let post = PostNuevo(
-            id: UUID(),
             autor_id: userId,
-            fecha: fechaSoloDia,
+            fecha: fechaISOZ,
             avatar_url: perfil.avatar_url,
             username: perfil.username,
             contenido: ejerciciosContenido
@@ -144,38 +138,82 @@ extension SupabaseService {
 
         struct PlanRow: Encodable {
             let autor_id: UUID
-            let fecha: String   // yyyy-MM-dd
+            let fecha: String   // yyyy-MM-dd (UTC)
             let ejercicios: [Ejercicio]
         }
 
-        let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
-        let onlyDay = dateAtStartOfDayISO8601(fecha)
-        let row = PlanRow(autor_id: userId, fecha: df.string(from: onlyDay), ejercicios: ejercicios)
+        // Formatter estable en UTC (evita problemas por zona horaria/DST)
+        let df = DateFormatter()
+        df.calendar = Calendar(identifier: .gregorian)
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(secondsFromGMT: 0)
+        df.dateFormat = "yyyy-MM-dd"
 
-        try await client
+        // Normaliza a inicio del día en UTC
+        let onlyDayUTC: Date = {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = TimeZone(secondsFromGMT: 0)!
+            let comps = cal.dateComponents([.year, .month, .day], from: fecha)
+            return cal.date(from: comps)!
+        }()
+
+        let row = PlanRow(
+            autor_id: userId,
+            fecha: df.string(from: onlyDayUTC),
+            ejercicios: ejercicios
+        )
+
+        // upsert con onConflict en la PK compuesta
+        _ = try await client
             .from("entrenamientos_planeados")
             .upsert(row, onConflict: "autor_id,fecha")
+            .select() // fuerza ejecución y devuelve fila (opcional)
             .execute()
     }
 
     func fetchPlan(fecha: Date) async throws -> [Ejercicio] {
         let user = try await client.auth.session.user
         let userId = user.id
-        let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
-        let day = df.string(from: dateAtStartOfDayISO8601(fecha))
+
+        // Formatter UTC consistente
+        let df = DateFormatter()
+        df.calendar = Calendar(identifier: .gregorian)
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(secondsFromGMT: 0)
+        df.dateFormat = "yyyy-MM-dd"
+
+        // Inicio del día en UTC
+        let dayKey: String = {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = TimeZone(secondsFromGMT: 0)!
+            let comps = cal.dateComponents([.year, .month, .day], from: fecha)
+            let start = cal.date(from: comps)!
+            return df.string(from: start)
+        }()
 
         struct PlanRowDec: Decodable { let ejercicios: [Ejercicio] }
 
-        let r: PlanRowDec = try await client
-            .from("entrenamientos_planeados")
-            .select("ejercicios")
-            .eq("autor_id", value: userId.uuidString)
-            .eq("fecha", value: day)
-            .single()
-            .execute()
-            .decoded(to: PlanRowDec.self)
+        do {
+            let r: PlanRowDec = try await client
+                .from("entrenamientos_planeados")
+                .select("ejercicios")
+                .eq("autor_id", value: userId.uuidString)
+                .eq("fecha", value: dayKey)
+                .single() // exactamente una fila
+                .execute()
+                .decoded(to: PlanRowDec.self)
 
-        return r.ejercicios
+            return r.ejercicios
+        } catch let e as PostgrestError {
+            // Si no existe el plan para ese día, devuelve lista vacía
+            if e.code == "PGRST116" || e.message.localizedCaseInsensitiveContains("No rows")
+               || e.message.localizedCaseInsensitiveContains("Results contain 0 rows") {
+                return []
+            }
+            throw e
+        } catch {
+            throw error
+        }
     }
 }
 
