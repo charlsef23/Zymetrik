@@ -9,6 +9,7 @@ struct EjercicioPostContenido: Identifiable, Codable {
     let descripcion: String
     let categoria: String
     let tipo: String
+    let subtipo: String?
     let imagen_url: String?
     let sets: [SetPost]
 
@@ -34,12 +35,13 @@ struct Ejercicio: Identifiable, Codable {
     let descripcion: String
     let categoria: String
     let tipo: String
+    let subtipo: String?
     let imagen_url: String?
 
     var esFavorito: Bool = false
 
     enum CodingKeys: String, CodingKey {
-        case id, nombre, descripcion, categoria, tipo, imagen_url
+        case id, nombre, descripcion, categoria, tipo, subtipo, imagen_url
     }
 }
 
@@ -86,6 +88,7 @@ extension SupabaseService {
                     descripcion: ejercicio.descripcion,
                     categoria: ejercicio.categoria,
                     tipo: ejercicio.tipo,
+                    subtipo: ejercicio.subtipo,
                     imagen_url: ejercicio.imagen_url,
                     sets: sets
                 )
@@ -132,64 +135,69 @@ extension SupabaseService {
 // MARK: - Planes (upsert/fetch entrenamientos_planeados)
 
 extension SupabaseService {
+    /// Inserta/actualiza el plan del día (fecha local)
     func upsertPlan(fecha: Date, ejercicios: [Ejercicio]) async throws {
         let user = try await client.auth.session.user
         let userId = user.id
 
         struct PlanRow: Encodable {
             let autor_id: UUID
-            let fecha: String   // yyyy-MM-dd (UTC)
+            let fecha: String   // yyyy-MM-dd (LOCAL)
             let ejercicios: [Ejercicio]
         }
 
-        // Formatter estable en UTC (evita problemas por zona horaria/DST)
+        // Formatter LOCAL consistente
         let df = DateFormatter()
         df.calendar = Calendar(identifier: .gregorian)
         df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = TimeZone(secondsFromGMT: 0)
+        df.timeZone = .current                 // 👈 LOCAL
         df.dateFormat = "yyyy-MM-dd"
 
-        // Normaliza a inicio del día en UTC
-        let onlyDayUTC: Date = {
-            var cal = Calendar(identifier: .gregorian)
-            cal.timeZone = TimeZone(secondsFromGMT: 0)!
-            let comps = cal.dateComponents([.year, .month, .day], from: fecha)
-            return cal.date(from: comps)!
-        }()
+        // Inicio del día LOCAL
+        let cal = Calendar.current             // 👈 LOCAL
+        let comps = cal.dateComponents([.year, .month, .day], from: fecha)
+        let localDay = cal.date(from: comps)!
+        let dayKey = df.string(from: localDay)
 
         let row = PlanRow(
             autor_id: userId,
-            fecha: df.string(from: onlyDayUTC),
+            fecha: dayKey,
             ejercicios: ejercicios
         )
 
-        // upsert con onConflict en la PK compuesta
-        _ = try await client
-            .from("entrenamientos_planeados")
-            .upsert(row, onConflict: "autor_id,fecha")
-            .select() // fuerza ejecución y devuelve fila (opcional)
-            .execute()
+        do {
+            _ = try await client
+                .from("entrenamientos_planeados")
+                .upsert(row, onConflict: "autor_id,fecha")
+                .select()
+                .execute()
+        } catch {
+            let nsErr = error as NSError
+            if nsErr.domain == NSURLErrorDomain && nsErr.code == NSURLErrorCancelled {
+                // Petición cancelada por debounce: ignora el log
+                return
+            }
+            throw error
+        }
     }
 
+    /// Lee el plan del día (clave local yyyy-MM-dd)
     func fetchPlan(fecha: Date) async throws -> [Ejercicio] {
         let user = try await client.auth.session.user
         let userId = user.id
 
-        // Formatter UTC consistente
+        // Formatter LOCAL consistente
         let df = DateFormatter()
         df.calendar = Calendar(identifier: .gregorian)
         df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = TimeZone(secondsFromGMT: 0)
+        df.timeZone = .current                 // 👈 LOCAL
         df.dateFormat = "yyyy-MM-dd"
 
-        // Inicio del día en UTC
-        let dayKey: String = {
-            var cal = Calendar(identifier: .gregorian)
-            cal.timeZone = TimeZone(secondsFromGMT: 0)!
-            let comps = cal.dateComponents([.year, .month, .day], from: fecha)
-            let start = cal.date(from: comps)!
-            return df.string(from: start)
-        }()
+        // Inicio del día LOCAL
+        let cal = Calendar.current             // 👈 LOCAL
+        let comps = cal.dateComponents([.year, .month, .day], from: fecha)
+        let start = cal.date(from: comps)!
+        let dayKey = df.string(from: start)
 
         struct PlanRowDec: Decodable { let ejercicios: [Ejercicio] }
 
@@ -199,20 +207,19 @@ extension SupabaseService {
                 .select("ejercicios")
                 .eq("autor_id", value: userId.uuidString)
                 .eq("fecha", value: dayKey)
-                .single() // exactamente una fila
+                .single()
                 .execute()
                 .decoded(to: PlanRowDec.self)
 
             return r.ejercicios
         } catch let e as PostgrestError {
             // Si no existe el plan para ese día, devuelve lista vacía
-            if e.code == "PGRST116" || e.message.localizedCaseInsensitiveContains("No rows")
-               || e.message.localizedCaseInsensitiveContains("Results contain 0 rows") {
+            if e.code == "PGRST116"
+                || e.message.localizedCaseInsensitiveContains("No rows")
+                || e.message.localizedCaseInsensitiveContains("Results contain 0 rows") {
                 return []
             }
             throw e
-        } catch {
-            throw error
         }
     }
 }

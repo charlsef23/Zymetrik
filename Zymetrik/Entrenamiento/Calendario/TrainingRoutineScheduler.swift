@@ -2,16 +2,17 @@ import Foundation
 
 enum TrainingRoutineScheduler {
     /// Programa ejercicios por días de semana durante `weeks` semanas (1=Dom,...,7=Sáb).
+    /// Devuelve el conjunto de fechas afectadas (startOfDay).
     static func scheduleRoutine(
         startFrom: Date,
         weekdays: Set<Int>,
         weeks: Int,
         ejercicios: [Ejercicio]
-    ) async throws {
+    ) async throws -> Set<Date> {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 2 // Lunes
 
-        guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: startFrom)?.start else { return }
+        guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: startFrom)?.start else { return [] }
 
         var targetDates: [Date] = []
         for w in 0..<weeks {
@@ -25,21 +26,28 @@ enum TrainingRoutineScheduler {
             }
         }
 
+        var affected = Set<Date>()
         for day in targetDates {
             try await SupabaseService.shared.upsertPlan(fecha: day, ejercicios: ejercicios)
+            affected.insert(startOfDay(day, calendar))
         }
+        return affected
     }
 
     /// Aplica ejercicios exactamente en las fechas indicadas (sin recurrencia).
+    /// Devuelve el conjunto de fechas afectadas (startOfDay).
     static func scheduleOnExactDates(
         dates: Set<Date>,
         ejercicios: [Ejercicio]
-    ) async throws {
+    ) async throws -> Set<Date> {
         let cal = Calendar(identifier: .gregorian)
         let normalized = dates.map { cal.startOfDay(for: $0) }.sorted()
+        var affected = Set<Date>()
         for day in normalized {
             try await SupabaseService.shared.upsertPlan(fecha: day, ejercicios: ejercicios)
+            affected.insert(cal.startOfDay(for: day))
         }
+        return affected
     }
 
     // MARK: - Helpers

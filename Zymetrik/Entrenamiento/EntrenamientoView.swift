@@ -52,7 +52,6 @@ struct EntrenamientoView: View {
 
                 Spacer()
 
-                // Dentro de body, zona del botón:
                 if esHoy, !ejerciciosDelDia.isEmpty {
                     NavigationLink(
                         destination: EntrenandoView(
@@ -82,8 +81,15 @@ struct EntrenamientoView: View {
                     },
                     isPresented: $mostrarLista
                 )
+                .environmentObject(planStore) // <- importante para refrescos tras rutinas
             }
-            // ALERTA corregida
+            .onAppear {
+                planStore.refresh(day: fechaSeleccionada)       // Refresco inicial del día visible
+                planStore.preloadWeek(around: fechaSeleccionada) // Opcional: precargar semana
+            }
+            .onChange(of: fechaSeleccionada) { oldValue, newValue in
+                planStore.refresh(day: newValue)
+            }
             .alert("Quitar ejercicio", isPresented: $mostrarConfirmacionEliminar) {
                 Button("Eliminar", role: .destructive) {
                     if let ejercicio = ejercicioAEliminar {
@@ -171,15 +177,24 @@ struct EntrenamientoView: View {
         }
     }
 
-    // Convierte claves String -> Date (solo para sombrear el calendario si quieres usarlo)
+    // Convierte claves String -> Date para sombrear el calendario
     private func convertKeysToDate(_ store: TrainingPlanStore) -> [Date: [Ejercicio]] {
         var out: [Date: [Ejercicio]] = [:]
+
+        // Parser de claves "yyyy-MM-dd" en ZONA LOCAL (coherente con TrainingPlanStore)
         let df = DateFormatter()
+        df.calendar = Calendar(identifier: .gregorian)
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = .current                // 👈 LOCAL, no UTC
         df.dateFormat = "yyyy-MM-dd"
 
+        let cal = Calendar.current            // 👈 también LOCAL
+
         for (k, v) in store.ejerciciosPorDia {
-            if let d = df.date(from: k) {
-                out[d.stripTime()] = v
+            if let parsed = df.date(from: k) {
+                // Normaliza a 00:00 LOCAL para comparar celdas del calendario
+                let localStart = cal.startOfDay(for: parsed)
+                out[localStart] = v
             }
         }
         return out

@@ -6,41 +6,62 @@ struct ListaEjerciciosView: View {
     var onGuardar: ([Ejercicio]) -> Void
     @Binding var isPresented: Bool
 
+    @EnvironmentObject var planStore: TrainingPlanStore   // 👈 NUEVO
+
     @State private var ejercicios: [Ejercicio] = []
     @State private var tipoSeleccionado: String = "Gimnasio"
-    @State private var filtroPartes: Set<String> = []      // filtro por partes del cuerpo (categoria)
+    @State private var filtroPartes: Set<String> = []      // categoría
+    @State private var filtroSubtipos: Set<String> = []    // subtipo
+    @State private var soloFavoritos: Bool = false
     @State private var seleccionados: Set<UUID> = []       // persistencia por día
     @State private var cargando = false
 
     // Rutinas / Fechas exactas
     @State private var mostrarRutinaSheet = false
 
-    // Toast (usa tu extensión global ToastView.toast(_:text:))
+    // Toast
     @State private var showToast = false
     @State private var toastText = "Listo ✅"
 
-    private let tipos = ["Gimnasio", "Cardio", "Funcional", "Favoritos"]
+    private let tipos = ["Gimnasio", "Cardio", "Funcional"]
     @Namespace private var tipoAnimacion
     @State private var pendingUpsertTask: Task<Void, Never>? = nil
 
-    // Partes disponibles según el tipo actual
+    // Partes disponibles según tipo y favorito
     var partesDisponibles: [String] {
-        let base: [Ejercicio] = (tipoSeleccionado == "Favoritos")
-        ? ejercicios.filter { $0.esFavorito }
-        : ejercicios.filter { $0.tipo == tipoSeleccionado }
-
+        let base: [Ejercicio] = ejercicios
+            .filter { $0.tipo == tipoSeleccionado }
+            .filter { !soloFavoritos || $0.esFavorito }
         let set = Set<String>(base.map { $0.categoria.isEmpty ? "General" : $0.categoria })
         return set.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
-    // Lista final: filtra por tipo + partes y ordena A→Z
+    // Subtipos disponibles según tipo y favorito
+    var subtiposDisponibles: [String] {
+        let base: [Ejercicio] = ejercicios
+            .filter { $0.tipo == tipoSeleccionado }
+            .filter { !soloFavoritos || $0.esFavorito }
+        let set = Set<String>(base.compactMap { e in
+            guard let s = e.subtipo?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
+            return s
+        })
+        return set.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    // Lista final: respeta tipo + favoritos + categoría + subtipo
     var ejerciciosFiltradosYOrdenados: [Ejercicio] {
-        var base: [Ejercicio] = (tipoSeleccionado == "Favoritos")
-        ? ejercicios.filter { $0.esFavorito }
-        : ejercicios.filter { $0.tipo == tipoSeleccionado }
+        var base: [Ejercicio] = ejercicios
+            .filter { $0.tipo == tipoSeleccionado }
+            .filter { !soloFavoritos || $0.esFavorito }
 
         if !filtroPartes.isEmpty {
             base = base.filter { filtroPartes.contains($0.categoria.isEmpty ? "General" : $0.categoria) }
+        }
+        if !filtroSubtipos.isEmpty {
+            base = base.filter { e in
+                guard let st = e.subtipo, !st.isEmpty else { return false }
+                return filtroSubtipos.contains(st)
+            }
         }
         return base.sorted { $0.nombre.localizedCaseInsensitiveCompare($1.nombre) == .orderedAscending }
     }
@@ -54,21 +75,17 @@ struct ListaEjerciciosView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
 
-                    // TIPOS (chips con iconos – Favoritos en amarillo, definido en TipoChipsBar.swift)
-                    TipoChipsBar(
+                    // PANEL DE FILTROS (incluye Favoritos)
+                    FilterPanel(
+                        tipoSeleccionado: $tipoSeleccionado,
+                        filtroCategorias: $filtroPartes,
+                        filtroSubtipos: $filtroSubtipos,
+                        soloFavoritos: $soloFavoritos,
                         tipos: tipos,
-                        seleccionado: $tipoSeleccionado,
-                        namespace: tipoAnimacion
+                        categoriasDisponibles: partesDisponibles,
+                        subtiposDisponibles: subtiposDisponibles
                     )
-
-                    // PARTES DEL CUERPO (chips mejorados)
-                    if !partesDisponibles.isEmpty {
-                        PartesCuerpoChips(
-                            partes: partesDisponibles,
-                            seleccionadas: $filtroPartes
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
+                    .padding(.horizontal)
 
                     // Estado selección hoy
                     if !seleccionados.isEmpty {
@@ -79,7 +96,7 @@ struct ListaEjerciciosView: View {
                         .padding(.horizontal)
                     }
 
-                    // Lista simple sin títulos por categoría (solo tarjetas)
+                    // Lista
                     if cargando {
                         ProgressView("Cargando ejercicios...")
                             .frame(maxWidth: .infinity)
@@ -122,14 +139,13 @@ struct ListaEjerciciosView: View {
                     Button {
                         let elegidos = ejerciciosSeleccionadosHoy
                         guard !elegidos.isEmpty else { return }
-                        onGuardar(elegidos)
+                        onGuardar(elegidos)   // merge + persist desde EntrenamientoView
                         isPresented = false
                     } label: {
                         Text("Añadir").fontWeight(.semibold)
                     }
                     .disabled(seleccionados.isEmpty)
                 }
-                // Botón Rutina / Fechas arriba
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         mostrarRutinaSheet = true
@@ -143,13 +159,20 @@ struct ListaEjerciciosView: View {
                 fetchEjercicios()
                 preloadPlanDelDia()
             }
-            // Compatibilidad iOS 16/17
+            // Recalcular plan al cambiar de fecha
             .onChangeCompat(of: fecha) { _, _ in
                 persistPlanDebounced()
                 preloadPlanDelDia()
             }
+            // Reset de filtros al cambiar Tipo / Favoritos
+            .onChangeCompat(of: tipoSeleccionado) { _, _ in
+                withAnimation { filtroPartes.removeAll(); filtroSubtipos.removeAll() }
+            }
+            .onChangeCompat(of: soloFavoritos) { _, _ in
+                withAnimation { filtroPartes.removeAll(); filtroSubtipos.removeAll() }
+            }
         }
-        // Hoja para elegir rutina semanal o fechas exactas (MultiDatePicker)
+        // Hoja de rutina
         .sheet(isPresented: $mostrarRutinaSheet) {
             RoutineDaysSheet { choice in
                 let ejerciciosElegidos = ejerciciosSeleccionadosHoy
@@ -159,18 +182,18 @@ struct ListaEjerciciosView: View {
                     do {
                         switch choice {
                         case .weekdays(let selectedWeekdays, let weeksCount):
-                            try await TrainingRoutineScheduler.scheduleRoutine(
+                            let affected = try await TrainingRoutineScheduler.scheduleRoutine(
                                 startFrom: fecha,
                                 weekdays: selectedWeekdays,
                                 weeks: weeksCount,
                                 ejercicios: ejerciciosElegidos
                             )
                             await MainActor.run {
+                                planStore.refresh(days: affected)   // 👈 refresca días afectados
                                 toastText = "Aplicada rutina: \(weekdaySummary(selectedWeekdays)) · \(weeksCount) semanas ✅"
                             }
-
                         case .exactDates(let dates):
-                            try await TrainingRoutineScheduler.scheduleOnExactDates(
+                            let affected = try await TrainingRoutineScheduler.scheduleOnExactDates(
                                 dates: dates,
                                 ejercicios: ejerciciosElegidos
                             )
@@ -179,12 +202,12 @@ struct ListaEjerciciosView: View {
                             df.dateStyle = .medium
                             let resumen = dates.sorted().prefix(4).map { df.string(from: $0) }.joined(separator: ", ")
                             await MainActor.run {
+                                planStore.refresh(days: affected)   // 👈 refresca días afectados
                                 toastText = dates.count > 4
-                                ? "Aplicado en \(dates.count) fechas: \(resumen)…"
-                                : "Aplicado en: \(resumen)"
+                                    ? "Aplicado en \(dates.count) fechas: \(resumen)…"
+                                    : "Aplicado en: \(resumen)"
                             }
                         }
-
                         await MainActor.run {
                             showToast = true
                             mostrarRutinaSheet = false
@@ -233,6 +256,8 @@ struct ListaEjerciciosView: View {
             try? await Task.sleep(nanoseconds: 450_000_000)
             do {
                 try await SupabaseService.shared.upsertPlan(fecha: fecha, ejercicios: selected)
+                // Mantén el store consistente para el día actual:
+                planStore.set(ejercicios: selected, para: fecha)
             } catch {
                 print("❌ Error al upsert del plan:", error)
             }

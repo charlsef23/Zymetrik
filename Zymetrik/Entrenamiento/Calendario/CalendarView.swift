@@ -8,6 +8,16 @@ struct CalendarView: View {
     private let calendar = Calendar(identifier: .gregorian)
 
     var body: some View {
+        // 🔵 Construye set de días con ejercicios normalizados a INICIO DE DÍA LOCAL
+        let exerciseDaysLocal: Set<Date> = {
+            var set = Set<Date>()
+            let cal = Calendar.current
+            for (k, v) in ejerciciosPorDia where !v.isEmpty {
+                set.insert(cal.startOfDay(for: k))   // 👈 LOCAL
+            }
+            return set
+        }()
+
         TabView(selection: $currentWeekIndex) {
             ForEach(0..<1000, id: \.self) { index in
                 let startOfWeek = getStartOfWeek(for: index - 500)
@@ -15,13 +25,13 @@ struct CalendarView: View {
 
                 HStack(spacing: 12) {
                     ForEach(weekDays, id: \.self) { date in
-                        // Flags por día (dentro del ámbito del ForEach)
+                        // Flags por día (misma UI)
                         let isToday = calendar.isDateInToday(date)
                         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
                         let isPast = date < calendar.startOfDay(for: Date())
-                        let tieneEjercicios = (ejerciciosPorDia[date.stripTime()]?.isEmpty == false)
+                        // ✅ compara por startOfDay LOCAL
+                        let tieneEjercicios = exerciseDaysLocal.contains(Calendar.current.startOfDay(for: date))
 
-                        // Contenedor del día
                         VStack(spacing: 6) {
                             VStack(spacing: 4) {
                                 Text("\(calendar.component(.day, from: date))")
@@ -30,9 +40,7 @@ struct CalendarView: View {
 
                                 Text(weekdayShort(for: date))
                                     .font(.caption)
-                                    .foregroundColor(
-                                        isToday ? .red : (isPast ? .gray : Color("CalendarDay"))
-                                    )
+                                    .foregroundColor(isToday ? .red : (isPast ? .gray : Color("CalendarDay")))
                             }
 
                             if tieneEjercicios {
@@ -44,7 +52,7 @@ struct CalendarView: View {
                         .frame(width: 44, height: 60)
                         .background(isSelected ? Color.gray.opacity(0.2) : Color.clear)
                         .cornerRadius(8)
-                        .contentShape(Rectangle()) // mejora el tap
+                        .contentShape(Rectangle())
                         .onTapGesture { selectedDate = date }
                     }
                 }
@@ -59,11 +67,11 @@ struct CalendarView: View {
     // MARK: - Helpers
 
     private func getStartOfWeek(for offset: Int) -> Date {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.firstWeekday = 2 // lunes
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2 // lunes
         let today = Date()
-        let baseWeek = calendar.dateInterval(of: .weekOfYear, for: today)!.start
-        return calendar.date(byAdding: .weekOfYear, value: offset, to: baseWeek)!
+        let baseWeek = cal.dateInterval(of: .weekOfYear, for: today)!.start
+        return cal.date(byAdding: .weekOfYear, value: offset, to: baseWeek)!
     }
 
     private func weekdayShort(for date: Date) -> String {
@@ -71,13 +79,5 @@ struct CalendarView: View {
         formatter.locale = Locale(identifier: "es_ES")
         formatter.dateFormat = "EEE"
         return formatter.string(from: date).capitalized
-    }
-}
-
-// Asegúrate de tener este helper en el módulo:
-extension Date {
-    func stripTime() -> Date {
-        let comps = Calendar.current.dateComponents([.year, .month, .day], from: self)
-        return Calendar.current.date(from: comps)!
     }
 }
