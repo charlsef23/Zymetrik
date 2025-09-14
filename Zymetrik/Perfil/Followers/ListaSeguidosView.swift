@@ -6,6 +6,10 @@ public struct ListaSeguidosView: View {
     @State private var seguidos: [PerfilResumen] = []
     @State private var isLoading = true
 
+    // Ajustes de espaciado
+    private let rowSpacing: CGFloat = 12
+    private let searchBottomGap: CGFloat = 16
+
     public init(userID: String) { self.userID = userID }
 
     private var filtrados: [PerfilResumen] {
@@ -19,17 +23,27 @@ public struct ListaSeguidosView: View {
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                SearchField(placeholder: "Buscar seguidos", text: $searchText)
+                SearchField(
+                    placeholder: "Buscar seguidos",
+                    text: $searchText,
+                    bottomSpacing: searchBottomGap
+                )
+
                 if isLoading {
                     ProgressView().padding()
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 0) {
+                        LazyVStack(spacing: rowSpacing) {
                             ForEach(filtrados) { perfil in
-                                PerfilRow(perfil: perfil, showFollowButton: true)
-                                Divider().padding(.leading, 72)
+                                VStack(spacing: 8) {
+                                    PerfilRow(perfil: perfil, showFollowButton: true)
+                                    Divider()
+                                        .padding(.leading, 72)
+                                }
                             }
                         }
+                        .padding(.horizontal)
+                        .padding(.bottom, 12)
                     }
                 }
             }

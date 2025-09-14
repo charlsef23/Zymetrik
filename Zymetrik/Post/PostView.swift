@@ -1,4 +1,3 @@
-// MARK: - PostView.swift
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -34,6 +33,11 @@ struct PostView: View {
     @State private var avatarImage: UIImage? = nil
     @State private var imageCache: [UUID: UIImage] = [:]
 
+    // Reportar
+    @State private var mostrarReportar = false
+    @State private var reportSuccess = false
+    @State private var reportErrorMsg: String?
+
     init(
         post: Post,
         onPostEliminado: (() -> Void)? = nil,
@@ -44,10 +48,18 @@ struct PostView: View {
         self.onGuardadoCambio = onGuardadoCambio
     }
 
+    // ¿Es un post propio?
+    private var isOwnPost: Bool {
+        if let session = SupabaseManager.shared.client.auth.currentSession {
+            return session.user.id == post.autor_id
+        }
+        return false
+    }
+
     var body: some View {
         Group {
             if isReady {
-                content
+                mainCard
                     .transition(.opacity.combined(with: .scale))
             } else {
                 PostSkeletonView()
@@ -64,17 +76,21 @@ struct PostView: View {
         .onDisappear { primeTask?.cancel() }
     }
 
-    // MARK: - Contenido real
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header mejorado (username + tiempo en una línea)
-            PostHeaderMejorado(
-                post: post,
-                onEliminar: { mostrarConfirmacionEliminar = true },
-                onCompartir: { mostrarShareOptions = true }, // abre opciones
-                preloadedAvatar: avatarImage
-            )
+    // MARK: - Subvistas (para ayudar al type-checker)
 
+    private var headerView: some View {
+        PostHeaderMejorado(
+            post: post,
+            isOwnPost: isOwnPost,
+            onEliminar: { mostrarConfirmacionEliminar = true },
+            onCompartir: { mostrarShareOptions = true },
+            preloadedAvatar: avatarImage,
+            onReportar: { mostrarReportar = true }
+        )
+    }
+
+    private var statsView: some View {
+        Group {
             if let e = ejercicioSeleccionado {
                 EjercicioEstadisticasView(
                     ejercicio: e,
@@ -82,22 +98,46 @@ struct PostView: View {
                 )
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
+        }
+    }
 
-            CarruselEjerciciosView(
-                ejercicios: post.contenido,
-                ejercicioSeleccionado: $ejercicioSeleccionado,
-                preloadedImages: imageCache
-            )
+    private var carouselView: some View {
+        CarruselEjerciciosView(
+            ejercicios: post.contenido,
+            ejercicioSeleccionado: $ejercicioSeleccionado,
+            preloadedImages: imageCache
+        )
+    }
 
-            PostActionsView(
-                leDioLike: $leDioLike,
-                numLikes: $numLikes,
-                guardado: $guardado,
-                mostrarComentarios: $mostrarComentarios,
-                toggleLike: toggleLike,
-                toggleSave: toggleSave,
-                onShowLikers: { mostrarLikers = true }
-            )
+    private var actionsView: some View {
+        PostActionsView(
+            leDioLike: $leDioLike,
+            numLikes: $numLikes,
+            guardado: $guardado,
+            mostrarComentarios: $mostrarComentarios,
+            // Las funciones son async → envolver en Task
+            toggleLike: { Task { await self.toggleLike() } },
+            toggleSave: { Task { await self.toggleSave() } },
+            onShowLikers: { mostrarLikers = true }
+        )
+    }
+
+    private var heartOverlay: some View {
+        Group {
+            if showHeart {
+                HeartBurst()
+                    .matchedGeometryEffect(id: "heart", in: heartNS)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+    }
+
+    private var mainCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            headerView
+            statsView
+            carouselView
+            actionsView
         }
         .padding(14)
         .background(
@@ -106,16 +146,10 @@ struct PostView: View {
                 .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 6)
         )
         .contentShape(Rectangle())
-        .overlay {
-            if showHeart {
-                HeartBurst()
-                    .matchedGeometryEffect(id: "heart", in: heartNS)
-                    .transition(.scale.combined(with: .opacity))
-            }
-        }
+        .overlay(heartOverlay)
         .gesture(
             TapGesture(count: 2).onEnded {
-                Task { await doubleTapLike() }
+                Task { await self.doubleTapLike() }
             }
         )
         // Sheets / Alerts
@@ -140,14 +174,30 @@ struct PostView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $mostrarReportar) {
+            ReportPostSheet { reason in
+                Task { await reportPost(reason: reason) }
+            }
+            .presentationDetents([.medium])
+        }
         .alert("¿Eliminar este post?", isPresented: $mostrarConfirmacionEliminar) {
-            Button("Eliminar", role: .destructive) { eliminarPost() }
+            Button("Eliminar", role: .destructive) { self.eliminarPost() }
             Button("Cancelar", role: .cancel) {}
+        }
+        .alert("Reporte enviado", isPresented: $reportSuccess) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Gracias por ayudarnos a moderar el contenido.")
         }
         .alert("No se pudo compartir", isPresented: .constant(shareError != nil)) {
             Button("OK") { shareError = nil }
         } message: {
             Text(shareError ?? "")
+        }
+        .alert("No se pudo reportar", isPresented: .constant(reportErrorMsg != nil)) {
+            Button("OK") { reportErrorMsg = nil }
+        } message: {
+            Text(reportErrorMsg ?? "")
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Post de @\(post.username)"))
@@ -202,7 +252,6 @@ struct PostView: View {
             "com.instagram.sharedSticker.stickerImage": pngData,
             "com.instagram.sharedSticker.backgroundTopColor": "#1F1F1F",
             "com.instagram.sharedSticker.backgroundBottomColor": "#1F1F1F",
-            // "com.instagram.sharedSticker.contentURL": "https://tuapp.example/post/\(post.id.uuidString)"
         ]]
 
         UIPasteboard.general.setItems(pasteboardItems, options: [
@@ -212,7 +261,111 @@ struct PostView: View {
         UIApplication.shared.open(urlScheme)
     }
 
-    // MARK: - Carga total (meta + imágenes) - Integrado con cache de avatares
+    // MARK: - Report helpers
+
+    private func reportPost(reason: String?) async {
+        // Params tipados para el RPC
+        struct ReportPostParams: Encodable {
+            let p_post_id: String
+            let p_reason: String?
+        }
+
+        do {
+            let params = ReportPostParams(
+                p_post_id: post.id.uuidString,
+                p_reason: (reason?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? reason : nil
+            )
+
+            _ = try await SupabaseManager.shared.client
+                .rpc("report_post", params: params)
+                .execute()
+
+            await MainActor.run { reportSuccess = true }
+            HapticManager.shared.success()
+        } catch {
+            await MainActor.run { reportErrorMsg = error.localizedDescription }
+            HapticManager.shared.error()
+        }
+    }
+
+    // MARK: - Lógica UI / acciones
+
+    private func doubleTapLike() async {
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+        if !leDioLike {
+            await toggleLike()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
+                showHeart = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+                withAnimation(.easeOut(duration: 0.25)) { showHeart = false }
+            }
+        } else {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                showHeart = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                withAnimation(.easeOut(duration: 0.25)) { showHeart = false }
+            }
+        }
+    }
+
+    private func eliminarPost() {
+        Task {
+            do {
+                try await SupabaseService.shared.eliminarPost(postID: post.id)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                onPostEliminado?()
+            } catch {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                print("❌ Error al eliminar el post: \(error)")
+            }
+        }
+    }
+
+    private func toggleLike() async {
+        await MainActor.run {
+            leDioLike.toggle()
+            numLikes += leDioLike ? 1 : -1
+        }
+
+        do {
+            let r = try await SupabaseService.shared.toggleLikeRPC(postID: post.id, like: leDioLike)
+            await MainActor.run {
+                leDioLike = r.liked
+                numLikes  = r.likes_count
+            }
+            if r.liked {
+                HapticManager.shared.mediumImpact()
+            }
+        } catch {
+            print("❌ Error al cambiar like: \(error)")
+            await MainActor.run {
+                leDioLike.toggle()
+                numLikes += leDioLike ? 1 : -1
+            }
+            HapticManager.shared.error()
+        }
+    }
+
+    private func toggleSave() async {
+        await MainActor.run { guardado.toggle() }
+        do {
+            try await SupabaseService.shared.setSaved(postID: post.id, saved: guardado)
+            await MainActor.run { onGuardadoCambio?(guardado) }
+            HapticManager.shared.lightImpact()
+        } catch {
+            print("❌ Error al cambiar guardado: \(error)")
+            await MainActor.run {
+                guardado.toggle()
+                onGuardadoCambio?(guardado)
+            }
+            HapticManager.shared.error()
+        }
+    }
+
+    // MARK: - Carga total (meta + imágenes)
+
     private func primeAll() async {
         isReady = false
 
@@ -295,36 +448,19 @@ struct PostView: View {
             withAnimation(.easeOut(duration: 0.18)) { isReady = true }
         }
     }
-
-    private func preloadCarouselImages(for ejercicios: [EjercicioPostContenido], existing: [UUID: UIImage]) async -> [UUID: UIImage] {
-        var dict: [UUID: UIImage] = [:]
-        await withTaskGroup(of: (UUID, UIImage?)?.self) { group in
-            for e in ejercicios {
-                guard existing[e.id] == nil else { continue }
-                if let s = e.imagen_url, let url = s.validHTTPURL {
-                    group.addTask(priority: .userInitiated) {
-                        let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 120, height: 120))
-                        return (e.id, img)
-                    }
-                }
-            }
-            for await pair in group {
-                if let (id, img) = pair, let img { dict[id] = img }
-            }
-        }
-        return dict
-    }
 }
 
-// MARK: - PostHeader (username + tiempo a la derecha, sin línea gris)
+// MARK: - PostHeader (username + tiempo; condicional de eliminar y navegación del username)
 private struct PostHeaderMejorado: View {
     let post: Post
+    let isOwnPost: Bool
     let onEliminar: () -> Void
     let onCompartir: () -> Void
     let preloadedAvatar: UIImage?
-    
+    let onReportar: () -> Void
+
     @State private var showMenuOpciones = false
-    
+
     var body: some View {
         HStack(spacing: 12) {
             // Avatar
@@ -355,27 +491,20 @@ private struct PostHeaderMejorado: View {
                 }
             }
             .buttonStyle(.plain)
-            
-            // Username + • + tiempo (una sola línea)
+
+            // Username + tiempo (propio -> PerfilView, otro -> UserProfileView)
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 6) {
-                    Text(post.username)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                    
-                    Text("•")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Text(post.fecha.timeAgoDisplay())
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                if isOwnPost {
+                    NavigationLink { PerfilView() } label: { usernameAndTime }
+                        .buttonStyle(.plain)
+                } else {
+                    NavigationLink { UserProfileView(username: post.username) } label: { usernameAndTime }
+                        .buttonStyle(.plain)
                 }
             }
-            
+
             Spacer()
-            
+
             Button {
                 showMenuOpciones = true
                 HapticManager.shared.lightImpact()
@@ -390,86 +519,81 @@ private struct PostHeaderMejorado: View {
             .buttonStyle(.plain)
         }
         .confirmationDialog("Opciones del post", isPresented: $showMenuOpciones) {
+            if isOwnPost {
+                Button("Eliminar", role: .destructive) { onEliminar() }
+            }
             Button("Compartir") { onCompartir() }
-            Button("Reportar", role: .destructive) { /* TODO: lógica reporte */ }
+            Button("Reportar", role: .destructive) { onReportar() }
             Button("Cancelar", role: .cancel) {}
         }
     }
+
+    private var usernameAndTime: some View {
+        HStack(spacing: 6) {
+            Text(post.username)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
+
+            Text("•")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Text(post.fecha.timeAgoDisplay())
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .contentShape(Rectangle())
+    }
 }
 
-// MARK: - Lógica UI
-private extension PostView {
-    func doubleTapLike() async {
-        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
-        if !leDioLike {
-            await toggleLike()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
-                showHeart = true
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
-                withAnimation(.easeOut(duration: 0.25)) { showHeart = false }
-            }
-        } else {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                showHeart = true
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                withAnimation(.easeOut(duration: 0.25)) { showHeart = false }
-            }
-        }
-    }
+// MARK: - Hoja de reportar
 
-    func eliminarPost() {
-        Task {
-            do {
-                try await SupabaseService.shared.eliminarPost(postID: post.id)
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                onPostEliminado?()
-            } catch {
-                UINotificationFeedbackGenerator().notificationOccurred(.error)
-                print("❌ Error al eliminar el post: \(error)")
-            }
-        }
-    }
+private struct ReportPostSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var reason: String = ""
+    @State private var sending = false
+    var onSend: (String?) -> Void
 
-    func toggleLike() async {
-        await MainActor.run {
-            leDioLike.toggle()
-            numLikes += leDioLike ? 1 : -1
-        }
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                Text("Cuéntanos brevemente el motivo (opcional).")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-        do {
-            let r = try await SupabaseService.shared.toggleLikeRPC(postID: post.id, like: leDioLike)
-            await MainActor.run {
-                leDioLike = r.liked
-                numLikes  = r.likes_count
-            }
-            if r.liked {
-                HapticManager.shared.mediumImpact()
-            }
-        } catch {
-            print("❌ Error al cambiar like: \(error)")
-            await MainActor.run {
-                leDioLike.toggle()
-                numLikes += leDioLike ? 1 : -1
-            }
-            HapticManager.shared.error()
-        }
-    }
+                TextEditor(text: $reason)
+                    .frame(minHeight: 120)
+                    .padding(8)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(Color.black.opacity(0.05))
+                    )
 
-    func toggleSave() async {
-        await MainActor.run { guardado.toggle() }
-        do {
-            try await SupabaseService.shared.setSaved(postID: post.id, saved: guardado)
-            await MainActor.run { onGuardadoCambio?(guardado) }
-            HapticManager.shared.lightImpact()
-        } catch {
-            print("❌ Error al cambiar guardado: \(error)")
-            await MainActor.run {
-                guardado.toggle()
-                onGuardadoCambio?(guardado)
+                Spacer()
             }
-            HapticManager.shared.error()
+            .padding()
+            .navigationTitle("Reportar post")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancelar") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(sending ? "Enviando…" : "Enviar") {
+                        guard !sending else { return }
+                        sending = true
+                        onSend(reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : reason)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            sending = false
+                            dismiss()
+                        }
+                    }
+                    .disabled(sending)
+                }
+            }
         }
     }
 }

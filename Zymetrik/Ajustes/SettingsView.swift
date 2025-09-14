@@ -59,6 +59,7 @@ struct SettingsView: View {
                         SettingsSectionCard(
                             title: "Administración",
                             items: [
+                                .init(icon: "exclamationmark.bubble.fill", tint: .green, title: "Reportes de posts", destination: AnyView(AdminPostReportsView())),
                                 .init(icon: "tray.full.fill", tint: .cyan, title: "Feedback (Admin)", destination: AnyView(AdminFeedbackListView())),
                                 .init(icon: "person.crop.circle.badge.exclam", tint: .red, title: "Moderación", destination: AnyView(Text("ModeracionView()"))),
                                 .init(icon: "chart.bar.fill", tint: .orange, title: "Métricas", destination: AnyView(Text("MetricasView()"))),
