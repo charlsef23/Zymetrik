@@ -92,8 +92,12 @@ struct EntrenandoView: View {
         // Logro a pantalla completa si aplica
         .fullScreenCover(isPresented: $mostrarLogro) {
             if let logro = logroDesbloqueado {
-                LogroDesbloqueadoView(logro: logro) {
-                    // Cierra overlay y vista al continuar
+                LogroDesbloqueadoMejoradoView(
+                    logro: logro,
+                    isLastAchievement: true,
+                    achievementNumber: 1,
+                    totalAchievements: 1
+                ) {
                     mostrarLogro = false
                     dismiss()
                 }
