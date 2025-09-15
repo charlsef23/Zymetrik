@@ -150,7 +150,7 @@ private extension PerfilView {
             .buttonStyle(.plain)
             
             NavigationLink {
-                ShareProfileView(username: vm.username, profileImage: Image(systemName: "person"))
+                ShareProfileProView(username: vm.username, profileImageURL: vm.imagenPerfilURL)
             } label: {
                 Text("Compartir")
                     .font(.subheadline)
