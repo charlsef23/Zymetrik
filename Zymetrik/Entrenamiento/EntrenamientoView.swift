@@ -72,7 +72,7 @@ struct EntrenamientoView: View {
                 }
             }
             .navigationBarHidden(true)
-            .overlay(botonFlotanteAgregar)
+            .overlay(botonFlotanteAgregar(bottomExtraPadding: (esHoy && !ejerciciosDelDia.isEmpty) ? 96 : 40))
             .sheet(isPresented: $mostrarLista) {
                 ListaEjerciciosView(
                     fecha: fechaSeleccionada,
@@ -157,7 +157,7 @@ struct EntrenamientoView: View {
         }
     }
 
-    private var botonFlotanteAgregar: some View {
+    private func botonFlotanteAgregar(bottomExtraPadding: CGFloat = 40) -> some View {
         VStack {
             Spacer()
             HStack {
@@ -172,7 +172,7 @@ struct EntrenamientoView: View {
                         .shadow(radius: 4)
                 }
                 .padding(.trailing, 20)
-                .padding(.bottom, 40)
+                .padding(.bottom, bottomExtraPadding)
             }
         }
     }
