@@ -15,61 +15,55 @@ struct InicioView: View {
     @State private var loadTask: Task<Void, Never>? = nil
     @State private var feedGeneration: Int = 0   // invalida respuestas viejas
 
+    enum FeedSelection: String, CaseIterable, Identifiable {
+        case paraTi = "Para ti"
+        case siguiendo = "Siguiendo"
+        var id: String { rawValue }
+    }
+    @State private var selectedFeed: FeedSelection = .paraTi
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Lista / Estado
-                if cargando {
-                    ProgressView("Cargando…").padding()
-                } else if let errorMsg {
-                    VStack(spacing: 12) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.largeTitle)
-                            .foregroundColor(.orange)
-                        Text("No se pudo cargar el feed")
-                            .font(.headline)
-                        Text(errorMsg)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                        Button {
-                            Task { await initialSafeLoad() }
-                        } label: {
-                            Text("Reintentar")
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 8)
-                                .background(Color.accentColor.opacity(0.15))
-                                .clipShape(Capsule())
-                        }
-                    }
-                    .padding(.top, 24)
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Inicio")
-                                .font(.largeTitle.bold())
-                                .padding(.horizontal)
-                        }
-                        .padding(.top, 12)
-                        LazyVStack(spacing: 24) {
-                            ForEach(posts) { post in
-                                PostView(post: post)
-                                    .onAppear {
-                                        if post.id == posts.last?.id {
-                                            triggerLoadMoreIfNeeded()
-                                        }
+                ScrollView {
+                    LazyVStack(spacing: 24) {
+                        ForEach(posts) { post in
+                            PostView(post: post)
+                                .onAppear {
+                                    if post.id == posts.last?.id {
+                                        triggerLoadMoreIfNeeded()
                                     }
-                            }
-                            if isLoadingMore { ProgressView().padding(.vertical, 12) }
+                                }
                         }
-                        .padding(.top)
+                        if isLoadingMore { ProgressView().padding(.vertical, 12) }
                     }
-                    .refreshable { await refresh() }
+                    .padding(.top)
                 }
-
+                .refreshable { await refresh() }
             }
             .ignoresSafeArea(edges: .bottom)
+            .onChange(of: selectedFeed) { _, _ in
+                restartFeed()
+            }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Picker("Feed", selection: $selectedFeed) {
+                            ForEach(FeedSelection.allCases) { option in
+                                Text(option.rawValue).tag(option)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(selectedFeed.rawValue)
+                                .font(.headline)
+                            Image(systemName: "chevron.down")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 20) {
                         NavigationLink(destination: AlertasView()) { Image(systemName: "bell.fill") }
