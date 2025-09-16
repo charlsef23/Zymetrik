@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import Supabase
+import UIKit
 
 struct EditarPerfilView: View {
     @Environment(\.dismiss) var dismiss
@@ -45,14 +46,22 @@ struct EditarPerfilView: View {
                 }
             }
             .background(
-                LinearGradient(
-                    stops: [
-                        .init(color: Color(.systemGroupedBackground), location: 0),
-                        .init(color: Color(.secondarySystemGroupedBackground), location: 1)
-                    ],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                ZStack {
+                    LinearGradient(
+                        colors: [
+                            Color(.systemGroupedBackground),
+                            Color(.secondarySystemGroupedBackground).opacity(0.85)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .ignoresSafeArea()
+
+                    // Subtle texture overlay
+                    Color.black.opacity(0.02)
+                        .blendMode(.overlay)
+                        .ignoresSafeArea()
+                }
             )
             .navigationTitle("Editar perfil")
             .navigationBarTitleDisplayMode(.inline)
@@ -83,23 +92,12 @@ struct EditarPerfilView: View {
                         .fontWeight(.semibold)
                         .disabled(isFormInvalid)
                         .opacity(isFormInvalid ? 0.5 : 1)
-                        .overlay {
-                            if !isFormInvalid {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(
-                                        LinearGradient(colors: [.blue.opacity(0.6), .purple.opacity(0.6)],
-                                                       startPoint: .topLeading,
-                                                       endPoint: .bottomTrailing),
-                                        lineWidth: 1
-                                    )
-                                    .blendMode(.overlay)
-                            }
-                        }
                     }
                 }
             }
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            // Removed the line: .toolbarShadow(.visible, for: .navigationBar)
             // Fallback a la sombra de la barra (sustituye a .toolbarShadow)
             .overlay(alignment: .top) {
                 if showScrollShadow {
@@ -123,114 +121,131 @@ struct EditarPerfilView: View {
     
     // MARK: - Hero
     private var headerHero: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Pon tu perfil a punto")
-                .font(.title3.bold())
-                .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [.blue.opacity(0.2), .purple.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.blue)
+                }
+                Text("Pon tu perfil a punto")
+                    .font(.title3.bold())
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
             Text("Actualiza tu nombre, usuario, bio y enlaces. Los cambios se verán al instante.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(0.06))
+        .padding(18)
+        .background(
+            LinearGradient(colors: [
+                Color.blue.opacity(0.08),
+                Color.purple.opacity(0.06)
+            ], startPoint: .topLeading, endPoint: .bottomTrailing)
         )
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.06))
+        )
+        .shadow(color: .black.opacity(0.05), radius: 16, x: 0, y: 8)
     }
     
     // MARK: - Avatar Section
     private var avatarSection: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 8) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.title3)
-                    .foregroundColor(.blue)
-                Text("Foto de perfil")
-                    .font(.headline)
-                Spacer()
+            ZStack {
+                Circle()
+                    .stroke(LinearGradient(colors: [.blue.opacity(0.6), .purple.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 3)
+                    .frame(width: 132, height: 132)
+                    .shadow(color: .blue.opacity(0.12), radius: 10, x: 0, y: 6)
+                EnhancedAvatarPicker(
+                    currentImageURL: imagenPerfilURL,
+                    onImageSelected: { editedImage in
+                        Task { await uploadNewAvatar(editedImage) }
+                    },
+                    size: 120
+                )
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             
-            EnhancedAvatarPicker(
-                currentImageURL: imagenPerfilURL,
-                onImageSelected: { editedImage in
-                    Task { await uploadNewAvatar(editedImage) }
-                },
-                size: 120
-            )
-            
-            Text("Toca para cambiar tu foto de perfil")
-                .font(.caption)
-                .foregroundColor(.secondary)
         }
         .padding(.top, 4)
     }
     
     // MARK: - Profile Fields Section
     private var profileFieldsSection: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 8) {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.title3)
-                    .foregroundColor(.purple)
-                Text("Información personal")
-                    .font(.headline)
-                Spacer()
+        VStack(spacing: 12) {
+            // Removed header HStack for "Información personal"
+            // List-like card (plain background, thin separators)
+            VStack(spacing: 0) {
+                InstagramEditRow(title: "Nombre") {
+                    TextField("Tu nombre completo", text: $nombre)
+                        .textInputAutocapitalization(.words)
+                        .disableAutocorrection(true)
+                        .font(.body)
+                }
+                Divider().opacity(0.12)
+                InstagramEditRow(title: "Usuario") {
+                    HStack(spacing: 6) {
+                        Text("@").foregroundStyle(.secondary)
+                        TextField("nombreusuario", text: $username)
+                            .textInputAutocapitalization(.never)
+                            .disableAutocorrection(true)
+                            .font(.body)
+                            .onChange(of: username) { _, newValue in
+                                let filtered = String(newValue.prefix(30).lowercased().filter { $0.isLetter || $0.isNumber || $0 == "_" })
+                                if filtered != newValue { username = filtered }
+                            }
+                    }
+                }
+                Divider().opacity(0.12)
+                InstagramEditRow(title: "Presentación", alignment: .top) {
+                    TextField("Cuéntanos sobre ti...", text: $presentacion, axis: .vertical)
+                        .lineLimit(3, reservesSpace: true)
+                        .textInputAutocapitalization(.sentences)
+                        .disableAutocorrection(false)
+                        .font(.body)
+                }
+                Divider().opacity(0.12)
+                InstagramEditRow(title: "Enlaces") {
+                    TextField("https://tu-sitio-web.com", text: $enlaces)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                        .font(.body)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            
-            VStack(spacing: 14) {
-                ProfileFieldView(
-                    title: "Nombre",
-                    value: $nombre,
-                    placeholder: "Tu nombre completo",
-                    isRequired: true
-                )
-                
-                ProfileFieldView(
-                    title: "Nombre de usuario",
-                    value: $username,
-                    placeholder: "nombreusuario",
-                    isRequired: true,
-                    prefix: "@"
-                )
-                
-                ProfileTextAreaView(
-                    title: "Presentación",
-                    value: $presentacion,
-                    placeholder: "Cuéntanos sobre ti...",
-                    maxCharacters: 150
-                )
-                
-                ProfileFieldView(
-                    title: "Enlaces",
-                    value: $enlaces,
-                    placeholder: "https://tu-sitio-web.com",
-                    keyboardType: .URL
-                )
-            }
-            .padding(16)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.06))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.04), radius: 10, x: 0, y: 4)
         }
     }
     
     // MARK: - Info Section
     private var infoSection: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             infoLine(icon: "info.circle", color: .blue, text: "Tu perfil es público y otros usuarios pueden verlo")
+            Divider().opacity(0.15)
             infoLine(icon: "lock.shield", color: .green, text: "Tus datos están protegidos y seguros")
         }
-        .padding(14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(0.06))
+        .padding(16)
+        .background(
+            .ultraThinMaterial,
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.06))
+        )
+        .shadow(color: .black.opacity(0.05), radius: 12, x: 0, y: 8)
     }
     
     private func infoLine(icon: String, color: Color, text: String) -> some View {
@@ -365,7 +380,7 @@ struct ProfileFieldView: View {
             ZStack(alignment: .leading) {
                 // Caja base
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(.secondarySystemGroupedBackground))
+                    .fill(Color(.tertiarySystemGroupedBackground))
                     .overlay(
                         // Borde degradado con opacidad (evita el ternario LinearGradient/Color)
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -373,7 +388,7 @@ struct ProfileFieldView: View {
                                 LinearGradient(colors: [.blue.opacity(0.9), .purple.opacity(0.7)],
                                                startPoint: .topLeading,
                                                endPoint: .bottomTrailing),
-                                lineWidth: 2
+                                lineWidth: 1.5
                             )
                             .opacity(isFocused ? 1 : 0)
                             .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isFocused)
@@ -401,7 +416,8 @@ struct ProfileFieldView: View {
                                 if filtered != newValue { value = filtered }
                             }
                         }
-                        .padding(.vertical, 14)
+                        .padding(.vertical, 12)
+                        .textInputAutocapitalization(keyboardType == .URL ? .never : .words)
                     
                     Spacer(minLength: 8)
                 }
@@ -437,14 +453,14 @@ struct ProfileTextAreaView: View {
             
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(.secondarySystemGroupedBackground))
+                    .fill(Color(.tertiarySystemGroupedBackground))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .stroke(
                                 LinearGradient(colors: [.blue.opacity(0.9), .purple.opacity(0.7)],
                                                startPoint: .topLeading,
                                                endPoint: .bottomTrailing),
-                                lineWidth: 2
+                                lineWidth: 1.5
                             )
                             .opacity(isFocused ? 1 : 0)
                             .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isFocused)
@@ -453,8 +469,8 @@ struct ProfileTextAreaView: View {
                 TextField(placeholder, text: $value, axis: .vertical)
                     .focused($isFocused)
                     .lineLimit(4, reservesSpace: true)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 14)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
                     .onChange(of: value) { _, newValue in
                         if newValue.count > maxCharacters {
                             value = String(newValue.prefix(maxCharacters))
@@ -462,6 +478,32 @@ struct ProfileTextAreaView: View {
                     }
             }
         }
+    }
+}
+
+// MARK: - Instagram-like Edit Row
+
+struct InstagramEditRow<Content: View>: View {
+    let title: String
+    var alignment: VerticalAlignment = .center
+    @ViewBuilder let content: Content
+
+    init(title: String, alignment: VerticalAlignment = .center, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.alignment = alignment
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(alignment: alignment) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 12)
     }
 }
 
