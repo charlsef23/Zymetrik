@@ -23,25 +23,29 @@ struct UsuarioRowView: View {
                 } placeholder: {
                     Color.gray.opacity(0.3)
                 }
-                .frame(width: 52, height: 52)
+                .frame(width: 56, height: 56)
                 .clipShape(Circle())
+                .accessibilityHidden(true)
             } else {
                 Image(systemName: "person.circle.fill")
                     .resizable()
-                    .frame(width: 52, height: 52)
+                    .frame(width: 56, height: 56)
                     .foregroundColor(.gray)
+                    .accessibilityHidden(true)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(perfil.username)
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .foregroundColor(.primary)
+                    .accessibilityLabel("Usuario \(perfil.username)")
 
                 if !perfil.nombre.isEmpty {
                     Text(perfil.nombre)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
+                        .accessibilityLabel("Nombre \(perfil.nombre)")
                 }
             }
 
@@ -60,14 +64,18 @@ struct UsuarioRowView: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("usuario.seguir")
+                .accessibilityLabel(seguidos.contains(perfil.id) ? "Dejar de seguir" : "Seguir usuario")
             }
         }
         .padding(.vertical, 10)
         .padding(.horizontal)
+        .accessibilityIdentifier("usuario.row.\(perfil.id.uuidString)")
         .task { await verificarSeguimiento() }
     }
 
     // Verifica si el usuario actual sigue a este perfil (por si cambió en otra vista)
+    @MainActor
     private func verificarSeguimiento() async {
         guard let currentUserID else { return }
         guard !seguidos.contains(perfil.id) else { return }
@@ -131,3 +139,4 @@ struct UsuarioRowView: View {
         }
     }
 }
+

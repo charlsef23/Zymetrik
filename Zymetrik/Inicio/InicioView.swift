@@ -2,7 +2,6 @@ import SwiftUI
 
 struct InicioView: View {
     @State private var posts: [Post] = []
-    @State private var seleccion = "Para ti"
     @State private var cargando = true
     @State private var errorMsg: String? = nil   // 👈 para mostrar errores
 
@@ -19,46 +18,6 @@ struct InicioView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Text("Inicio")
-                        .font(.largeTitle.bold())
-                    Spacer()
-                    HStack(spacing: 20) {
-                        NavigationLink(destination: AlertasView()) { Image(systemName: "bell.fill") }
-                        NavigationLink(destination: DMInboxView()) { Image(systemName: "paperplane.fill") }
-                    }
-                    .font(.title2)
-                    .foregroundColor(.foregroundIcon)
-                }
-                .padding(.horizontal)
-                .padding(.top, 20)
-
-                // Selector
-                HStack {
-                    ForEach(["Para ti", "Siguiendo"], id: \.self) { opcion in
-                        VStack {
-                            Text(opcion)
-                                .foregroundColor(seleccion == opcion ? Color("ParaTiColor") : .gray)
-                                .fontWeight(seleccion == opcion ? .semibold : .regular)
-                            if seleccion == opcion {
-                                Capsule().fill(Color("ParaTiColor")).frame(height: 3)
-                            } else {
-                                Color.clear.frame(height: 3)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard seleccion != opcion else { return }
-                            seleccion = opcion
-                            restartFeed()
-                        }
-                    }
-                }
-                .padding(.top, 16)
-                .padding(.horizontal)
-
                 // Lista / Estado
                 if cargando {
                     ProgressView("Cargando…").padding()
@@ -86,6 +45,12 @@ struct InicioView: View {
                     .padding(.top, 24)
                 } else {
                     ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Inicio")
+                                .font(.largeTitle.bold())
+                                .padding(.horizontal)
+                        }
+                        .padding(.top, 12)
                         LazyVStack(spacing: 24) {
                             ForEach(posts) { post in
                                 PostView(post: post)
@@ -104,7 +69,15 @@ struct InicioView: View {
 
             }
             .ignoresSafeArea(edges: .bottom)
-
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 20) {
+                        NavigationLink(destination: AlertasView()) { Image(systemName: "bell.fill") }
+                        NavigationLink(destination: DMInboxView()) { Image(systemName: "paperplane.fill") }
+                    }
+                    .font(.system(size: 16, weight: .medium))
+                }
+            }
             .task {
                 // Carga inicial defensiva con try/catch
                 if posts.isEmpty {

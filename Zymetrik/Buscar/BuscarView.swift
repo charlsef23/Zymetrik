@@ -1,6 +1,10 @@
 import SwiftUI
 import Supabase
 
+#if canImport(SwiftUI)
+// Liquid Glass is part of modern SwiftUI materials on iOS 26+
+#endif
+
 // MARK: - Helpers
 
 private extension Array {
@@ -14,6 +18,92 @@ private func isCancelled(_ error: Error) -> Bool {
     if let urlErr = error as? URLError, urlErr.code == .cancelled { return true }
     if let nsErr = error as NSError?, nsErr.domain == NSURLErrorDomain && nsErr.code == NSURLErrorCancelled { return true }
     return (error as? CancellationError) != nil
+}
+
+@discardableResult
+private func debounceTask(milliseconds: UInt64, operation: @escaping @Sendable () async -> Void) -> Task<Void, Never> {
+    return Task { @MainActor in
+        let delay = Duration.milliseconds(Int64(milliseconds))
+        do {
+            try await Task.sleep(for: delay)
+        } catch {
+            return
+        }
+        if !Task.isCancelled { await operation() }
+    }
+}
+
+// MARK: - Scroll offset preference for reactive glass effect
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+// MARK: - Estilo reutilizable para barra tipo MainTabView con estilo Liquid Glass iOS 26+
+
+private struct MainTabSearchBarStyle: ViewModifier {
+    var cornerRadius: CGFloat = 18
+    var baseOpacity: Double = 0.30
+    var gainOpacity: Double = 0.55
+    var shadowBase: Double = 0.06
+    var shadowGain: Double = 0.06
+    var scrollOffset: CGFloat
+
+    func body(content: Content) -> some View {
+        let t = min(max(scrollOffset / 80, 0), 1)
+
+        return content
+            .background(
+                ZStack {
+                    // Base: solid light gray surface
+                    Color(.systemGray6).opacity(0.95 - (0.55 * t))
+
+                    if #available(iOS 26.0, *) {
+                        // Glass emerges as you scroll
+                        Color.clear
+                            .glassEffect(
+                                .regular
+                                    .tint(.white.opacity(0.06 + 0.10 * t))
+                                    .interactive(),
+                                in: .rect(cornerRadius: cornerRadius)
+                            )
+                            .opacity(0.20 + 0.50 * t)
+
+                        // Subtle material lift under glass
+                        Color.clear.background(.ultraThinMaterial.opacity(0.04 + 0.16 * t))
+                    } else {
+                        Color.clear.background(.ultraThinMaterial.opacity(baseOpacity + gainOpacity * t))
+                    }
+                }
+            )
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.22 + 0.08 * t),
+                                Color.white.opacity(0.08)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+                    .shadow(color: Color.black.opacity(shadowBase + shadowGain * t), radius: 12, x: 0, y: 6)
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            )
+            .animation(.easeInOut(duration: 0.2), value: t)
+    }
+}
+
+private extension View {
+    func mainTabSearchBarStyle(scrollOffset: CGFloat,
+                               cornerRadius: CGFloat = 18) -> some View {
+        self.modifier(MainTabSearchBarStyle(cornerRadius: cornerRadius, scrollOffset: scrollOffset))
+    }
 }
 
 // MARK: - BuscarView estilo Instagram (barra fija arriba)
@@ -34,6 +124,7 @@ struct BuscarView: View {
     @State private var cargarHistorialTask: Task<Void, Never>? = nil
     @State private var searchTask: Task<Void, Never>? = nil
     @State private var cargandoHistorial = true
+    @State private var scrollOffset: CGFloat = 0
 
     // Si tienes flag de verificado en DB, úsalo desde ahí.
     private let verificadosDemo: Set<UUID> = []
@@ -42,6 +133,12 @@ struct BuscarView: View {
         NavigationStack {
             // Contenido desplazable (todo va debajo de la barra)
             ScrollView {
+                GeometryReader { proxy in
+                    Color.clear
+                        .preference(key: ScrollOffsetKey.self, value: proxy.frame(in: .named("buscar_scroll")).minY)
+                }
+                .frame(height: 0)
+
                 if searchText.isEmpty {
                     if cargandoHistorial {
                         VStack(spacing: 10) {
@@ -93,16 +190,16 @@ struct BuscarView: View {
                 // Pequeño padding inferior para que el último elemento no quede pegado
                 Color.clear.frame(height: 12)
             }
+            .coordinateSpace(name: "buscar_scroll")
+            .onPreferenceChange(ScrollOffsetKey.self) { value in
+                // Invertimos para que hacia abajo sea positivo
+                scrollOffset = max(0, -value)
+            }
             // Barra de búsqueda FIJA arriba (queda fuera del scroll)
             .safeAreaInset(edge: .top) {
                 barraBusqueda
                     .background {
-                        if #available(iOS 15.0, *) {
-                            Color(.systemBackground).opacity(0.95)
-                                .ignoresSafeArea()
-                        } else {
-                            Color.white.ignoresSafeArea()
-                        }
+                        Color.clear.ignoresSafeArea()
                     }
             }
             // Sin título de navegación
@@ -141,7 +238,7 @@ struct BuscarView: View {
         HStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(.gray)
+                    .foregroundColor(.secondary)
 
                 TextField("Buscar", text: $searchText)
                     .textInputAutocapitalization(.never)
@@ -151,11 +248,9 @@ struct BuscarView: View {
                         searchFocused = true
                     }
                     .onChange(of: searchText) { _, _ in
-                        // Debounce con cancelación
+                        // Debounce con cancelación (Clock API)
                         searchTask?.cancel()
-                        searchTask = Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 250_000_000)
-                            if Task.isCancelled { return }
+                        searchTask = debounceTask(milliseconds: 250) {
                             await buscarUsuarios()
                         }
                     }
@@ -165,16 +260,21 @@ struct BuscarView: View {
                         searchText = ""
                         resultados = []
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.gray)
+                        if #available(iOS 26.0, *) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.tertiary)
+                        } else {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.gray)
+                        }
                     }
                     .accessibilityLabel("Limpiar búsqueda")
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .mainTabSearchBarStyle(scrollOffset: scrollOffset, cornerRadius: 18)
+            .contentShape(Rectangle())
 
             if searchFocused || !searchText.isEmpty {
                 Button("Cancelar") {
@@ -182,10 +282,29 @@ struct BuscarView: View {
                     resultados = []
                     searchFocused = false // cierra teclado
                 }
+                .accessibilityIdentifier("buscar.cancelar")
+                .accessibilityLabel("Cancelar búsqueda")
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background {
+                    if #available(iOS 26.0, *) {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white.opacity(0.9))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color.white.opacity(0.25), lineWidth: 0.5)
+                            )
+                    } else {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color(.systemGray5))
+                    }
+                }
+                .foregroundStyle(.primary)
             }
         }
         .padding(.horizontal)
-        .padding(.top, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 10)
     }
 
     // Ya NO es ScrollView; se usa dentro del ScrollView principal
@@ -283,6 +402,7 @@ struct BuscarView: View {
         }
     }
 
+    @MainActor
     private func cargarHistorial() {
         cargarHistorialTask?.cancel()
         cargandoHistorial = true
@@ -427,11 +547,13 @@ private struct HistorialRowView: View {
                 } placeholder: { Color.gray.opacity(0.3) }
                 .frame(width: 56, height: 56)
                 .clipShape(Circle())
+                .accessibilityHidden(true)
             } else {
                 Image(systemName: "person.circle.fill")
                     .resizable()
                     .frame(width: 56, height: 56)
                     .foregroundColor(.gray)
+                    .accessibilityHidden(true)
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -439,6 +561,7 @@ private struct HistorialRowView: View {
                     Text(perfil.username)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.primary)
+                        .accessibilityLabel("Usuario \(perfil.username)")
 
                     if esVerificado {
                         Image(systemName: "checkmark.seal.fill")
@@ -465,6 +588,8 @@ private struct HistorialRowView: View {
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("historial.eliminar")
+            .accessibilityLabel("Eliminar de recientes")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -481,9 +606,16 @@ private struct EmptyStateBusqueda: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundColor(.secondary)
+                .accessibilityHidden(true)
             Text("Busca personas")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
+        .accessibilityElement(children: .combine)
     }
 }
+
+#Preview("BuscarView") {
+    BuscarView()
+}
+
