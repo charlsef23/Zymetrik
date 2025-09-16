@@ -102,8 +102,9 @@ struct InicioView: View {
                     .refreshable { await refresh() }
                 }
 
-                Spacer()
             }
+            .ignoresSafeArea(edges: .bottom)
+
             .task {
                 // Carga inicial defensiva con try/catch
                 if posts.isEmpty {
