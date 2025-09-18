@@ -66,13 +66,14 @@ struct EntrenamientoView: View {
                             .background(Color.green)
                             .foregroundStyle(.white)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .padding()
+                            .padding(.horizontal)
+                            .padding(.bottom, 50) // Reducido para bajarlo un poco
                             .accessibilityLabel("Comenzar entrenamiento de hoy")
                     }
                 }
             }
             .navigationBarHidden(true)
-            .overlay(botonFlotanteAgregar(bottomExtraPadding: (esHoy && !ejerciciosDelDia.isEmpty) ? 96 : 40))
+            .overlay(botonFlotanteAgregar(bottomExtraPadding: 10))
             .sheet(isPresented: $mostrarLista) {
                 ListaEjerciciosView(
                     fecha: fechaSeleccionada,
@@ -163,16 +164,33 @@ struct EntrenamientoView: View {
             HStack {
                 Spacer()
                 Button(action: { mostrarLista = true }) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(.foregroundPlus)
-                        .frame(width: 56, height: 56)
-                        .background(.backgroundPlus)
-                        .clipShape(Circle())
-                        .shadow(radius: 4)
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                        Text("Agregar Ejercicio")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.blue, Color.blue.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .shadow(color: .blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                    .scaleEffect(1.0)
                 }
+                .buttonStyle(PlainButtonStyle())
+                .scaleEffect(mostrarLista ? 0.95 : 1.0)
+                .animation(.easeInOut(duration: 0.1), value: mostrarLista)
+                .accessibilityLabel("Agregar ejercicio")
+                .accessibilityHint("Abre la lista para seleccionar ejercicios")
                 .padding(.trailing, 20)
-                .padding(.bottom, bottomExtraPadding)
+                .padding(.bottom, 110)
             }
         }
     }

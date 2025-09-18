@@ -109,13 +109,14 @@ private extension View {
 // MARK: - BuscarView estilo Instagram (barra fija arriba)
 
 struct BuscarView: View {
-    @State private var searchText = ""
+    @Binding var searchText: String
+    @Binding var isSearchActive: Bool
+
     @State private var resultados: [Perfil] = []
     @State private var seguidos: Set<UUID> = []
     @State private var cargando = false
 
     @State private var userID: UUID? = nil
-    @FocusState private var searchFocused: Bool
 
     @State private var perfilSeleccionado: Perfil?
     @State private var navegar = false
@@ -128,6 +129,11 @@ struct BuscarView: View {
 
     // Si tienes flag de verificado en DB, úsalo desde ahí.
     private let verificadosDemo: Set<UUID> = []
+
+    init(searchText: Binding<String> = .constant(""), isSearchActive: Binding<Bool> = .constant(false)) {
+        self._searchText = searchText
+        self._isSearchActive = isSearchActive
+    }
 
     var body: some View {
         NavigationStack {
@@ -195,12 +201,22 @@ struct BuscarView: View {
                 // Invertimos para que hacia abajo sea positivo
                 scrollOffset = max(0, -value)
             }
-            // Barra de búsqueda FIJA arriba (queda fuera del scroll)
-            .safeAreaInset(edge: .top) {
-                barraBusqueda
-                    .background {
-                        Color.clear.ignoresSafeArea()
+            .onChange(of: searchText) { _, _ in
+                searchTask?.cancel()
+                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    resultados = []
+                    cargando = false
+                } else {
+                    searchTask = debounceTask(milliseconds: 250) {
+                        await buscarUsuarios()
                     }
+                }
+            }
+            .onChange(of: isSearchActive) { _, newValue in
+                if !newValue {
+                    resultados = []
+                    cargando = false
+                }
             }
             // Sin título de navegación
             .navigationDestination(isPresented: $navegar) { destinoVistaPerfil() }
@@ -233,79 +249,6 @@ struct BuscarView: View {
         }
     }
 
-    // Barra compacta (queda fija gracias a safeAreaInset)
-    private var barraBusqueda: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-
-                TextField("Buscar", text: $searchText)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .focused($searchFocused)
-                    .task { // foco suave al entrar
-                        searchFocused = true
-                    }
-                    .onChange(of: searchText) { _, _ in
-                        // Debounce con cancelación (Clock API)
-                        searchTask?.cancel()
-                        searchTask = debounceTask(milliseconds: 250) {
-                            await buscarUsuarios()
-                        }
-                    }
-
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                        resultados = []
-                    } label: {
-                        if #available(iOS 26.0, *) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
-                        }
-                    }
-                    .accessibilityLabel("Limpiar búsqueda")
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .mainTabSearchBarStyle(scrollOffset: scrollOffset, cornerRadius: 18)
-            .contentShape(Rectangle())
-
-            if searchFocused || !searchText.isEmpty {
-                Button("Cancelar") {
-                    searchText = ""
-                    resultados = []
-                    searchFocused = false // cierra teclado
-                }
-                .accessibilityIdentifier("buscar.cancelar")
-                .accessibilityLabel("Cancelar búsqueda")
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background {
-                    if #available(iOS 26.0, *) {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.white.opacity(0.9))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(Color.white.opacity(0.25), lineWidth: 0.5)
-                            )
-                    } else {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color(.systemGray5))
-                    }
-                }
-                .foregroundStyle(.primary)
-            }
-        }
-        .padding(.horizontal)
-        .padding(.top, 4)
-        .padding(.bottom, 10)
-    }
 
     // Ya NO es ScrollView; se usa dentro del ScrollView principal
     private var ListRecientes: some View {
@@ -613,9 +556,5 @@ private struct EmptyStateBusqueda: View {
         }
         .accessibilityElement(children: .combine)
     }
-}
-
-#Preview("BuscarView") {
-    BuscarView()
 }
 

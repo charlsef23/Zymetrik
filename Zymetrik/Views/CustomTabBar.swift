@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Tab Item
 enum TabItem: String, CaseIterable {
-    /// Replace it with your tab items!
+    /// Pestañas: Inicio, Entrenamiento, Perfil
     case inicio = "Inicio"
     case entrenamiento = "Entrenamiento"
     case perfil = "Perfil"
@@ -40,7 +40,8 @@ struct CustomTabBar: View {
     var body: some View {
         GeometryReader {
             let size = $0.size
-            let tabs = TabItem.allCases.prefix(showsSearchBar ? 4 : 5)
+            // Usa todas las pestañas definidas en el enum (más robusto)
+            let tabs = Array(TabItem.allCases)
             let tabItemWidth = max(min(size.width / CGFloat(tabs.count + (showsSearchBar ? 1 : 0)), 90), 60)
             let tabItemHeight: CGFloat = 56
             
@@ -129,7 +130,7 @@ struct CustomTabBar: View {
     /// Tab Item View
     @ViewBuilder
     private func TabItemView(_ tab: TabItem, width: CGFloat, height: CGFloat) -> some View {
-        let tabs = TabItem.allCases.prefix(showsSearchBar ? 4 : 5)
+        let tabs = Array(TabItem.allCases)
         let tabCount = tabs.count - 1
         
         VStack(spacing: 6) {
@@ -255,15 +256,21 @@ struct CustomTabContainer: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Contenido según la pestaña activa
+            // Contenido según la pestaña activa o la búsqueda
             Group {
-                switch activeTab {
-                case .inicio:
-                    InicioView()
-                case .entrenamiento:
-                    EntrenamientoView()
-                case .perfil:
-                    PerfilView()
+                if isSearchExpanded || isSearchFieldActive || !searchText.isEmpty {
+                    // Mostrar BuscarView cuando la búsqueda está activa
+                    BuscarView()
+                } else {
+                    // Mostrar la vista correspondiente al tab activo
+                    switch activeTab {
+                    case .inicio:
+                        InicioView()
+                    case .entrenamiento:
+                        EntrenamientoView()
+                    case .perfil:
+                        PerfilView()
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -280,7 +287,7 @@ struct CustomTabContainer: View {
                     isSearchFieldActive = active
                 }
             )
-            .padding(.bottom, 24)
+            .padding(.bottom, 50)
         }
         .ignoresSafeArea(edges: .bottom)
     }
@@ -312,4 +319,3 @@ extension View {
         }
     }
 }
-
