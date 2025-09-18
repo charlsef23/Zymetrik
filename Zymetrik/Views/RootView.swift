@@ -31,7 +31,7 @@ struct RootView: View {
                 case .loading, .error:
                     SplashView() // corre SplashController.start automáticamente en .task
                 case .ready:
-                    MainTabView()
+                    CustomTabContainer()
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
             }
