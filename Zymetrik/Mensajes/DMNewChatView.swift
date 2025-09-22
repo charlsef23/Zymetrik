@@ -9,7 +9,6 @@ struct DMNewChatView: View {
     @State private var query: String = ""
     @State private var results: [PerfilLite] = []
     @State private var loading = false
-    @State private var errorText: String?
     @State private var searchTask: Task<Void, Never>?
 
     // Igual que DMInboxView
@@ -29,11 +28,7 @@ struct DMNewChatView: View {
                 .ignoresSafeArea()
 
                 Group {
-                    if let errorText {
-                        errorView(errorText)
-                    } else if results.isEmpty && !query.isEmpty && !loading {
-                        emptyResultsView
-                    } else if query.isEmpty {
+                    if query.isEmpty {
                         initialStateView
                     } else {
                         resultsList
@@ -55,7 +50,6 @@ struct DMNewChatView: View {
 
                 guard !trimmed.isEmpty else {
                     results = []
-                    errorText = nil
                     return
                 }
 
@@ -92,62 +86,6 @@ struct DMNewChatView: View {
         .padding()
     }
 
-    private var emptyResultsView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "person.crop.circle.badge.questionmark")
-                .font(.system(size: 50))
-                .foregroundStyle(.orange.opacity(0.8))
-
-            VStack(spacing: 8) {
-                Text("Sin resultados")
-                    .font(.headline)
-                Text("No encontramos ningún usuario con el nombre \"\(query)\"")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-            }
-
-            Button { performSearch() } label: {
-                Text("Buscar de nuevo")
-                    .font(.body.weight(.medium))
-                    .foregroundColor(.blue)
-            }
-        }
-        .padding()
-    }
-
-    private func errorView(_ errorText: String) -> some View {
-        VStack(spacing: 20) {
-            Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 50))
-                .foregroundStyle(.red.opacity(0.8))
-
-            VStack(spacing: 8) {
-                Text("Error de conexión")
-                    .font(.headline)
-                Text(errorText)
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-            }
-
-            Button {
-                performSearch()
-            } label: {
-                Text("Reintentar")
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(.blue)
-                    .clipShape(Capsule())
-            }
-        }
-        .padding()
-    }
-
     private var resultsList: some View {
         List {
             ForEach(results) { user in
@@ -178,7 +116,6 @@ struct DMNewChatView: View {
     private func search(text: String) async {
         await MainActor.run {
             loading = true
-            errorText = nil
         }
 
         defer {
@@ -203,7 +140,6 @@ struct DMNewChatView: View {
         } catch {
             await MainActor.run {
                 self.results = []
-                self.errorText = error.localizedDescription
             }
         }
     }
@@ -216,10 +152,7 @@ struct DMNewChatView: View {
                 dismiss()
             }
         } catch {
-            await MainActor.run {
-                self.errorText = (error as NSError).userInfo[NSLocalizedDescriptionKey] as? String
-                                  ?? error.localizedDescription
-            }
+            // Removed errorText assignment per instructions
         }
     }
 }
@@ -253,9 +186,9 @@ struct UserResultRow: View {
                             .foregroundStyle(.tertiary)
                     }
 
-                    Text("ID: \(user.id.uuidString.prefix(8))...")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                    Text("Toca para iniciar chat")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
@@ -264,10 +197,27 @@ struct UserResultRow: View {
             .padding(.vertical, 12)
             .padding(.horizontal, 16)
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(isPressed ? Color(.tertiarySystemFill) : Color(.secondarySystemBackground))
-                    .animation(.easeInOut(duration: 0.1), value: isPressed)
+                ZStack {
+                    // Subtle gradient background for the card
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(.secondarySystemBackground),
+                                    Color(.secondarySystemBackground).opacity(0.85)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .opacity(isPressed ? 0.9 : 1.0)
+
+                    // Border stroke
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
+                }
             )
+            .shadow(color: Color.black.opacity(isPressed ? 0.05 : 0.08), radius: isPressed ? 2 : 6, x: 0, y: isPressed ? 1 : 3)
             .scaleEffect(isPressed ? 0.98 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: isPressed)
             .contentShape(Rectangle())
