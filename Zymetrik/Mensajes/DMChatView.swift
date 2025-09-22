@@ -178,14 +178,14 @@ struct DMChatView: View {
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                HStack(spacing: 8) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.primary)
-                    }
-                    ChatTopBar(user: other, isTyping: isTypingOther) { showProfile = true }
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.primary)
                 }
+            }
+            ToolbarItem(placement: .principal) {
+                ChatTopBar(user: other, isTyping: isTypingOther) { showProfile = true }
             }
         }
         .navigationBarBackButtonHidden(true)

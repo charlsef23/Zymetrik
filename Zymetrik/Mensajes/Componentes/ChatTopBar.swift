@@ -9,12 +9,12 @@ struct ChatTopBar: View {
     
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 // Avatar con indicador online (opcional para futuras funciones)
                 ZStack(alignment: .bottomTrailing) {
                     AvatarAsyncImage(
                         url: URL(string: user?.avatar_url ?? ""),
-                        size: 38
+                        size: 32
                     )
                     .overlay(
                         Circle()
@@ -36,13 +36,13 @@ struct ChatTopBar: View {
                     HStack(spacing: 6) {
                         Text(user?.username ?? "Usuario")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundColor(.primary)
                             .lineLimit(1)
-
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.tertiary)
-                            .scaleEffect(0.8)
+                            .truncationMode(.tail)
+                            .minimumScaleFactor(0.9)
+                            .allowsTightening(true)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .layoutPriority(2)
                     }
 
                     // Estado de escritura con animación
@@ -66,18 +66,24 @@ struct ChatTopBar: View {
                             
                             Text("escribiendo")
                                 .font(.system(size: 13))
-                                .foregroundStyle(.blue)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.9)
+                                .foregroundColor(.blue)
                                 .transition(.opacity.combined(with: .move(edge: .leading)))
                         } else {
                             Text("toca para ver perfil")
                                 .font(.system(size: 13))
-                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.9)
+                                .foregroundColor(.secondary)
                                 .transition(.opacity.combined(with: .move(edge: .leading)))
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .animation(.easeInOut(duration: 0.3), value: isTyping)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
                 
                 Spacer(minLength: 0)
             }
