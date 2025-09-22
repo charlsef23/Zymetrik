@@ -6,6 +6,7 @@ struct CustomTabContainer: View {
     @State private var searchText: String = ""
     @State private var isSearchExpanded: Bool = false
     @State private var isSearchFieldActive: Bool = false
+    @State private var keyboardHeight: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -42,8 +43,25 @@ struct CustomTabContainer: View {
                     isSearchFieldActive = active
                 }
             )
-            .padding(.bottom, 50)
+            .padding(.bottom, max(50, keyboardHeight + 10))
         }
         .ignoresSafeArea(edges: .bottom)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
+            guard
+                let userInfo = notification.userInfo,
+                let endFrame = (userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+            else { return }
+            let screenHeight = UIScreen.main.bounds.height
+            let keyboardTopY = endFrame.origin.y
+            let overlap = max(0, screenHeight - keyboardTopY)
+            withAnimation(.easeOut(duration: 0.25)) {
+                keyboardHeight = overlap
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.25)) {
+                keyboardHeight = 0
+            }
+        }
     }
 }
