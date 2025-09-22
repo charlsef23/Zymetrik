@@ -187,14 +187,28 @@ struct CustomTabBar: View {
     @ViewBuilder
     private func TabBarBackground() -> some View {
         ZStack {
+            // Stronger glass-like capsule
             Capsule(style: .continuous)
-                .stroke(.gray.opacity(0.25), lineWidth: 1.5)
-                        
+                .fill(.thinMaterial)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.white.opacity(0.18))
+                )
+                .overlay(
+                    // Inner highlight for glass sheen
+                    Capsule(style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.55), Color.white.opacity(0.15)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ), lineWidth: 0.75
+                        )
+                )
+                .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
+            // Outer soft stroke for separation
             Capsule(style: .continuous)
-                .fill(.background.opacity(0.8))
-            
-            Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
+                .stroke(.gray.opacity(0.18), lineWidth: 1)
         }
         .compositingGroup()
     }
@@ -278,3 +292,4 @@ extension View {
         }
     }
 }
+
