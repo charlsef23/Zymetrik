@@ -14,6 +14,9 @@ struct RootView: View {
     // Tu store global para planes
     @StateObject private var planStore = TrainingPlanStore()
 
+    // ⬇️ Nuevo: estado UI global (controla ocultar/mostrar la TabBar)
+    @StateObject private var uiState = AppUIState()
+
     var body: some View {
         Group {
             if isCheckingSession {
@@ -43,6 +46,8 @@ struct RootView: View {
         .environmentObject(appState)
         .environmentObject(contentStore)
         .environmentObject(planStore)
+        // ⬇️ Importante: inyectar el estado UI global aquí
+        .environmentObject(uiState)
         .task {
             await checkSession()
             // Si ya hay sesión al abrir la app, dispara el splash inmediatamente

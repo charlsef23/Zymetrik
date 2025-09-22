@@ -6,6 +6,8 @@ private struct BottomVisibleKey: PreferenceKey {
 }
 
 struct DMChatView: View {
+    @EnvironmentObject private var uiState: AppUIState
+
     let conversationID: UUID
     let other: PerfilLite?
 
@@ -69,7 +71,6 @@ struct DMChatView: View {
                                 .padding(.horizontal, 12)
                             }
 
-                            // Ancla inferior + detector de visibilidad del fondo
                             Color.clear
                                 .frame(height: 8)
                                 .id("BOTTOM_ANCHOR")
@@ -87,13 +88,11 @@ struct DMChatView: View {
                     }
                     .coordinateSpace(name: "chatScroll")
                     .refreshable { await loadMore() }
-
                     .onChange(of: messages) { old, new in
                         let oldLastID = lastKnownLastID
                         let newLastID = new.last?.id
                         defer { lastKnownLastID = newLastID }
 
-                        // Primera carga o sin base
                         guard let oldLastID, let myID else {
                             if isAtBottom {
                                 withAnimation { proxy.scrollTo("BOTTOM_ANCHOR", anchor: .bottom) }
@@ -120,7 +119,7 @@ struct DMChatView: View {
                                 showNewMsgPill = true
                                 startHidePillTimer()
                             } else if !mine.isEmpty {
-                                newIncomingCount = 1 // reinicia a 1 con tu propio msg
+                                newIncomingCount = 1
                                 showNewMsgPill = true
                                 startHidePillTimer()
                             }
@@ -156,7 +155,6 @@ struct DMChatView: View {
                     }
             }
 
-            // Pastilla “X nuevos”
             if showNewMsgPill, newIncomingCount > 0 {
                 Button {
                     withAnimation {
@@ -174,7 +172,7 @@ struct DMChatView: View {
                         .background(.ultraThinMaterial, in: Capsule())
                         .shadow(radius: 2, y: 1)
                 }
-                .padding(.bottom, 56) // encima de ComposerBar
+                .padding(.bottom, 56)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -213,10 +211,10 @@ struct DMChatView: View {
                 Text("Perfil no disponible").foregroundStyle(.secondary)
             }
         }
+        .hideTabBarScope() // ⬅️ oculta la barra mientras esta vista exista
     }
 
     // MARK: - Carga inicial + Realtime
-
     private func initialLoadAndSubscribe() async {
         await MainActor.run {
             loading = true
@@ -284,7 +282,7 @@ struct DMChatView: View {
 
         await MainActor.run { loading = false }
 
-        // ⚡️ Fallback live-polling (cada 2.5s) para garantizar nuevos sin salir
+        // Fallback polling
         pollingTask?.cancel()
         pollingTask = Task.detached {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -309,8 +307,6 @@ struct DMChatView: View {
         }
     }
 
-    // MARK: - Fallback polling helper
-
     private func fetchNewerSinceLast() async {
         guard let last = await MainActor.run(body: { messages.last?.created_at }) else { return }
         do {
@@ -322,17 +318,13 @@ struct DMChatView: View {
             if !newer.isEmpty {
                 await MainActor.run { upsert(newer) }
             }
-        } catch {
-            // opcional: loggear error
-        }
+        } catch { /* opcional log */ }
     }
 
     // MARK: - Acciones
-
     private func send() async {
         let text = composing.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-
         guard let myID = await MainActor.run(body: { self.myID }) else { return }
 
         let tag = UUID().uuidString
@@ -359,12 +351,10 @@ struct DMChatView: View {
                 let confirmed = try await DMMessagingService.shared.sendMessage(conversationID: conversationID, text: text, clientTag: tag)
                 await MainActor.run {
                     if let idx = messages.firstIndex(where: { $0.client_tag == tag }) {
-                        var msg = confirmed
-                        msg._delivery = .sent
+                        var msg = confirmed; msg._delivery = .sent
                         messages[idx] = msg
                     } else {
-                        var msg = confirmed
-                        msg._delivery = .sent
+                        var msg = confirmed; msg._delivery = .sent
                         appendIfNew(msg)
                     }
                 }
@@ -373,9 +363,7 @@ struct DMChatView: View {
                 return
             } catch {
                 lastError = error
-                if attempt < 3 {
-                    try? await Task.sleep(nanoseconds: UInt64(400_000_000 * (attempt + 1)))
-                }
+                if attempt < 3 { try? await Task.sleep(nanoseconds: UInt64(400_000_000 * (attempt + 1))) }
             }
         }
 
@@ -414,7 +402,6 @@ struct DMChatView: View {
     }
 
     // MARK: - Helpers
-
     private func seenByOther(_ msg: DMMessage) -> Bool {
         guard msg.autor_id == myID, let otherRead = otherLastReadAt else { return false }
         return otherRead >= msg.created_at
@@ -424,7 +411,6 @@ struct DMChatView: View {
         // El onChange de `messages` baja cuando detecta que estamos al fondo.
     }
 
-    // Timer helpers para el auto-hide de la pastilla
     private func startHidePillTimer() {
         hidePillTask?.cancel()
         hidePillTask = Task { @MainActor in

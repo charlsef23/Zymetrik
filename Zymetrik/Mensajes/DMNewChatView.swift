@@ -2,6 +2,8 @@ import SwiftUI
 import Supabase
 
 struct DMNewChatView: View {
+    @EnvironmentObject private var uiState: AppUIState
+
     var onCreated: (UUID, PerfilLite) -> Void = { _, _ in }
 
     @Environment(\.dismiss) private var dismiss
@@ -11,7 +13,6 @@ struct DMNewChatView: View {
     @State private var loading = false
     @State private var searchTask: Task<Void, Never>?
 
-    // Igual que DMInboxView
     @State private var showingSearch = true
 
     var body: some View {
@@ -37,6 +38,14 @@ struct DMNewChatView: View {
             }
             .navigationTitle("Nuevo mensaje")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .medium))
+                    }
+                }
+            }
             .searchable(
                 text: $query,
                 isPresented: $showingSearch,
@@ -60,6 +69,7 @@ struct DMNewChatView: View {
             }
             .task { showingSearch = true }
         }
+        .hideTabBarScope() // ⬅️ oculta la barra mientras esta vista exista
     }
 
     private var initialStateView: some View {
@@ -93,7 +103,6 @@ struct DMNewChatView: View {
                     Task { await startChat(with: user) }
                 }
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                // 🔧 Fix de tipo explícito:
                 .listRowSeparator(Visibility.hidden)
                 .listRowBackground(Color.clear)
             }
@@ -114,13 +123,8 @@ struct DMNewChatView: View {
 
     // MARK: - Data Methods
     private func search(text: String) async {
-        await MainActor.run {
-            loading = true
-        }
-
-        defer {
-            Task { @MainActor in loading = false }
-        }
+        await MainActor.run { loading = true }
+        defer { Task { @MainActor in loading = false } }
 
         do {
             let res = try await SupabaseManager.shared.client
@@ -138,9 +142,7 @@ struct DMNewChatView: View {
                 }
             }
         } catch {
-            await MainActor.run {
-                self.results = []
-            }
+            await MainActor.run { self.results = [] }
         }
     }
 
@@ -152,12 +154,12 @@ struct DMNewChatView: View {
                 dismiss()
             }
         } catch {
-            // Removed errorText assignment per instructions
+            // opcional: manejar error
         }
     }
 }
 
-// MARK: - User Result Row (inclúyelo si no lo tienes en otro archivo)
+// MARK: - User Result Row
 struct UserResultRow: View {
     let user: PerfilLite
     let onTap: () -> Void
@@ -198,7 +200,6 @@ struct UserResultRow: View {
             .padding(.horizontal, 16)
             .background(
                 ZStack {
-                    // Subtle gradient background for the card
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(
                             LinearGradient(
@@ -212,7 +213,6 @@ struct UserResultRow: View {
                         )
                         .opacity(isPressed ? 0.9 : 1.0)
 
-                    // Border stroke
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
                 }

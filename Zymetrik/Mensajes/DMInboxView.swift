@@ -6,22 +6,22 @@ struct DMInboxItem: Identifiable, Hashable {
     let otherPerfil: PerfilLite?
     var lastMessagePreview: String?
     var lastAt: Date?
-    var unreadCount: Int = 0 // Para futuras funciones
-    var isOnline: Bool = false // Para futuras funciones
+    var unreadCount: Int = 0
+    var isOnline: Bool = false
 }
 
 struct DMInboxView: View {
+    @EnvironmentObject private var uiState: AppUIState
+
     @State private var items: [DMInboxItem] = []
     @State private var loading = true
     @State private var errorText: String?
     @State private var pushChat: DMInboxItem?
     @State private var showingSearch = false
     @State private var searchText = ""
-    
+
     var filteredItems: [DMInboxItem] {
-        if searchText.isEmpty {
-            return items
-        }
+        if searchText.isEmpty { return items }
         return items.filter { item in
             item.otherPerfil?.username.localizedCaseInsensitiveContains(searchText) == true ||
             item.lastMessagePreview?.localizedCaseInsensitiveContains(searchText) == true
@@ -31,7 +31,6 @@ struct DMInboxView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Fondo con gradiente sutil
                 LinearGradient(
                     gradient: Gradient(colors: [
                         Color(.systemBackground),
@@ -41,7 +40,7 @@ struct DMInboxView: View {
                     endPoint: .bottom
                 )
                 .ignoresSafeArea()
-                
+
                 Group {
                     if loading {
                         loadingView
@@ -66,24 +65,27 @@ struct DMInboxView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 16, weight: .medium))
                     }
-                    
+
                     NavigationLink(
-                        destination: DMNewChatView(onCreated: { convID, user in
-                            let temp = DMInboxItem(
-                                id: convID,
-                                conversation: DMConversation(
+                        destination:
+                            DMNewChatView(onCreated: { convID, user in
+                                let temp = DMInboxItem(
                                     id: convID,
-                                    is_group: false,
-                                    created_at: Date(),
-                                    last_message_at: nil
-                                ),
-                                otherPerfil: user,
-                                lastMessagePreview: nil,
-                                lastAt: nil
-                            )
-                            pushChat = temp
-                            Task { await load() }
-                        })
+                                    conversation: DMConversation(
+                                        id: convID,
+                                        is_group: false,
+                                        created_at: Date(),
+                                        last_message_at: nil
+                                    ),
+                                    otherPerfil: user,
+                                    lastMessagePreview: nil,
+                                    lastAt: nil
+                                )
+                                pushChat = temp
+                                Task { await load() }
+                            })
+                            .environmentObject(uiState)   // opcional (hereda del árbol)
+                            .hideTabBarScope()            // ocultar también en NewChat
                     ) {
                         Image(systemName: "square.and.pencil")
                             .font(.system(size: 16, weight: .medium))
@@ -96,44 +98,42 @@ struct DMInboxView: View {
                 placement: .navigationBarDrawer(displayMode: .always),
                 prompt: "Buscar conversaciones..."
             )
-            .task {
-                await load()
-            }
+            .task { await load() }
             .navigationDestination(item: $pushChat) { item in
                 DMChatView(conversationID: item.id, other: item.otherPerfil)
+                    .environmentObject(uiState)  // opcional (hereda del árbol)
+                    .hideTabBarScope()           // ocultar en Chat
             }
         }
+        // ⬇️ Inbox también oculta la barra (sin tocar la propiedad directamente)
+        .hideTabBarScope()
     }
-    
+
     private var loadingView: some View {
         VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.2)
-            
+            ProgressView().scaleEffect(1.2)
             Text("Cargando conversaciones...")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    
+
     private func errorView(_ errorText: String) -> some View {
         VStack(spacing: 20) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 50))
                 .foregroundStyle(.orange)
-            
+
             VStack(spacing: 8) {
-                Text("Error")
-                    .font(.headline)
-                
+                Text("Error").font(.headline)
                 Text(errorText)
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
             }
-            
+
             Button {
                 Task { await load() }
             } label: {
@@ -148,39 +148,40 @@ struct DMInboxView: View {
         }
         .padding()
     }
-    
+
     private var emptyStateView: some View {
         VStack(spacing: 24) {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 60))
                 .foregroundStyle(.blue.opacity(0.6))
-            
+
             VStack(spacing: 8) {
-                Text("Sin mensajes")
-                    .font(.title2.weight(.semibold))
-                
+                Text("Sin mensajes").font(.title2.weight(.semibold))
                 Text("Empieza una conversación desde un perfil o busca nuevos contactos.")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
             }
-            
+
             NavigationLink(
-                destination: DMNewChatView(onCreated: { convID, user in
-                    let temp = DMInboxItem(
-                        id: convID,
-                        conversation: DMConversation(
+                destination:
+                    DMNewChatView(onCreated: { convID, user in
+                        let temp = DMInboxItem(
                             id: convID,
-                            is_group: false,
-                            created_at: Date(),
-                            last_message_at: nil
-                        ),
-                        otherPerfil: user
-                    )
-                    pushChat = temp
-                    Task { await load() }
-                })
+                            conversation: DMConversation(
+                                id: convID,
+                                is_group: false,
+                                created_at: Date(),
+                                last_message_at: nil
+                            ),
+                            otherPerfil: user
+                        )
+                        pushChat = temp
+                        Task { await load() }
+                    })
+                    .environmentObject(uiState)
+                    .hideTabBarScope()
             ) {
                 Text("Nuevo mensaje")
                     .fontWeight(.semibold)
@@ -193,7 +194,7 @@ struct DMInboxView: View {
         }
         .padding()
     }
-    
+
     private var conversationsList: some View {
         List {
             ForEach(filteredItems) { item in
@@ -206,9 +207,7 @@ struct DMInboxView: View {
             }
         }
         .listStyle(.plain)
-        .refreshable {
-            await load()
-        }
+        .refreshable { await load() }
     }
 
     // MARK: - Data Loading
@@ -262,7 +261,7 @@ struct DMInboxView: View {
             }
 
             temp.sort { (a, b) in (a.lastAt ?? .distantPast) > (b.lastAt ?? .distantPast) }
-            
+
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     self.items = temp
@@ -278,14 +277,10 @@ struct DMInboxView: View {
                 )
             }
         } catch {
-            await MainActor.run {
-                self.errorText = error.localizedDescription
-            }
+            await MainActor.run { self.errorText = error.localizedDescription }
         }
 
-        await MainActor.run {
-            loading = false
-        }
+        await MainActor.run { loading = false }
     }
 
     private func refreshConversationItem(_ convID: UUID) async {
@@ -299,70 +294,67 @@ struct DMInboxView: View {
                     item.lastMessagePreview = last?.content ?? item.lastMessagePreview
                     item.lastAt = last?.created_at ?? item.lastAt
                     items[idx] = item
-                    
-                    // Reordenar con animación
+
                     withAnimation(.easeInOut(duration: 0.3)) {
                         items.sort { (a, b) in (a.lastAt ?? .distantPast) > (b.lastAt ?? .distantPast) }
                     }
                 }
             }
         } catch {
-            // Error silencioso
+            // silencioso
         }
     }
 }
 
-// MARK: - Conversation Row Component
+// MARK: - Conversation Row
 struct ConversationRow: View {
     let item: DMInboxItem
     let onTap: () -> Void
-    
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 14) {
-                // Avatar con indicador de estado
                 ZStack(alignment: .bottomTrailing) {
                     AvatarAsyncImage(
                         url: URL(string: item.otherPerfil?.avatar_url ?? ""),
                         size: 56
                     )
-                    
+
                     if item.isOnline {
                         Circle()
                             .fill(.green)
                             .frame(width: 16, height: 16)
                             .overlay(
-                                Circle()
-                                    .stroke(.background, lineWidth: 3)
+                                Circle().stroke(.background, lineWidth: 3)
                             )
                     }
                 }
-                
+
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text(item.otherPerfil?.username ?? "Conversación")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.primary)
                             .lineLimit(1)
-                        
+
                         Spacer()
-                        
+
                         if let date = item.lastAt {
                             Text(shortDate(date))
                                 .font(.system(size: 13))
                                 .foregroundColor(.secondary)
                         }
                     }
-                    
+
                     HStack {
                         Text(item.lastMessagePreview ?? "Toca para escribir...")
                             .font(.system(size: 15))
                             .foregroundStyle(item.lastMessagePreview != nil ? .secondary : .tertiary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
-                        
+
                         Spacer()
-                        
+
                         if item.unreadCount > 0 {
                             Text("\(item.unreadCount)")
                                 .font(.system(size: 13, weight: .semibold))
@@ -385,20 +377,19 @@ struct ConversationRow: View {
     }
 
     private func shortDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = .current
-        formatter.doesRelativeDateFormatting = true
-        
+        let f = DateFormatter()
+        f.locale = .current
+        f.doesRelativeDateFormatting = true
+
         if Calendar.current.isDateInToday(date) {
-            formatter.timeStyle = .short
-            formatter.dateStyle = .none
+            f.timeStyle = .short
+            f.dateStyle = .none
         } else if Calendar.current.isDate(date, equalTo: Date(), toGranularity: .weekOfYear) {
-            formatter.dateFormat = "EEEE"
+            f.dateFormat = "EEEE"
         } else {
-            formatter.dateStyle = .short
-            formatter.timeStyle = .none
+            f.dateStyle = .short
+            f.timeStyle = .none
         }
-        
-        return formatter.string(from: date)
+        return f.string(from: date)
     }
 }
