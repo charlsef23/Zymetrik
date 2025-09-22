@@ -69,6 +69,8 @@ struct CalendarView: View {
                 Button("Añadir") { onAdd() }
             }
         }
+        .navigationTitle("Entrenamiento")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     // MARK: - Helpers
@@ -88,3 +90,4 @@ struct CalendarView: View {
         return formatter.string(from: date).capitalized
     }
 }
+
