@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Tab Item
 enum TabItem: String, CaseIterable {
-    /// Replace it with your tab items!
+    /// Pestañas: Inicio, Entrenamiento, Perfil
     case inicio = "Inicio"
     case entrenamiento = "Entrenamiento"
     case perfil = "Perfil"
@@ -37,10 +37,12 @@ struct CustomTabBar: View {
     /// Search Bar Properties
     @State private var isSearchExpanded: Bool = false
     @FocusState private var isKeyboardActive: Bool
+
     var body: some View {
         GeometryReader {
             let size = $0.size
-            let tabs = TabItem.allCases.prefix(showsSearchBar ? 4 : 5)
+            // Usa todas las pestañas definidas en el enum (más robusto)
+            let tabs = Array(TabItem.allCases)
             let tabItemWidth = max(min(size.width / CGFloat(tabs.count + (showsSearchBar ? 1 : 0)), 90), 60)
             let tabItemHeight: CGFloat = 56
             
@@ -113,7 +115,7 @@ struct CustomTabBar: View {
         .frame(height: 56)
         .padding(.horizontal, 25)
         .padding(.bottom, isKeyboardActive ? 10 : 0)
-        /// Animations (Customize it as per your needs!)
+        /// Animations
         .animation(.bouncy, value: dragOffset)
         .animation(.bouncy, value: isActive)
         .animation(.smooth, value: activeTab)
@@ -129,7 +131,7 @@ struct CustomTabBar: View {
     /// Tab Item View
     @ViewBuilder
     private func TabItemView(_ tab: TabItem, width: CGFloat, height: CGFloat) -> some View {
-        let tabs = TabItem.allCases.prefix(showsSearchBar ? 4 : 5)
+        let tabs = Array(TabItem.allCases)
         let tabCount = tabs.count - 1
         
         VStack(spacing: 6) {
@@ -160,7 +162,7 @@ struct CustomTabBar: View {
                         lastDragOffset = dragOffset
                     }
                 })
-                .onEnded({ value in
+                .onEnded({ _ in
                     lastDragOffset = nil
                     /// Identifying the landing index
                     let landingIndex = Int((dragOffset / width).rounded())
@@ -211,6 +213,7 @@ struct CustomTabBar: View {
                     .onTapGesture {
                         withAnimation(.bouncy) {
                             isSearchExpanded = true
+                            isKeyboardActive = true   // ⬅️ CAMBIO: abrir teclado al expandir
                         }
                     }
                     .allowsHitTesting(!isSearchExpanded)
@@ -229,6 +232,9 @@ struct CustomTabBar: View {
             Button {
                 searchText = ""
                 isKeyboardActive = false
+                withAnimation(.bouncy) {      // ⬅️ CAMBIO: colapsar al cerrar
+                    isSearchExpanded = false
+                }
             } label: {
                 Image(systemName: "xmark")
                     .font(.title2)
@@ -243,46 +249,6 @@ struct CustomTabBar: View {
     
     var accentColor: Color {
         return .primary
-    }
-}
-
-/// Contenedor que muestra la vista asociada a cada tab
-struct CustomTabContainer: View {
-    @State private var activeTab: TabItem = .inicio
-    @State private var searchText: String = ""
-    @State private var isSearchExpanded: Bool = false
-    @State private var isSearchFieldActive: Bool = false
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            // Contenido según la pestaña activa
-            Group {
-                switch activeTab {
-                case .inicio:
-                    InicioView()
-                case .entrenamiento:
-                    EntrenamientoView()
-                case .perfil:
-                    PerfilView()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-
-            // Barra de pestañas personalizada
-            CustomTabBar(
-                showsSearchBar: true,
-                activeTab: $activeTab,
-                searchText: $searchText,
-                onSearchBarExpanded: { expanded in
-                    isSearchExpanded = expanded
-                },
-                onSearchTextFieldActive: { active in
-                    isSearchFieldActive = active
-                }
-            )
-            .padding(.bottom, 24)
-        }
-        .ignoresSafeArea(edges: .bottom)
     }
 }
 
@@ -301,7 +267,7 @@ extension View {
     func customOnChange<T: Equatable>(value: T, result: @escaping (T) -> ()) -> some View {
         if #available(iOS 17, *) {
             self
-                .onChange(of: value) { oldValue, newValue in
+                .onChange(of: value) { _, newValue in
                     result(newValue)
                 }
         } else {
@@ -312,4 +278,3 @@ extension View {
         }
     }
 }
-

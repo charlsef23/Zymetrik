@@ -3,7 +3,7 @@ import SwiftUI
 struct InicioView: View {
     @State private var posts: [Post] = []
     @State private var cargando = true
-    @State private var errorMsg: String? = nil   // 👈 para mostrar errores
+    @State private var errorMsg: String? = nil
 
     // Paginación
     @State private var isLoadingMore = false
@@ -22,9 +22,18 @@ struct InicioView: View {
     }
     @State private var selectedFeed: FeedSelection = .paraTi
 
+    private var isParaTi: Bool { selectedFeed == .paraTi }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                if let errorMsg {
+                    Text(errorMsg)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+                }
+
                 ScrollView {
                     LazyVStack(spacing: 24) {
                         ForEach(posts) { post in
@@ -73,7 +82,6 @@ struct InicioView: View {
                 }
             }
             .task {
-                // Carga inicial defensiva con try/catch
                 if posts.isEmpty {
                     await initialSafeLoad()
                 }
@@ -81,17 +89,17 @@ struct InicioView: View {
         }
     }
 
-    // MARK: - Carga inicial defensiva (usa fetchPosts con try/catch)
+    // MARK: - Carga inicial defensiva
     private func initialSafeLoad() async {
         await MainActor.run {
             cargando = true
             errorMsg = nil
         }
         do {
-            // 👇 Aquí va exactamente el bloque que me pediste, integrado
+            // Precarga segura (tu método existente) para no dejar pantalla vacía
             posts = try await SupabaseService.shared.fetchPosts()
             await MainActor.run { cargando = false }
-            // Una vez cargado “seguro”, activamos tu pipeline de paginación RPC
+            // Y arrancamos la paginación real según el feed
             restartFeed()
         } catch {
             await MainActor.run {
@@ -103,16 +111,15 @@ struct InicioView: View {
     }
 
     // MARK: - Acciones
-
     private func restartFeed() {
-        // Invalida cualquier respuesta pendiente
         loadTask?.cancel()
         feedGeneration &+= 1
 
         reachedEnd = false
         beforeCursor = nil
         lastRequestedCursor = nil
-        cargando = posts.isEmpty   // si ya tenemos posts de la carga segura, no mostramos spinner
+        cargando = posts.isEmpty
+        errorMsg = nil
 
         let currentGen = feedGeneration
         loadTask = Task { [currentGen] in
@@ -129,7 +136,6 @@ struct InicioView: View {
             reachedEnd = false
             beforeCursor = nil
             lastRequestedCursor = nil
-            // si ya hay posts, mantenemos la UI; si no, muestra spinner
             cargando = posts.isEmpty
             errorMsg = nil
         }
@@ -151,43 +157,48 @@ struct InicioView: View {
         }
     }
 
-    // MARK: - Carga (único punto de red)
+    // MARK: - Carga (único punto de red; ramifica por feed)
     private func loadMore(reset: Bool, generation: Int) async {
-        // Doble guard (estado + generación)
         await MainActor.run {
             if isLoadingMore || reachedEnd { return }
             isLoadingMore = true
         }
-        defer {
-            Task { @MainActor in isLoadingMore = false }
-        }
+        defer { Task { @MainActor in isLoadingMore = false } }
 
         do {
             try Task.checkCancellation()
             guard generation == feedGeneration else { return }
 
-            // RPC get_feed_posts (keyset)
-            struct P: Encodable {
-                let p_user: UUID
-                let p_after_ts: String?
-                let p_before_ts: String?
-                let p_limit: Int
-            }
-            let iso = ISO8601DateFormatter()
             let me = try await DMMessagingService.shared.currentUserID()
 
-            let p = P(
-                p_user: me,
-                p_after_ts: nil,
-                p_before_ts: beforeCursor.map { iso.string(from: $0) },
-                p_limit: 20
-            )
-
-            let res = try await SupabaseManager.shared.client
-                .rpc("get_feed_posts", params: p)
-                .execute()
-
-            let page = try res.decodedList(to: Post.self)
+            let page: [Post]
+            if isParaTi {
+                // === PARA TI: posts de TODO el mundo (tu RPC existente) ===
+                struct Params: Encodable {
+                    let p_user: UUID
+                    let p_after_ts: String?
+                    let p_before_ts: String?
+                    let p_limit: Int
+                }
+                let iso = ISO8601DateFormatter()
+                let params = Params(
+                    p_user: me,
+                    p_after_ts: nil,
+                    p_before_ts: beforeCursor.map { iso.string(from: $0) },
+                    p_limit: 20
+                )
+                let res = try await SupabaseManager.shared.client
+                    .rpc("get_feed_posts", params: params)
+                    .execute()
+                page = try res.decodedList(to: Post.self)
+            } else {
+                // === SIGUIENDO: solo autores seguidos (sin RPC nueva) ===
+                page = try await SupabaseService.shared.fetchFollowingPosts(
+                    userID: me,
+                    before: beforeCursor,
+                    limit: 20
+                )
+            }
 
             guard generation == feedGeneration else { return }
 
@@ -203,8 +214,7 @@ struct InicioView: View {
                 if page.isEmpty {
                     reachedEnd = true
                 } else {
-                    // Keyset por fecha
-                    beforeCursor = page.last?.fecha
+                    beforeCursor = page.last?.fecha // keyset por fecha
                 }
             }
         } catch is CancellationError {
@@ -212,11 +222,10 @@ struct InicioView: View {
         } catch let urlErr as URLError where urlErr.code == .cancelled {
             return
         } catch {
-            print("Error al cargar feed (RPC): \(error)")
-            // Si la RPC falla en una carga inicial, muestra el error si no hay posts
+            print("Error al cargar feed:", error)
             await MainActor.run {
                 if posts.isEmpty {
-                    errorMsg = "No se pudo cargar el feed (RPC): \(error.localizedDescription)"
+                    errorMsg = "No se pudo cargar el feed \(selectedFeed.rawValue): \(error.localizedDescription)"
                 }
             }
         }

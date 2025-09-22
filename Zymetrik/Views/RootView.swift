@@ -32,7 +32,10 @@ struct RootView: View {
                     SplashView() // corre SplashController.start automáticamente en .task
                 case .ready:
                     CustomTabContainer()
-                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                        .transition(
+                            AnyTransition.opacity
+                                .combined(with: AnyTransition.scale(scale: 0.98))
+                        )
                 }
             }
         }

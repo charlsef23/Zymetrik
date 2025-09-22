@@ -1,10 +1,6 @@
 import SwiftUI
 import Supabase
 
-#if canImport(SwiftUI)
-// Liquid Glass is part of modern SwiftUI materials on iOS 26+
-#endif
-
 // MARK: - Helpers
 
 private extension Array {
@@ -33,7 +29,7 @@ private func debounceTask(milliseconds: UInt64, operation: @escaping @Sendable (
     }
 }
 
-// MARK: - Scroll offset preference for reactive glass effect
+// MARK: - Scroll offset preference
 private struct ScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -41,81 +37,17 @@ private struct ScrollOffsetKey: PreferenceKey {
     }
 }
 
-// MARK: - Estilo reutilizable para barra tipo MainTabView con estilo Liquid Glass iOS 26+
-
-private struct MainTabSearchBarStyle: ViewModifier {
-    var cornerRadius: CGFloat = 18
-    var baseOpacity: Double = 0.30
-    var gainOpacity: Double = 0.55
-    var shadowBase: Double = 0.06
-    var shadowGain: Double = 0.06
-    var scrollOffset: CGFloat
-
-    func body(content: Content) -> some View {
-        let t = min(max(scrollOffset / 80, 0), 1)
-
-        return content
-            .background(
-                ZStack {
-                    // Base: solid light gray surface
-                    Color(.systemGray6).opacity(0.95 - (0.55 * t))
-
-                    if #available(iOS 26.0, *) {
-                        // Glass emerges as you scroll
-                        Color.clear
-                            .glassEffect(
-                                .regular
-                                    .tint(.white.opacity(0.06 + 0.10 * t))
-                                    .interactive(),
-                                in: .rect(cornerRadius: cornerRadius)
-                            )
-                            .opacity(0.20 + 0.50 * t)
-
-                        // Subtle material lift under glass
-                        Color.clear.background(.ultraThinMaterial.opacity(0.04 + 0.16 * t))
-                    } else {
-                        Color.clear.background(.ultraThinMaterial.opacity(baseOpacity + gainOpacity * t))
-                    }
-                }
-            )
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.22 + 0.08 * t),
-                                Color.white.opacity(0.08)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-                    .shadow(color: Color.black.opacity(shadowBase + shadowGain * t), radius: 12, x: 0, y: 6)
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            )
-            .animation(.easeInOut(duration: 0.2), value: t)
-    }
-}
-
-private extension View {
-    func mainTabSearchBarStyle(scrollOffset: CGFloat,
-                               cornerRadius: CGFloat = 18) -> some View {
-        self.modifier(MainTabSearchBarStyle(cornerRadius: cornerRadius, scrollOffset: scrollOffset))
-    }
-}
-
-// MARK: - BuscarView estilo Instagram (barra fija arriba)
+// MARK: - BuscarView
 
 struct BuscarView: View {
-    @State private var searchText = ""
+    @Binding var searchText: String
+    @Binding var isSearchActive: Bool
+
     @State private var resultados: [Perfil] = []
     @State private var seguidos: Set<UUID> = []
     @State private var cargando = false
 
     @State private var userID: UUID? = nil
-    @FocusState private var searchFocused: Bool
 
     @State private var perfilSeleccionado: Perfil?
     @State private var navegar = false
@@ -128,6 +60,8 @@ struct BuscarView: View {
 
     // Si tienes flag de verificado en DB, úsalo desde ahí.
     private let verificadosDemo: Set<UUID> = []
+
+    // ⬇️ Eliminado el init con .constant(""). Ahora hay que pasar bindings reales desde fuera.
 
     var body: some View {
         NavigationStack {
@@ -152,7 +86,6 @@ struct BuscarView: View {
                         // Encabezado + lista recientes
                         SeccionHeader(
                             titulo: "Recientes",
-                            accionTitulo: "Ver todo",
                             onAccion: { /* opcional */ }
                         )
                         .padding(.top, 12)
@@ -195,14 +128,23 @@ struct BuscarView: View {
                 // Invertimos para que hacia abajo sea positivo
                 scrollOffset = max(0, -value)
             }
-            // Barra de búsqueda FIJA arriba (queda fuera del scroll)
-            .safeAreaInset(edge: .top) {
-                barraBusqueda
-                    .background {
-                        Color.clear.ignoresSafeArea()
+            .onChange(of: searchText) { _, _ in
+                searchTask?.cancel()
+                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    resultados = []
+                    cargando = false
+                } else {
+                    searchTask = debounceTask(milliseconds: 250) {
+                        await buscarUsuarios()
                     }
+                }
             }
-            // Sin título de navegación
+            .onChange(of: isSearchActive) { _, newValue in
+                if !newValue {
+                    resultados = []
+                    cargando = false
+                }
+            }
             .navigationDestination(isPresented: $navegar) { destinoVistaPerfil() }
             .task {
                 do {
@@ -231,80 +173,6 @@ struct BuscarView: View {
         } else {
             EmptyView()
         }
-    }
-
-    // Barra compacta (queda fija gracias a safeAreaInset)
-    private var barraBusqueda: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-
-                TextField("Buscar", text: $searchText)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .focused($searchFocused)
-                    .task { // foco suave al entrar
-                        searchFocused = true
-                    }
-                    .onChange(of: searchText) { _, _ in
-                        // Debounce con cancelación (Clock API)
-                        searchTask?.cancel()
-                        searchTask = debounceTask(milliseconds: 250) {
-                            await buscarUsuarios()
-                        }
-                    }
-
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                        resultados = []
-                    } label: {
-                        if #available(iOS 26.0, *) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
-                        }
-                    }
-                    .accessibilityLabel("Limpiar búsqueda")
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .mainTabSearchBarStyle(scrollOffset: scrollOffset, cornerRadius: 18)
-            .contentShape(Rectangle())
-
-            if searchFocused || !searchText.isEmpty {
-                Button("Cancelar") {
-                    searchText = ""
-                    resultados = []
-                    searchFocused = false // cierra teclado
-                }
-                .accessibilityIdentifier("buscar.cancelar")
-                .accessibilityLabel("Cancelar búsqueda")
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background {
-                    if #available(iOS 26.0, *) {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.white.opacity(0.9))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(Color.white.opacity(0.25), lineWidth: 0.5)
-                            )
-                    } else {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color(.systemGray5))
-                    }
-                }
-                .foregroundStyle(.primary)
-            }
-        }
-        .padding(.horizontal)
-        .padding(.top, 4)
-        .padding(.bottom, 10)
     }
 
     // Ya NO es ScrollView; se usa dentro del ScrollView principal
@@ -345,9 +213,9 @@ struct BuscarView: View {
             let session = try await SupabaseManager.shared.client.auth.session
             let currentUserID = session.user.id
 
-            // Si creaste la columna generada `username_lc` + índice pg_trgm,
-            // usa esta línea (más rápida):
-            let queryColumn = "username_lc"   // <- si NO la tienes, cambia a "username"
+            // Si tienes columna generada `username_lc` + índice pg_trgm, úsala.
+            // Si no la tienes, mantén "username_lc" y cambia tú manualmente a "username".
+            let queryColumn = "username_lc"
 
             let resp = try await SupabaseManager.shared.client
                 .from("perfil")
@@ -443,7 +311,6 @@ struct BuscarView: View {
         let data = NuevoHistorial(usuario_id: uid, perfil_id: perfil.id.uuidString)
 
         do {
-            // try await SupabaseManager.shared.client.from("historial_busqueda").upsert(data).execute() // si tienes UNIQUE
             _ = try await SupabaseManager.shared.client
                 .from("historial_busqueda")
                 .delete()
@@ -614,8 +481,3 @@ private struct EmptyStateBusqueda: View {
         .accessibilityElement(children: .combine)
     }
 }
-
-#Preview("BuscarView") {
-    BuscarView()
-}
-

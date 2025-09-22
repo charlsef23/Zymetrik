@@ -3,6 +3,8 @@ import SwiftUI
 struct CalendarView: View {
     @Binding var selectedDate: Date
     var ejerciciosPorDia: [Date: [Ejercicio]] = [:]
+    /// Acción que se ejecuta al pulsar “Añadir” en la toolbar
+    var onAdd: () -> Void = {}
 
     @State private var currentWeekIndex: Int = 500
     private let calendar = Calendar(identifier: .gregorian)
@@ -62,6 +64,11 @@ struct CalendarView: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .frame(height: 110)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Añadir") { onAdd() }
+            }
+        }
     }
 
     // MARK: - Helpers

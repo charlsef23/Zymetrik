@@ -1,4 +1,5 @@
 import SwiftUI
+import Supabase
 
 struct EntrenamientoView: View {
     @EnvironmentObject var planStore: TrainingPlanStore
@@ -10,22 +11,9 @@ struct EntrenamientoView: View {
     @State private var ejercicioAEliminar: Ejercicio?
     @State private var mostrarConfirmacionEliminar = false
 
-    // MARK: - Computados para aligerar
-    private var esHoy: Bool {
-        Calendar.current.isDateInToday(fechaSeleccionada)
-    }
-    private var ejerciciosDelDia: [Ejercicio] {
-        planStore.ejercicios(en: fechaSeleccionada)
-    }
-    private var weekdayText: String {
-        fechaSeleccionada.formatted(.dateTime.weekday(.wide)).capitalized
-    }
-    private var monthDayText: String {
-        fechaSeleccionada.formatted(.dateTime.month(.wide).day())
-    }
-    private var yearText: String {
-        fechaSeleccionada.formatted(.dateTime.year())
-    }
+    // MARK: - Computados
+    private var esHoy: Bool { Calendar.current.isDateInToday(fechaSeleccionada) }
+    private var ejerciciosDelDia: [Ejercicio] { planStore.ejercicios(en: fechaSeleccionada) }
     private var alertMessage: String {
         if let ejercicio = ejercicioAEliminar {
             return "Vas a quitar “\(ejercicio.nombre)” de \(fechaSeleccionada.formatted(date: .abbreviated, time: .omitted))."
@@ -37,11 +25,10 @@ struct EntrenamientoView: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading) {
-                header
-
                 CalendarView(
                     selectedDate: $fechaSeleccionada,
-                    ejerciciosPorDia: convertKeysToDate(planStore)
+                    ejerciciosPorDia: convertKeysToDate(planStore),
+                    onAdd: { mostrarLista = true }
                 )
 
                 if !ejerciciosDelDia.isEmpty {
@@ -66,13 +53,12 @@ struct EntrenamientoView: View {
                             .background(Color.green)
                             .foregroundStyle(.white)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .padding()
+                            .padding(.horizontal)
+                            .padding(.bottom, 100)
                             .accessibilityLabel("Comenzar entrenamiento de hoy")
                     }
                 }
             }
-            .navigationBarHidden(true)
-            .overlay(botonFlotanteAgregar(bottomExtraPadding: (esHoy && !ejerciciosDelDia.isEmpty) ? 96 : 40))
             .sheet(isPresented: $mostrarLista) {
                 ListaEjerciciosView(
                     fecha: fechaSeleccionada,
@@ -81,13 +67,13 @@ struct EntrenamientoView: View {
                     },
                     isPresented: $mostrarLista
                 )
-                .environmentObject(planStore) // <- importante para refrescos tras rutinas
+                .environmentObject(planStore)
             }
             .onAppear {
-                planStore.refresh(day: fechaSeleccionada)       // Refresco inicial del día visible
-                planStore.preloadWeek(around: fechaSeleccionada) // Opcional: precargar semana
+                planStore.refresh(day: fechaSeleccionada)
+                planStore.preloadWeek(around: fechaSeleccionada)
             }
-            .onChange(of: fechaSeleccionada) { oldValue, newValue in
+            .onChange(of: fechaSeleccionada) { _, newValue in
                 planStore.refresh(day: newValue)
             }
             .alert("Quitar ejercicio", isPresented: $mostrarConfirmacionEliminar) {
@@ -97,32 +83,14 @@ struct EntrenamientoView: View {
                         ejercicioAEliminar = nil
                     }
                 }
-                Button("Cancelar", role: .cancel) {
-                    ejercicioAEliminar = nil
-                }
+                Button("Cancelar", role: .cancel) { ejercicioAEliminar = nil }
             } message: {
                 Text(alertMessage)
             }
         }
     }
 
-    // MARK: - Subvistas pequeñas
-    private var header: some View {
-        HStack {
-            Text(weekdayText)
-                .font(.title.bold())
-            if esHoy {
-                Circle().fill(Color.red).frame(width: 10, height: 10)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(monthDayText).font(.subheadline)
-                Text(yearText).font(.subheadline)
-            }
-        }
-        .padding(.horizontal)
-    }
-
+    // MARK: - Lista / vacío
     private var listaEjercicios: some View {
         List {
             ForEach(ejerciciosDelDia) { ejercicio in
@@ -134,11 +102,7 @@ struct EntrenamientoView: View {
                             ejercicioAEliminar = ejercicio
                             mostrarConfirmacionEliminar = true
                         } label: {
-                            Label {
-                                Text("Quitar")
-                            } icon: {
-                                Image(systemName: "trash")
-                            }
+                            Label { Text("Quitar") } icon: { Image(systemName: "trash") }
                         }
                     }
             }
@@ -157,42 +121,18 @@ struct EntrenamientoView: View {
         }
     }
 
-    private func botonFlotanteAgregar(bottomExtraPadding: CGFloat = 40) -> some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                Button(action: { mostrarLista = true }) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(.foregroundPlus)
-                        .frame(width: 56, height: 56)
-                        .background(.backgroundPlus)
-                        .clipShape(Circle())
-                        .shadow(radius: 4)
-                }
-                .padding(.trailing, 20)
-                .padding(.bottom, bottomExtraPadding)
-            }
-        }
-    }
-
-    // Convierte claves String -> Date para sombrear el calendario
+    // MARK: - Helper fechas
     private func convertKeysToDate(_ store: TrainingPlanStore) -> [Date: [Ejercicio]] {
         var out: [Date: [Ejercicio]] = [:]
-
-        // Parser de claves "yyyy-MM-dd" en ZONA LOCAL (coherente con TrainingPlanStore)
         let df = DateFormatter()
         df.calendar = Calendar(identifier: .gregorian)
         df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = .current                // 👈 LOCAL, no UTC
+        df.timeZone = .current
         df.dateFormat = "yyyy-MM-dd"
 
-        let cal = Calendar.current            // 👈 también LOCAL
-
+        let cal = Calendar.current
         for (k, v) in store.ejerciciosPorDia {
             if let parsed = df.date(from: k) {
-                // Normaliza a 00:00 LOCAL para comparar celdas del calendario
                 let localStart = cal.startOfDay(for: parsed)
                 out[localStart] = v
             }
