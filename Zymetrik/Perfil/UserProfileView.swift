@@ -19,6 +19,10 @@ struct UserProfileView: View {
     @State private var isMe = false
     @State private var working = false
 
+    @State private var dmConvID: UUID? = nil
+    @State private var dmOther: PerfilLite? = nil
+    @State private var showDMChat = false
+
     private var perfilUUID: UUID? { UUID(uuidString: profileUserID) }
 
     var body: some View {
@@ -54,30 +58,47 @@ struct UserProfileView: View {
                         ListaSeguidoresView(userID: profileUserID)
                     } label: {
                         counter(title: "Seguidores", value: seguidoresCount)
+                            .foregroundColor(.followNumber)
                     }
                     Spacer()
                     NavigationLink {
                         ListaSeguidosView(userID: profileUserID)
                     } label: {
                         counter(title: "Siguiendo", value: seguidosCount)
+                            .foregroundColor(.followNumber)
                     }
                     Spacer()
                 }
 
                 // Seguir / Siguiendo (oculto en propio perfil)
                 if !isMe && !profileUserID.isEmpty {
-                    Button {
-                        Task { await toggleFollow() }
-                    } label: {
-                        Text(isFollowing ? "Siguiendo" : "Seguir")
-                            .fontWeight(.semibold)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(isFollowing ? Color(.systemGray5) : Color.black)
-                            .foregroundColor(isFollowing ? .black : .white)
-                            .cornerRadius(10)
+                    HStack(spacing: 12) {
+                        Button {
+                            Task { await toggleFollow() }
+                        } label: {
+                            Text(isFollowing ? "Siguiendo" : "Seguir")
+                                .fontWeight(.semibold)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(isFollowing ? Color(.systemGray5) : Color.black)
+                                .foregroundColor(isFollowing ? .black : .white)
+                                .cornerRadius(10)
+                        }
+                        .disabled(working)
+
+                        Button {
+                            Task { await startDM() }
+                        } label: {
+                            Text("Mensaje")
+                                .fontWeight(.semibold)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.black)
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                        }
+                        .disabled(working)
                     }
-                    .disabled(working)
                     .padding(.horizontal)
                 }
 
@@ -112,6 +133,13 @@ struct UserProfileView: View {
         .task {
             await cargarPerfil()
             await prepararEstado()
+        }
+        .navigationDestination(isPresented: $showDMChat) {
+            if let convID = dmConvID {
+                DMChatView(conversationID: convID, other: dmOther)
+            } else {
+                EmptyView()
+            }
         }
     }
 
@@ -263,6 +291,21 @@ struct UserProfileView: View {
         working = false
     }
 
+    // MARK: - Mensaje directo
+    private func startDM() async {
+        guard let uid = perfilUUID else { return }
+        do {
+            let convID = try await DMMessagingService.shared.getOrCreateDM(with: uid)
+            await MainActor.run {
+                self.dmConvID = convID
+                self.dmOther = PerfilLite(id: uid, username: username, avatar_url: avatarURL)
+                self.showDMChat = true
+            }
+        } catch {
+            print("❌ startDM error: \(error)")
+        }
+    }
+
     // MARK: - UI helpers
 
     @ViewBuilder
@@ -298,3 +341,4 @@ struct UserProfileView: View {
         }
     }
 }
+
