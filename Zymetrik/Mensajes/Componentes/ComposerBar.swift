@@ -15,7 +15,7 @@ struct ComposerBar: View {
         VStack(spacing: 0) {
             // Separador sutil
             Rectangle()
-                .fill(.quaternary)
+                .fill(Color(.separator).opacity(0.4))
                 .frame(height: 0.5)
             
             HStack(alignment: .bottom, spacing: 12) {
@@ -31,11 +31,13 @@ struct ComposerBar: View {
                         .padding(.vertical, 10)
                         .background(
                             RoundedRectangle(cornerRadius: 20)
-                                .fill(Color(.secondarySystemBackground))
+                                .fill(.ultraThinMaterial)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 20)
                                         .stroke(
-                                            isTextFieldFocused ? .blue.opacity(0.3) : .clear,
+                                            isTextFieldFocused
+                                                ? Color.accentColor.opacity(0.35)
+                                                : Color.secondary.opacity(0.15),
                                             lineWidth: 1
                                         )
                                 )
@@ -48,7 +50,7 @@ struct ComposerBar: View {
                                     }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.tertiary)
+                                        .foregroundStyle(.secondary)
                                         .font(.system(size: 16))
                                 }
                                 .padding(.trailing, 10)
@@ -74,8 +76,8 @@ struct ComposerBar: View {
                                 LinearGradient(
                                     gradient: Gradient(colors:
                                         isEmpty
-                                        ? [Color(.tertiarySystemBackground), Color(.tertiarySystemBackground)]
-                                        : [Color.blue, Color.blue.opacity(0.8)]
+                                        ? [Color(.secondarySystemFill), Color(.tertiarySystemFill)]
+                                        : [Color.accentColor, Color.accentColor.opacity(0.85)]
                                     ),
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
