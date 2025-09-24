@@ -11,11 +11,14 @@ struct RootView: View {
     @StateObject private var appState = AppState()
     @StateObject private var contentStore = ContentStore.shared
 
-    // Tu store global para planes
+    // Store global para planes
     @StateObject private var planStore = TrainingPlanStore()
 
-    // ⬇️ Nuevo: estado UI global (controla ocultar/mostrar la TabBar)
+    // Estado UI global (TabBar, etc.)
     @StateObject private var uiState = AppUIState()
+
+    // ⬇️ NUEVO: store de suscripción (sustituye por el tuyo si ya lo tienes)
+    @StateObject private var suscripcion = SuscripcionStore()
 
     var body: some View {
         Group {
@@ -24,7 +27,6 @@ struct RootView: View {
             } else if !isLoggedIn {
                 // No autenticado → onboarding/login
                 WelcomeView(onLogin: {
-                    // Tras login, pasamos a logged-in y dejamos que Splash arranque
                     self.isLoggedIn = true
                     appState.phase = .loading(progress: 0, message: "Preparando…")
                 })
@@ -46,11 +48,10 @@ struct RootView: View {
         .environmentObject(appState)
         .environmentObject(contentStore)
         .environmentObject(planStore)
-        // ⬇️ Importante: inyectar el estado UI global aquí
         .environmentObject(uiState)
+        .environmentObject(suscripcion) // ⬅️ importante para EntrenamientoPersonalizadoView
         .task {
             await checkSession()
-            // Si ya hay sesión al abrir la app, dispara el splash inmediatamente
             if isLoggedIn {
                 appState.phase = .loading(progress: 0, message: "Preparando…")
             }

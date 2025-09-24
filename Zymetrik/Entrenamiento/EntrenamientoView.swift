@@ -112,12 +112,45 @@ struct EntrenamientoView: View {
     }
 
     private var vacio: some View {
-        HStack {
-            Spacer()
-            Text("No hay ejercicios para esta fecha")
-                .foregroundColor(.secondary)
+        VStack(spacing: 16) {
+            NavigationLink {
+                EntrenamientoPersonalizadoView()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 24, weight: .bold))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Plan de entrenamiento personalizado")
+                            .font(.headline)
+                            .bold()
+                        Text("Crea un plan adaptado a ti")
+                            .font(.subheadline)
+                            .opacity(0.9)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.headline)
+                        .bold()
+                }
+                .foregroundColor(.white)
                 .padding()
-            Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    LinearGradient(colors: [.purple, .pink, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
+                .accessibilityLabel("Abrir plan de entrenamiento personalizado")
+            }
+            .padding(.horizontal)
+
+            HStack {
+                Spacer()
+                Text("No hay ejercicios para esta fecha")
+                    .foregroundColor(.secondary)
+                    .padding()
+                Spacer()
+            }
         }
     }
 
