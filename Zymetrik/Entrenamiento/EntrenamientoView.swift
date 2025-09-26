@@ -3,6 +3,7 @@ import Supabase
 
 struct EntrenamientoView: View {
     @EnvironmentObject var planStore: TrainingPlanStore
+    @EnvironmentObject var subs: SubscriptionStore   // 👈 añade esto
 
     @State private var fechaSeleccionada: Date = Date()
     @State private var mostrarLista = false
@@ -30,6 +31,13 @@ struct EntrenamientoView: View {
                     ejerciciosPorDia: convertKeysToDate(planStore),
                     onAdd: { mostrarLista = true }
                 )
+
+                // 👇 Tarjeta compacta (solo si NO es PRO)
+                if !subs.isPro {
+                    PlansMiniCard(onTap: goToTemplates)
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+                }
 
                 if !ejerciciosDelDia.isEmpty {
                     listaEjercicios
@@ -87,6 +95,8 @@ struct EntrenamientoView: View {
             } message: {
                 Text(alertMessage)
             }
+            .navigationTitle("Entrenamiento")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
@@ -121,6 +131,12 @@ struct EntrenamientoView: View {
         }
     }
 
+    // MARK: - Navegación a Plantillas
+    private func goToTemplates() {
+        // TODO: abre tu PlantillasPROView o Paywall.
+        // Ejemplo con un Router/sheet propio, o NavigationLink desde el tab contenedor.
+    }
+
     // MARK: - Helper fechas
     private func convertKeysToDate(_ store: TrainingPlanStore) -> [Date: [Ejercicio]] {
         var out: [Date: [Ejercicio]] = [:]
@@ -138,5 +154,46 @@ struct EntrenamientoView: View {
             }
         }
         return out
+    }
+}
+
+// MARK: - Tarjeta compacta “Planes de entrenamiento”
+private struct PlansMiniCard: View {
+    var onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(LinearGradient(colors: [.purple, .pink, .orange],
+                                             startPoint: .topLeading,
+                                             endPoint: .bottomTrailing)
+                              .opacity(0.18))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 18, weight: .bold))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Planes de entrenamiento")
+                        .font(.subheadline).bold()
+                    Text("Elige una rutina y añádela")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color(.secondarySystemBackground))
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
