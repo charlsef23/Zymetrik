@@ -7,54 +7,49 @@ struct RootView: View {
     @State private var isLoggedIn = false
     @State private var isCheckingSession = true
 
-    // Splash / prefetch
+    // Stores/App State
     @StateObject private var appState = AppState()
     @StateObject private var contentStore = ContentStore.shared
-
-    // Store global para planes
     @StateObject private var planStore = TrainingPlanStore()
-
-    // Estado UI global (TabBar, etc.)
     @StateObject private var uiState = AppUIState()
-
-    // ⬇️ NUEVO: store de suscripción (sustituye por el tuyo si ya lo tienes)
-    @StateObject private var suscripcion = SuscripcionStore()
+    @StateObject private var routine = RoutineTracker.shared
+    @StateObject private var subs = SubscriptionStore.shared   // 👈 usa SubscriptionStore
 
     var body: some View {
         Group {
             if isCheckingSession {
                 ProgressView("Cargando…")
             } else if !isLoggedIn {
-                // No autenticado → onboarding/login
-                WelcomeView(onLogin: {
+                WelcomeView {
                     self.isLoggedIn = true
                     appState.phase = .loading(progress: 0, message: "Preparando…")
-                })
+                }
             } else {
-                // Autenticado → Splash + contenido
                 switch appState.phase {
                 case .loading, .error:
-                    SplashView() // corre SplashController.start automáticamente en .task
+                    SplashView()
                 case .ready:
                     CustomTabContainer()
-                        .transition(
-                            AnyTransition.opacity
-                                .combined(with: AnyTransition.scale(scale: 0.98))
-                        )
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
             }
         }
-        // Env objects disponibles para toda la app
         .environmentObject(appState)
         .environmentObject(contentStore)
         .environmentObject(planStore)
         .environmentObject(uiState)
-        .environmentObject(suscripcion) // ⬅️ importante para EntrenamientoPersonalizadoView
+        .environmentObject(routine)
+        .environmentObject(subs)
         .task {
             await checkSession()
             if isLoggedIn {
                 appState.phase = .loading(progress: 0, message: "Preparando…")
             }
+        }
+        .task {
+            // cargar y refrescar suscripciones
+            await subs.loadProducts()
+            await subs.refresh()
         }
     }
 

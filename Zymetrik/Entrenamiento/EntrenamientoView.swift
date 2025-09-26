@@ -3,9 +3,15 @@ import Supabase
 
 struct EntrenamientoView: View {
     @EnvironmentObject var planStore: TrainingPlanStore
+    @EnvironmentObject var subs: SubscriptionStore
 
     @State private var fechaSeleccionada: Date = Date()
     @State private var mostrarLista = false
+
+    // Sheet de plantillas PRO
+    @State private var mostrarPlantillas = false
+    @State private var ejerciciosCatalogo: [Ejercicio] = []
+    @State private var cargandoCatalogo = false
 
     // Confirmación de eliminación
     @State private var ejercicioAEliminar: Ejercicio?
@@ -14,6 +20,7 @@ struct EntrenamientoView: View {
     // MARK: - Computados
     private var esHoy: Bool { Calendar.current.isDateInToday(fechaSeleccionada) }
     private var ejerciciosDelDia: [Ejercicio] { planStore.ejercicios(en: fechaSeleccionada) }
+
     private var alertMessage: String {
         if let ejercicio = ejercicioAEliminar {
             return "Vas a quitar “\(ejercicio.nombre)” de \(fechaSeleccionada.formatted(date: .abbreviated, time: .omitted))."
@@ -25,12 +32,22 @@ struct EntrenamientoView: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading) {
+
+                // 📅 Calendario
                 CalendarView(
                     selectedDate: $fechaSeleccionada,
                     ejerciciosPorDia: convertKeysToDate(planStore),
                     onAdd: { mostrarLista = true }
                 )
 
+                // ⭐️ Tarjeta compacta de Planes (solo si NO es PRO)
+                if !subs.isPro {
+                    PlansMiniCard(onTap: goToTemplates)
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+                }
+
+                // Lista o vacío
                 if !ejerciciosDelDia.isEmpty {
                     listaEjercicios
                 } else {
@@ -39,6 +56,7 @@ struct EntrenamientoView: View {
 
                 Spacer()
 
+                // CTA entrenar abajo
                 if esHoy, !ejerciciosDelDia.isEmpty {
                     NavigationLink(
                         destination: EntrenandoView(
@@ -59,6 +77,7 @@ struct EntrenamientoView: View {
                     }
                 }
             }
+            // Selección manual
             .sheet(isPresented: $mostrarLista) {
                 ListaEjerciciosView(
                     fecha: fechaSeleccionada,
@@ -68,6 +87,20 @@ struct EntrenamientoView: View {
                     isPresented: $mostrarLista
                 )
                 .environmentObject(planStore)
+            }
+            // Plantillas PRO
+            .sheet(isPresented: $mostrarPlantillas) {
+                NavigationStack {
+                    if cargandoCatalogo {
+                        ProgressView("Cargando ejercicios…")
+                            .padding()
+                    } else {
+                        PlantillasPROView(ejerciciosCatalogo: ejerciciosCatalogo)
+                            .environmentObject(planStore)
+                            .environmentObject(subs)
+                            .environmentObject(RoutineTracker.shared)
+                    }
+                }
             }
             .onAppear {
                 planStore.refresh(day: fechaSeleccionada)
@@ -87,6 +120,8 @@ struct EntrenamientoView: View {
             } message: {
                 Text(alertMessage)
             }
+            .navigationTitle("Entrenamiento")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
@@ -112,44 +147,28 @@ struct EntrenamientoView: View {
     }
 
     private var vacio: some View {
-        VStack(spacing: 16) {
-            NavigationLink {
-                EntrenamientoPersonalizadoView()
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "wand.and.stars")
-                        .font(.system(size: 24, weight: .bold))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Plan de entrenamiento personalizado")
-                            .font(.headline)
-                            .bold()
-                        Text("Crea un plan adaptado a ti")
-                            .font(.subheadline)
-                            .opacity(0.9)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.headline)
-                        .bold()
-                }
-                .foregroundColor(.white)
+        HStack {
+            Spacer()
+            Text("No hay ejercicios para esta fecha")
+                .foregroundColor(.secondary)
                 .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    LinearGradient(colors: [.purple, .pink, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
-                .accessibilityLabel("Abrir plan de entrenamiento personalizado")
-            }
-            .padding(.horizontal)
+            Spacer()
+        }
+    }
 
-            HStack {
-                Spacer()
-                Text("No hay ejercicios para esta fecha")
-                    .foregroundColor(.secondary)
-                    .padding()
-                Spacer()
+    // MARK: - Navegación a Plantillas
+    private func goToTemplates() {
+        mostrarPlantillas = true
+        if ejerciciosCatalogo.isEmpty {
+            cargandoCatalogo = true
+            Task {
+                defer { cargandoCatalogo = false }
+                do {
+                    let items = try await SupabaseService.shared.fetchEjerciciosConFavoritos()
+                    await MainActor.run { ejerciciosCatalogo = items }
+                } catch {
+                    print("❌ Error cargando catálogo:", error)
+                }
             }
         }
     }
@@ -171,5 +190,48 @@ struct EntrenamientoView: View {
             }
         }
         return out
+    }
+}
+
+// MARK: - Tarjeta compacta “Planes de entrenamiento”
+private struct PlansMiniCard: View {
+    var onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(
+                            LinearGradient(colors: [.purple, .pink, .orange],
+                                           startPoint: .topLeading,
+                                           endPoint: .bottomTrailing)
+                            .opacity(0.18)
+                        )
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 18, weight: .bold))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Planes de entrenamiento")
+                        .font(.subheadline).bold()
+                    Text("Elige una rutina y añádela")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color(.secondarySystemBackground))
+            )
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -2,16 +2,19 @@ import SwiftUI
 
 @main
 struct ZymetrikApp: App {
-    // Estado global que ya usas
-    @StateObject private var appState = AppState()
-    // 🟢 Store de planes/rutinas sincronizado con Supabase
-    @StateObject private var planStore = TrainingPlanStore()
+    @StateObject private var subs = SubscriptionStore.shared
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environmentObject(appState)
-                .environmentObject(planStore) 
+                .environmentObject(subs)
+                .task {
+                    await subs.loadProducts()
+                    await subs.refresh()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                    Task { await subs.refresh() }
+                }
         }
     }
 }
