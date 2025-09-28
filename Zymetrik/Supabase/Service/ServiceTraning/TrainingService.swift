@@ -45,19 +45,6 @@ struct Ejercicio: Identifiable, Codable {
     }
 }
 
-final class SetRegistro: Identifiable, ObservableObject {
-    let id: UUID
-    var numero: Int
-    @Published var repeticiones: Int
-    @Published var peso: Double
-
-    init(id: UUID = UUID(), numero: Int, repeticiones: Int, peso: Double) {
-        self.id = id
-        self.numero = numero
-        self.repeticiones = repeticiones
-        self.peso = peso
-    }
-}
 
 // MARK: - Publicar entrenamiento (post con contenido de ejercicios)
 
@@ -134,8 +121,22 @@ extension SupabaseService {
 
 // MARK: - Planes (upsert/fetch entrenamientos_planeados)
 
+final class SetRegistro: Identifiable, ObservableObject {
+    let id: UUID
+    var numero: Int
+    @Published var repeticiones: Int
+    @Published var peso: Double
+
+    init(id: UUID = UUID(), numero: Int, repeticiones: Int, peso: Double) {
+        self.id = id
+        self.numero = numero
+        self.repeticiones = repeticiones
+        self.peso = peso
+    }
+}
+
 extension SupabaseService {
-    /// Inserta/actualiza el plan del día (fecha local)
+    /// Inserta/actualiza el plan del día (fecha LOCAL -> yyyy-MM-dd)
     func upsertPlan(fecha: Date, ejercicios: [Ejercicio]) async throws {
         let user = try await client.auth.session.user
         let userId = user.id
@@ -150,11 +151,11 @@ extension SupabaseService {
         let df = DateFormatter()
         df.calendar = Calendar(identifier: .gregorian)
         df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = .current                 // 👈 LOCAL
+        df.timeZone = .current                 // LOCAL
         df.dateFormat = "yyyy-MM-dd"
 
         // Inicio del día LOCAL
-        let cal = Calendar.current             // 👈 LOCAL
+        let cal = Calendar.current
         let comps = cal.dateComponents([.year, .month, .day], from: fecha)
         let localDay = cal.date(from: comps)!
         let dayKey = df.string(from: localDay)
@@ -173,28 +174,27 @@ extension SupabaseService {
                 .execute()
         } catch {
             let nsErr = error as NSError
+            // Si usas debounce y cancela la request de URLSession
             if nsErr.domain == NSURLErrorDomain && nsErr.code == NSURLErrorCancelled {
-                // Petición cancelada por debounce: ignora el log
                 return
             }
             throw error
         }
     }
 
-    /// Lee el plan del día (clave local yyyy-MM-dd)
+    /// Lee el plan del día (clave LOCAL yyyy-MM-dd)
     func fetchPlan(fecha: Date) async throws -> [Ejercicio] {
         let user = try await client.auth.session.user
         let userId = user.id
 
-        // Formatter LOCAL consistente
+        // Formatter LOCAL
         let df = DateFormatter()
         df.calendar = Calendar(identifier: .gregorian)
         df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = .current                 // 👈 LOCAL
+        df.timeZone = .current
         df.dateFormat = "yyyy-MM-dd"
 
-        // Inicio del día LOCAL
-        let cal = Calendar.current             // 👈 LOCAL
+        let cal = Calendar.current
         let comps = cal.dateComponents([.year, .month, .day], from: fecha)
         let start = cal.date(from: comps)!
         let dayKey = df.string(from: start)
@@ -301,6 +301,8 @@ extension SupabaseService {
     }
 }
 
+// MARK: - Posts del usuario (por si lo usas)
+
 extension SupabaseService {
     func fetchPostsDelUsuario(autorId: UUID? = nil) async throws -> [Post] {
         var query = client
@@ -321,5 +323,25 @@ extension SupabaseService {
             .execute()
 
         return try response.decodedList(to: Post.self)
+    }
+}
+
+// MARK: - RPC: eliminar futuros
+
+struct DeleteFutureResult: Decodable {
+    let deleted_plans: Int?
+    let deleted_routine_days: Int?
+    let canceled_routines: Int?
+}
+
+extension SupabaseService {
+    /// Llama a la RPC `api_delete_future_workouts` y devuelve el resumen (opcional).
+    func deleteFutureWorkouts() async throws -> DeleteFutureResult? {
+        let rows: [DeleteFutureResult] = try await SupabaseManager.shared.client
+            .rpc("api_delete_future_workouts")
+            .execute()
+            .decodedList(to: DeleteFutureResult.self)
+
+        return rows.first
     }
 }

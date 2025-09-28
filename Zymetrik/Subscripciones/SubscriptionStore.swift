@@ -1,44 +1,60 @@
 import Foundation
 import StoreKit
-import SwiftUI
+import Supabase
 
 @MainActor
 final class SubscriptionStore: ObservableObject {
     static let shared = SubscriptionStore()
 
+    // ✅ IDs EXACTOS (App Store Connect)
+    let monthlyID = "ZymetrikPro"
+    let yearlyID  = "ZymetrikProYear"
+
     // Estado público para la UI
     @Published private(set) var isPro: Bool = false
     @Published private(set) var currentProductId: String?
-    @Published var statusText: String = ""
     @Published var products: [Product] = []
+    @Published var statusText: String = ""
 
-    // Mantener info adicional para sincronizar con backend
+    // Cache para sincronía backend
     private var lastExpiresAt: Date?
     private var lastOriginalTxId: String?
 
-    // IDs de tus productos (App Store Connect)
-    private let productIds = [
-        "com.zymetrik.pro.monthly",
-        "com.zymetrik.pro.yearly"
-    ]
+    // Escucha de updates
+    private var updatesTask: Task<Void, Never>?
 
-    private init() {}
+    private init() {
+        // 🔊 Empieza a escuchar actualizaciones de transacciones (recomendación StoreKit 2)
+        updatesTask = Task { await listenForTransactions() }
+    }
 
-    // MARK: - Carga de productos
+    deinit {
+        updatesTask?.cancel()
+    }
 
+    // MARK: - Productos
     func loadProducts() async {
         do {
-            products = try await Product.products(for: productIds)
+            let ids = [monthlyID, yearlyID]
+            let fetched = try await Product.products(for: ids)
+            // Ordena mensual primero
+            self.products = fetched.sorted { a, b in
+                (a.id == monthlyID ? 0 : 1) < (b.id == monthlyID ? 0 : 1)
+            }
         } catch {
-            print("❌ Error cargando productos:", error)
+            print("❌ loadProducts:", error)
+            self.products = []
         }
     }
 
-    // MARK: - Comprar
+    func product(for id: String) -> Product? {
+        products.first(where: { $0.id == id })
+    }
 
+    // MARK: - Comprar
     func purchase(_ product: Product) async {
         do {
-            // appAccountToken = UUID del usuario (Supabase)
+            // Vincula la compra a tu usuario (Supabase) con appAccountToken
             guard let session = try? await SupabaseManager.shared.client.auth.session,
                   let uid = UUID(uuidString: session.user.id.uuidString) else {
                 statusText = "Inicia sesión para suscribirte"
@@ -53,21 +69,47 @@ final class SubscriptionStore: ObservableObject {
                 await tx.finish()
                 try await updateFromStoreKit(trigger: "SUBSCRIBED")
                 await syncWithBackend(trigger: "SUBSCRIBED")
+
             case .userCancelled:
                 statusText = "Compra cancelada"
+
             case .pending:
                 statusText = "Compra pendiente…"
+
             @unknown default:
                 statusText = "Compra desconocida"
             }
         } catch {
             statusText = "Error en la compra"
-            print("❌ Purchase error:", error)
+            print("❌ purchase error:", error)
         }
     }
 
-    // MARK: - Restaurar
+    func purchaseMonthly() async {
+        if let p = product(for: monthlyID) {
+            await purchase(p)
+        } else {
+            do {
+                if let p = try await Product.products(for: [monthlyID]).first {
+                    await purchase(p)
+                }
+            } catch { print("❌ purchaseMonthly fallback:", error) }
+        }
+    }
 
+    func purchaseYearly() async {
+        if let p = product(for: yearlyID) {
+            await purchase(p)
+        } else {
+            do {
+                if let p = try await Product.products(for: [yearlyID]).first {
+                    await purchase(p)
+                }
+            } catch { print("❌ purchaseYearly fallback:", error) }
+        }
+    }
+
+    // MARK: - Restaurar / Refresh
     func restorePurchases() async {
         do {
             try await AppStore.sync()
@@ -75,27 +117,24 @@ final class SubscriptionStore: ObservableObject {
             await syncWithBackend(trigger: "RESTORE")
         } catch {
             statusText = "No se pudo restaurar"
-            print("❌ Restore error:", error)
+            print("❌ restore:", error)
         }
     }
-
-    // MARK: - Refresh (usa en launch y al volver a foreground)
 
     func refresh() async {
         do {
             try await updateFromStoreKit(trigger: "REFRESH")
             await syncWithBackend(trigger: "REFRESH")
         } catch {
-            print("❌ Refresh error:", error)
+            print("❌ refresh:", error)
         }
     }
 
     // MARK: - StoreKit helpers
-
     private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
         switch result {
         case .unverified(_, let err): throw err
-        case .verified(let signed): return signed
+        case .verified(let signed):   return signed
         }
     }
 
@@ -120,21 +159,33 @@ final class SubscriptionStore: ObservableObject {
         self.currentProductId = product
         self.lastExpiresAt = expires
         self.lastOriginalTxId = originalId
-
         self.statusText = active ? "PRO activo" : "No PRO"
     }
 
-    // MARK: - Backend sync (Supabase RPC api_assn_upsert)
+    /// Mantén un stream de updates para no perder compras
+    private func listenForTransactions() async {
+        for await result in Transaction.updates {
+            do {
+                let tx = try checkVerified(result)
+                await tx.finish()
+                try await updateFromStoreKit(trigger: "UPDATE_STREAM")
+                await syncWithBackend(trigger: "UPDATE_STREAM")
+            } catch {
+                print("❌ Transaction.updates:", error)
+            }
+        }
+    }
 
+    // MARK: - Backend (Supabase)
     private func snapshot(trigger: String) -> SubscriptionSnapshot {
         SubscriptionSnapshot(
             isPro: isPro,
             productId: currentProductId,
-            environment: Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "Sandbox" : "Production",
+            environment: (Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt") ? "Sandbox" : "Production",
             status: isPro ? "active" : "expired",
-            willRenew: nil,                           // puedes calcularlo con RenewalInfo si quieres
-            originalTransactionId: lastOriginalTxId,  // opcional
-            expiresAt: lastExpiresAt,                 // opcional
+            willRenew: nil,                    // puedes calcularlo con RenewalInfo si lo necesitas
+            originalTransactionId: lastOriginalTxId,
+            expiresAt: lastExpiresAt,
             lastEvent: trigger
         )
     }
@@ -143,7 +194,7 @@ final class SubscriptionStore: ObservableObject {
         do {
             try await SupabaseSubscriptionService.shared.upsert(snapshot: snapshot(trigger: trigger))
         } catch {
-            print("ℹ️ No se pudo sincronizar con backend:", error)
+            print("ℹ️ backend sync:", error)
         }
     }
 }

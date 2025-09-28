@@ -12,6 +12,12 @@ struct SettingsView: View {
     @State private var eliminandoCuenta = false
     @State private var errorCuenta: String?
 
+    // Estados para Entrenamiento (borrado de futuros)
+    @State private var confirmDeleteFuture = false
+    @State private var deletingFuture = false
+    @State private var deleteResultMessage: String?
+    @State private var showDeleteResult = false
+
     private var client: SupabaseClient { SupabaseManager.shared.client }
 
     var body: some View {
@@ -22,8 +28,8 @@ struct SettingsView: View {
                     SettingsSectionCard(
                         title: "Zymetrik",
                         items: [
-                            .init(icon: "bookmark.fill", tint: .blue, title: "Guardados", destination: AnyView(GuardadosView())),
-                            .init(icon: "bell.fill", tint: .orange, title: "Notificaciones", destination: AnyView(Text("NotificacionesView()")))
+                            .init(icon: "bookmark.fill", tint: .blue,   title: "Guardados",      destination: AnyView(GuardadosView())),
+                            .init(icon: "bell.fill",     tint: .orange, title: "Notificaciones", destination: AnyView(Text("NotificacionesView()")))
                         ]
                     )
 
@@ -31,8 +37,8 @@ struct SettingsView: View {
                     SettingsSectionCard(
                         title: "Quién puede ver tu contenido",
                         items: [
-                            .init(icon: "lock.fill", tint: .purple, title: "Privacidad de la cuenta", trailing: "Privada", destination: AnyView(Text("PrivacidadView()"))),
-                            .init(icon: "hand.raised.fill", tint: .red, title: "Cuentas bloqueadas", trailing: "4", destination: AnyView(CuentasBloqueadasView()))
+                            .init(icon: "lock.fill",        tint: .purple, title: "Privacidad de la cuenta", trailing: "Privada", destination: AnyView(Text("PrivacidadView()"))),
+                            .init(icon: "hand.raised.fill", tint: .red,    title: "Cuentas bloqueadas",       trailing: "4",      destination: AnyView(CuentasBloqueadasView()))
                         ]
                     )
 
@@ -44,13 +50,27 @@ struct SettingsView: View {
                         ]
                     )
 
+                    // MARK: - Entrenamiento
+                    SettingsSectionCard(
+                        title: "Entrenamiento",
+                        items: [
+                            .init(
+                                icon: "trash.circle.fill",
+                                tint: .red,
+                                title: deletingFuture ? "Eliminando entrenamientos futuros…" : "Eliminar entrenamientos futuros",
+                                destination: nil,
+                                onTap: { confirmDeleteFuture = true }
+                            )
+                        ]
+                    )
+
                     // MARK: - Soporte
                     SettingsSectionCard(
                         title: "Soporte",
                         items: [
-                            .init(icon: "envelope.fill", tint: .teal, title: "Enviar feedback", destination: AnyView(FeedbackView())),
-                            .init(icon: "questionmark.circle.fill", tint: .indigo, title: "Contactar con soporte", destination: AnyView(Text("SoporteView()"))),
-                            .init(icon: "book.fill", tint: .brown, title: "FAQ", destination: AnyView(Text("FAQView()")))
+                            .init(icon: "envelope.fill",          tint: .teal,   title: "Enviar feedback",        destination: AnyView(FeedbackView())),
+                            .init(icon: "questionmark.circle.fill", tint: .indigo, title: "Contactar con soporte",  destination: AnyView(Text("SoporteView()"))),
+                            .init(icon: "book.fill",              tint: .brown,  title: "FAQ",                    destination: AnyView(Text("FAQView()")))
                         ]
                     )
 
@@ -59,11 +79,11 @@ struct SettingsView: View {
                         SettingsSectionCard(
                             title: "Administración",
                             items: [
-                                .init(icon: "exclamationmark.bubble.fill", tint: .green, title: "Reportes de posts", destination: AnyView(AdminPostReportsView())),
-                                .init(icon: "tray.full.fill", tint: .cyan, title: "Feedback (Admin)", destination: AnyView(AdminFeedbackListView())),
-                                .init(icon: "person.crop.circle.badge.exclam", tint: .red, title: "Moderación", destination: AnyView(Text("ModeracionView()"))),
-                                .init(icon: "chart.bar.fill", tint: .orange, title: "Métricas", destination: AnyView(Text("MetricasView()"))),
-                                .init(icon: "lock.doc.fill", tint: .purple, title: "Policies & RLS", destination: AnyView(Text("PoliciesView()")))
+                                .init(icon: "exclamationmark.bubble.fill", tint: .green,  title: "Reportes de posts",    destination: AnyView(AdminPostReportsView())),
+                                .init(icon: "tray.full.fill",               tint: .cyan,   title: "Feedback (Admin)",      destination: AnyView(AdminFeedbackListView())),
+                                .init(icon: "person.crop.circle.badge.exclam", tint: .red, title: "Moderación",          destination: AnyView(Text("ModeracionView()"))),
+                                .init(icon: "chart.bar.fill",               tint: .orange, title: "Métricas",            destination: AnyView(Text("MetricasView()"))),
+                                .init(icon: "lock.doc.fill",                tint: .purple, title: "Policies & RLS",     destination: AnyView(Text("PoliciesView()")))
                             ]
                         )
                     }
@@ -72,21 +92,17 @@ struct SettingsView: View {
                     SettingsSectionCard(
                         title: "Cuenta",
                         items: [
-                            // Cerrar sesión: acción (no navegación)
                             .init(
                                 icon: "rectangle.portrait.and.arrow.forward",
                                 tint: .gray,
                                 title: cerrandoSesion ? "Cerrando sesión…" : "Cerrar sesión",
-                                trailing: nil,
                                 destination: nil,
                                 onTap: { mostrandoConfirmCerrarSesion = true }
                             ),
-                            // Eliminar cuenta: acción (no navegación)
                             .init(
                                 icon: "trash.fill",
                                 tint: .red,
                                 title: eliminandoCuenta ? "Eliminando…" : "Eliminar cuenta",
-                                trailing: nil,
                                 destination: nil,
                                 onTap: { mostrandoConfirmEliminar = true }
                             )
@@ -109,7 +125,8 @@ struct SettingsView: View {
                 ShareProfileView(username: "carlos", profileImage: Image("foto_perfil"))
             }
             .task { await cargarEsAdmin() }
-            // Confirmación cerrar sesión
+
+            // MARK: - Confirmación cerrar sesión
             .confirmationDialog(
                 "¿Cerrar sesión?",
                 isPresented: $mostrandoConfirmCerrarSesion,
@@ -117,12 +134,14 @@ struct SettingsView: View {
             ) {
                 Button(cerrandoSesion ? "Cerrando…" : "Cerrar sesión", role: .destructive) {
                     cerrarSesion()
-                }.disabled(cerrandoSesion)
+                }
+                .disabled(cerrandoSesion)
                 Button("Cancelar", role: .cancel) {}
             } message: {
                 Text("Se cerrará tu sesión en este dispositivo.")
             }
-            // Confirmación eliminar cuenta
+
+            // MARK: - Confirmación eliminar cuenta
             .confirmationDialog(
                 "¿Eliminar tu cuenta?",
                 isPresented: $mostrandoConfirmEliminar,
@@ -130,10 +149,33 @@ struct SettingsView: View {
             ) {
                 Button(eliminandoCuenta ? "Eliminando…" : "Eliminar definitivamente", role: .destructive) {
                     eliminarCuenta()
-                }.disabled(eliminandoCuenta)
+                }
+                .disabled(eliminandoCuenta)
                 Button("Cancelar", role: .cancel) {}
             } message: {
                 Text("Se eliminarán tu perfil y todos tus datos. Esta acción no se puede deshacer.")
+            }
+
+            // MARK: - Confirmación eliminar entrenamientos futuros
+            .confirmationDialog(
+                "¿Eliminar todos los entrenamientos futuros?",
+                isPresented: $confirmDeleteFuture,
+                titleVisibility: .visible
+            ) {
+                Button(deletingFuture ? "Eliminando…" : "Eliminar", role: .destructive) {
+                    Task { await deleteFutureWorkouts() }
+                }
+                .disabled(deletingFuture)
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("Se eliminarán todos los entrenamientos planificados a partir de mañana. Esta acción no se puede deshacer.")
+            }
+
+            // Resultado del borrado
+            .alert("Listo", isPresented: $showDeleteResult) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(deleteResultMessage ?? "Proceso completado.")
             }
         }
     }
@@ -167,8 +209,6 @@ struct SettingsView: View {
         Task {
             do {
                 try await client.auth.signOut()
-                // Recomendado: que tu App/RootView observe onAuthStateChange y cambie al Login automáticamente.
-                // Aquí solo marcamos el estado local como completado.
             } catch {
                 await MainActor.run { errorCuenta = "No se pudo cerrar sesión: \(error.localizedDescription)" }
             }
@@ -191,19 +231,16 @@ struct SettingsView: View {
                 do {
                     try await AccountDeletionService().deleteUserFiles(userId: uid)
                 } catch {
-                    // si falla, seguimos, pero el DELETE de auth.users podría fallar
                     print("⚠️ No se pudieron borrar todos los ficheros: \(error)")
                 }
 
-                // 2) Ejecuta la RPC (hará los DELETEs y finalmente auth.users)
+                // 2) RPC backend para borrar cuenta y datos
                 _ = try await client
                     .rpc("delete_my_account")
                     .execute()
 
-                // 3) Cierra sesión local (el JWT podría seguir “válido” hasta expirar)
+                // 3) Cierra sesión local
                 try? await client.auth.signOut()
-
-                // Aquí tu RootView debería mandarte a Login automáticamente
             } catch {
                 await MainActor.run {
                     self.errorCuenta = "No se pudo eliminar la cuenta: \(error.localizedDescription)"
@@ -212,9 +249,30 @@ struct SettingsView: View {
             await MainActor.run { self.eliminandoCuenta = false }
         }
     }
+
+    // MARK: - Entrenamiento: Eliminar entrenamientos futuros
+    private func deleteFutureWorkouts() async {
+        guard !deletingFuture else { return }
+        deletingFuture = true
+        defer { deletingFuture = false }
+
+        do {
+            let res = try await SupabaseService.shared.deleteFutureWorkouts()
+            let plans  = res?.deleted_plans ?? 0
+            let days   = res?.deleted_routine_days ?? 0
+            let canc   = res?.canceled_routines ?? 0
+
+            deleteResultMessage = """
+            Eliminados \(plans) planes diarios, \(days) días de rutina y canceladas \(canc) rutinas.
+            """
+        } catch {
+            deleteResultMessage = "No se pudo completar la eliminación: \(error.localizedDescription)"
+        }
+        showDeleteResult = true
+    }
 }
 
-// MARK: - Models & UI Components  (añade onTap)
+// MARK: - Models & UI Components  (con soporte onTap)
 struct SettingsItem: Identifiable {
     let id = UUID()
     let icon: String
@@ -327,10 +385,11 @@ struct SettingsRow: View {
                     .foregroundStyle(.secondary)
             }
 
+            // Chevron solo en filas con trailing (para acciones queda oculto)
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.tertiary)
-                .opacity(trailing == nil ? 0 : 1) // oculta si no aplica
+                .opacity(trailing == nil ? 0 : 1)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
