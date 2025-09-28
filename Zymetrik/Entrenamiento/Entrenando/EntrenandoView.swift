@@ -15,6 +15,7 @@ struct EntrenandoView: View {
     // Confirmación de publicación
     @State private var mostrarConfirmarPublicacion = false
     @State private var publicando = false
+    @State private var mostrarConfirmarCancelacion = false
 
     @Environment(\.dismiss) var dismiss
 
@@ -34,44 +35,99 @@ struct EntrenandoView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // LISTA + BOTÓN (el botón está dentro del scroll, al final)
+        ZStack {
+            // LISTA
             ScrollView {
                 VStack(spacing: 16) {
                     ForEach(ejercicios) { ejercicio in
                         registroView(for: ejercicio)
                     }
-
-                    // BOTÓN PUBLICAR — integrado en el scroll
-                    Button {
-                        if hayContenidoReal { mostrarConfirmarPublicacion = true }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "paperplane.fill")
-                                .font(.headline)
-                            Text("Publicar entrenamiento")
-                                .fontWeight(.semibold)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(hayContenidoReal ? Color.black : Color.gray)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .padding(.horizontal)
-                    }
-                    .disabled(!hayContenidoReal || publicando)
-                    .opacity(publicando ? 0.7 : 1)
-
-                    // Espacio para respirar antes del cronómetro
+                    // Espacio para respirar al final del scroll
                     Spacer(minLength: 12)
                 }
                 .padding(.top, 8)
             }
+        }
+        // Barra superior fija con cronómetro compacto y botón Cancelar
+        .safeAreaInset(edge: .top) {
+            HStack(spacing: 12) {
+                // Botón Cancelar
+                Button(role: .destructive) {
+                    mostrarConfirmarCancelacion = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark.circle.fill")
+                        Text("Cancelar")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                    .background(.thinMaterial, in: Capsule())
+                }
 
-            // CRONÓMETRO (se mantiene fuera del scroll)
-            CronometroView(tiempo: $tiempo, timerActivo: $timerActivo, temporizador: $temporizador)
+                Spacer(minLength: 8)
+
+                // Cronómetro compacto
+                HStack(spacing: 8) {
+                    Image(systemName: "clock")
+                        .font(.subheadline)
+                    Text(formatearTiempo(segundos: tiempo))
+                        .font(.system(.subheadline, design: .monospaced))
+                        .fontWeight(.semibold)
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .background(Color.black.opacity(0.9), in: Capsule())
+                .foregroundColor(.white)
+
+                Spacer(minLength: 8)
+
+                // Play/Pause
+                Button {
+                    toggleTimer()
+                } label: {
+                    Image(systemName: timerActivo ? "pause.fill" : "play.fill")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(10)
+                        .background(timerActivo ? Color.orange : Color.green, in: Circle())
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial)
+            .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
+        }
+        // Botón Publicar fijo abajo
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 8) {
+                Button {
+                    if hayContenidoReal { mostrarConfirmarPublicacion = true }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "paperplane.fill")
+                            .font(.headline)
+                        Text("Publicar entrenamiento")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(hayContenidoReal ? Color.black : Color.gray)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .disabled(!hayContenidoReal || publicando)
+                .opacity(publicando ? 0.7 : 1)
+                .padding(.horizontal)
+            }
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial)
         }
         .navigationBarHidden(true)
+        .navigationBarBackButtonHidden(true)
+        .interactiveDismissDisabled(true)
+        .toolbar(.hidden, for: .tabBar)
+        .hideTabBarScope()
         .onAppear {
             // Inicializa estructura para cada ejercicio (si no existiera)
             if setsPorEjercicio.isEmpty {
@@ -82,12 +138,24 @@ struct EntrenandoView: View {
             temporizador?.invalidate()
             timerActivo = false
         }
-        // Alert de confirmación
+        // Alert de confirmación de publicación
         .alert("¿Publicar entrenamiento?", isPresented: $mostrarConfirmarPublicacion) {
             Button("Publicar", role: .destructive) { confirmarYPublicar() }
             Button("Seguir entrenando", role: .cancel) { }
         } message: {
             Text(resumenPublicacion)
+        }
+        // Alert de confirmación de cancelación
+        .alert("¿Cancelar entrenamiento?", isPresented: $mostrarConfirmarCancelacion) {
+            Button("Cancelar entrenamiento", role: .destructive) {
+                temporizador?.invalidate()
+                timerActivo = false
+                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                dismiss()
+            }
+            Button("Seguir entrenando", role: .cancel) { }
+        } message: {
+            Text("Perderás el progreso no publicado de este entrenamiento.")
         }
         // Logro a pantalla completa si aplica
         .fullScreenCover(isPresented: $mostrarLogro) {
@@ -193,6 +261,30 @@ struct EntrenandoView: View {
             }
             publicando = false
         }
+    }
+
+    // MARK: - Cronómetro compacto
+
+    private func toggleTimer() {
+        if timerActivo {
+            detenerTimer()
+        } else {
+            iniciarTimer()
+        }
+    }
+
+    private func iniciarTimer() {
+        timerActivo = true
+        temporizador?.invalidate()
+        temporizador = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            tiempo += 1
+        }
+    }
+
+    private func detenerTimer() {
+        timerActivo = false
+        temporizador?.invalidate()
+        temporizador = nil
     }
 
     // MARK: - Helpers de sets
