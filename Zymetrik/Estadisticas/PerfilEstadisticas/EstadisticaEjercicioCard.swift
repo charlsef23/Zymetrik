@@ -50,8 +50,43 @@ struct EstadisticaEjercicioCard: View {
         Button(action: toggleExpanded) {
             HStack(alignment: .center, spacing: 14) {
                 ZStack {
-                    Circle().fill(LinearGradient(colors: [Color.accentColor.opacity(0.22), Color.accentColor.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    Image(systemName: "dumbbell.fill").font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary).opacity(0.9)
+                    // Base gradient (shows behind while loading or if no image)
+                    Circle().fill(
+                        LinearGradient(
+                            colors: [Color.accentColor.opacity(0.22), Color.accentColor.opacity(0.08)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    
+                    if let urlString = ejercicio.imagen_url, let url = URL(string: urlString) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .empty:
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                            case .failure:
+                                Image(systemName: "photo")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .padding(10)
+                                    .foregroundStyle(.secondary)
+                            @unknown default:
+                                EmptyView()
+                            }
+                        }
+                        .clipShape(Circle())
+                    } else {
+                        Image(systemName: "photo")
+                            .resizable()
+                            .scaledToFit()
+                            .padding(10)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .overlay(Circle().strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
                 .frame(width: 44, height: 44)
@@ -166,3 +201,4 @@ struct EstadisticaEjercicioCard: View {
         return f.localizedString(for: date, relativeTo: Date())
     }
 }
+
