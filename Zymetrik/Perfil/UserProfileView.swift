@@ -3,6 +3,7 @@ import Supabase
 
 struct UserProfileView: View {
     let username: String
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var nombre: String = ""
     @State private var avatarURL: String?
@@ -80,8 +81,8 @@ struct UserProfileView: View {
                                 .fontWeight(.semibold)
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(isFollowing ? Color(.systemGray5) : Color.black)
-                                .foregroundColor(isFollowing ? .black : .white)
+                                .background(isFollowing ? Color(.systemGray5) : (colorScheme == .dark ? .white : .black))
+                                .foregroundColor(isFollowing ? (colorScheme == .dark ? .white : .black) : (colorScheme == .dark ? .black : .white))
                                 .cornerRadius(10)
                         }
                         .disabled(working)
@@ -93,8 +94,8 @@ struct UserProfileView: View {
                                 .fontWeight(.semibold)
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(Color.black)
-                                .foregroundColor(.white)
+                                .background(.backgroundMensaje)
+                                .foregroundColor(.foregroundMensaje)
                                 .cornerRadius(10)
                         }
                         .disabled(working)
@@ -341,4 +342,3 @@ struct UserProfileView: View {
         }
     }
 }
-

@@ -2,6 +2,24 @@ import SwiftUI
 
 struct EjercicioResumenView: View {
     let ejercicio: Ejercicio
+    @Environment(\.colorScheme) private var scheme
+
+    private var heroBackground: LinearGradient {
+        LinearGradient(
+            colors: [.indigo, .blue],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+    
+    private var cardBackground: LinearGradient {
+        LinearGradient(
+            colors: scheme == .dark
+            ? [Color(.secondarySystemBackground), Color(.systemBackground)]
+            : [Color(.systemBackground), Color(.secondarySystemBackground)],
+            startPoint: .topLeading, endPoint: .bottomTrailing
+        )
+    }
 
     var body: some View {
         HStack(spacing: 16) {
@@ -26,7 +44,7 @@ struct EjercicioResumenView: View {
                     EmptyView()
                 }
             }
-            .background(Color.gray.opacity(0.1))
+            .background(heroBackground)
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
             VStack(alignment: .leading, spacing: 4) {
@@ -41,9 +59,8 @@ struct EjercicioResumenView: View {
             Spacer()
         }
         .padding()
-        .background(Color.white) // si usas modo oscuro, considera Color(.systemBackground)
+        .background(cardBackground)
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
     }
 }
-
