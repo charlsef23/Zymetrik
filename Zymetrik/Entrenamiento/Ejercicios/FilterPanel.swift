@@ -190,9 +190,7 @@ struct FilterPanel: View {
     // icono para los chips de Tipo
     private func icon(for tipo: String) -> String {
         switch tipo {
-        case "Gimnasio": return "dumbbell"
-        case "Cardio": return "heart.fill"
-        case "Funcional": return "figure.strengthtraining.traditional"
+        case "Fuerza": return "figure.strengthtraining.traditional"
         default: return "circle"
         }
     }

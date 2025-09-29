@@ -9,7 +9,7 @@ struct ListaEjerciciosView: View {
     @EnvironmentObject var planStore: TrainingPlanStore   // 👈 NUEVO
 
     @State private var ejercicios: [Ejercicio] = []
-    @State private var tipoSeleccionado: String = "Gimnasio"
+    @State private var tipoSeleccionado: String = "Fuerza"
     @State private var filtroPartes: Set<String> = []      // categoría
     @State private var filtroSubtipos: Set<String> = []    // subtipo
     @State private var soloFavoritos: Bool = false
@@ -23,7 +23,7 @@ struct ListaEjerciciosView: View {
     @State private var showToast = false
     @State private var toastText = "Listo ✅"
 
-    private let tipos = ["Gimnasio", "Cardio", "Funcional"]
+    private let tipos = ["Fuerza"]
     @Namespace private var tipoAnimacion
     @State private var pendingUpsertTask: Task<Void, Never>? = nil
 

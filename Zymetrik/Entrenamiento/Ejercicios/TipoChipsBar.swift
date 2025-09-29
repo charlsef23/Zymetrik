@@ -7,9 +7,7 @@ struct TipoChipsBar: View {
 
     func icon(for tipo: String) -> String {
         switch tipo {
-        case "Gimnasio": return "dumbbell"
-        case "Cardio": return "heart.fill"
-        case "Funcional": return "figure.strengthtraining.traditional"
+        case "Fuerza": return "figure.strengthtraining.traditional"
         case "Favoritos": return "star.fill"
         default: return "circle"
         }

@@ -42,12 +42,8 @@ struct TipoSelectorView: View {
 
     func gradient(for tipo: String) -> LinearGradient {
         switch tipo {
-        case "Gimnasio":
+        case "Fuerza":
             return LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case "Cardio":
-            return LinearGradient(colors: [.red, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case "Funcional":
-            return LinearGradient(colors: [.green, .teal], startPoint: .topLeading, endPoint: .bottomTrailing)
         case "Favoritos":
             return LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
         default:
