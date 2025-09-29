@@ -23,6 +23,7 @@ struct EntrenamientoView: View {
     // Confirmación de eliminación individual
     @State private var ejercicioAEliminar: Ejercicio?
     @State private var mostrarConfirmacionEliminar = false
+    @State private var entrenoPublicado = false
 
     // MARK: - Computados
     private var esHoy: Bool { Calendar.current.isDateInToday(fechaSeleccionada) }
@@ -75,21 +76,37 @@ struct EntrenamientoView: View {
 
                 // CTA entrenar abajo
                 if esHoy, !ejerciciosDelDia.isEmpty {
-                    NavigationLink(
-                        destination: EntrenandoView(
-                            ejercicios: ejerciciosDelDia,
-                            fecha: fechaSeleccionada
-                        )
-                    ) {
-                        Text("Entrenar ahora")
-                            .bold()
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.green)
-                            .foregroundStyle(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .padding(.horizontal)
-                            .padding(.bottom, 80)
+                    if entrenoPublicado {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.white)
+                            Text("Entrenamiento finalizado")
+                                .bold()
+                                .foregroundStyle(.white)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.gray)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal)
+                        .padding(.bottom, 80)
+                    } else {
+                        NavigationLink(
+                            destination: EntrenandoView(
+                                ejercicios: ejerciciosDelDia,
+                                fecha: fechaSeleccionada
+                            )
+                        ) {
+                            Text("Entrenar ahora")
+                                .bold()
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.green)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .padding(.horizontal)
+                                .padding(.bottom, 80)
+                        }
                     }
                 }
             }
@@ -150,9 +167,11 @@ struct EntrenamientoView: View {
             .onAppear {
                 planStore.refresh(day: fechaSeleccionada)
                 planStore.preloadWeek(around: fechaSeleccionada)
+                refreshPublishedState()
             }
             .onChange(of: fechaSeleccionada) { _, newValue in
                 planStore.refresh(day: newValue)
+                refreshPublishedState()
             }
             .navigationTitle("Entrenamiento")
             .navigationBarTitleDisplayMode(.inline)
@@ -261,6 +280,22 @@ struct EntrenamientoView: View {
         RoutineTracker.shared.activeRange = nil
         planStore.preloadWeek(around: fechaSeleccionada)
         planStore.refresh(day: fechaSeleccionada)
+    }
+
+    // MARK: - Estado de publicación
+    private func refreshPublishedState() {
+        let selectedDate = fechaSeleccionada
+        Task {
+            do {
+                let posts = try await SupabaseService.shared.fetchPostsDelUsuario()
+                let cal = Calendar.current
+                let published = posts.contains { cal.isDate($0.fecha, inSameDayAs: selectedDate) }
+                await MainActor.run { entrenoPublicado = published }
+            } catch {
+                print("ℹ️ No se pudo comprobar publicación:", error)
+                await MainActor.run { entrenoPublicado = false }
+            }
+        }
     }
 
     // MARK: - Helper fechas
