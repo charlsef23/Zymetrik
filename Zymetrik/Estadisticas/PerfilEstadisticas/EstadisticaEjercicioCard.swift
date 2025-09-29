@@ -12,6 +12,19 @@ struct EstadisticaEjercicioCard: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
+    private var chartHeight: CGFloat {
+        if sizeCategory.isAccessibilityCategory { return 460 }
+        switch hSizeClass {
+        case .some(.regular): return 400
+        case .some(.compact): return 320
+        default: return 360
+        }
+    }
+    
+    private var outerHorizontalPadding: CGFloat {
+        return 8
+    }
+    
     private var isExpanded: Bool { ejerciciosAbiertos.contains(ejercicio.id) }
     
     var body: some View {
@@ -26,7 +39,8 @@ struct EstadisticaEjercicioCard: View {
                 .strokeBorder(.quaternary.opacity(scheme == .dark ? 0.35 : 0.5), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(scheme == .dark ? 0.25 : 0.08), radius: 16, x: 0, y: 8)
-        .padding(.horizontal)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, outerHorizontalPadding)
         .padding(.vertical, 8)
         .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: isExpanded)
         .task { await vm.cargarSesiones(ejercicioID: ejercicio.id, autorId: perfilId) }
@@ -66,7 +80,7 @@ struct EstadisticaEjercicioCard: View {
                 }
                 .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 12)
             .padding(.vertical, 14)
             .background(heroBackground)
             .overlay(
@@ -85,24 +99,13 @@ struct EstadisticaEjercicioCard: View {
     private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             ResponsiveKPIs(sesiones: vm.sesiones)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 8)
                 .padding(.top, 12)
             
             ResponsiveChart(sesiones: vm.sesiones, sizeCategory: sizeCategory, hSizeClass: hSizeClass)
-                .padding(.horizontal, 12)
-            
-            Divider().opacity(0.6).padding(.horizontal, 12)
-            
-            HStack {
-                Label("Histórico", systemImage: "chart.line.uptrend.xyaxis")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            
-            RecentSessionsList(sesiones: vm.sesiones)
-                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: chartHeight)
+                .padding(.horizontal, 8)
                 .padding(.bottom, 12)
         }
     }
