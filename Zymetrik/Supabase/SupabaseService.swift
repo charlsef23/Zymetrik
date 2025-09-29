@@ -257,7 +257,13 @@ extension Date {
     func timeAgoDisplay() -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
-        return formatter.localizedString(for: self, relativeTo: Date())
+        let now = Date()
+        let interval = self.timeIntervalSince(now)
+        if abs(interval) < 1 {
+            // Fuerza a empezar en 1s en lugar de "ahora"
+            return formatter.localizedString(fromTimeInterval: interval >= 0 ? 1 : -1)
+        }
+        return formatter.localizedString(for: self, relativeTo: now)
     }
 }
 

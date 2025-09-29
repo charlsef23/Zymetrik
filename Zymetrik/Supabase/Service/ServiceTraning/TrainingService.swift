@@ -57,9 +57,9 @@ extension SupabaseService {
         let user = try await client.auth.session.user
         let userId = user.id
 
-        // Normaliza a inicio de día UTC y formatea a ISO Z
-        let fechaUTC = fecha.startOfDayUTC()
-        let fechaISOZ = ISO8601.zFormatter.string(from: fechaUTC)
+        // Usa el instante actual (UTC) para la fecha del post, para que aparezca como "recién publicado"
+        let nowUTC = Date()
+        let fechaISOZ = ISO8601.zFormatter.string(from: nowUTC)
 
         var ejerciciosContenido: [EjercicioPostContenido] = []
         for ejercicio in ejercicios {
@@ -345,3 +345,4 @@ extension SupabaseService {
         return rows.first
     }
 }
+
