@@ -47,8 +47,8 @@ struct EjercicioCardView: View {
 
                     // Chips internos: parte del cuerpo + tipo
                     HStack(spacing: 8) {
-                        Chip(text: ejercicio.categoria.isEmpty ? "General" : ejercicio.categoria)
                         Chip(text: ejercicio.tipo)
+                        Chip(text: ejercicio.categoria.isEmpty ? "General" : ejercicio.categoria)
                     }
                 }
                 Spacer()
