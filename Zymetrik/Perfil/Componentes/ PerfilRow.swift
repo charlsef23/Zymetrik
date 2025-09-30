@@ -4,6 +4,7 @@ import Supabase
 public struct PerfilRow: View {
     public let perfil: PerfilResumen
     public let showFollowButton: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var isFollowing = false
     @State private var working = false
@@ -37,8 +38,8 @@ public struct PerfilRow: View {
                         .fontWeight(.medium)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(isFollowing ? Color(.systemGray5) : Color.black)
-                        .foregroundColor(isFollowing ? .black : .white)
+                        .background(isFollowing ? Color(.systemGray5) : (colorScheme == .dark ? .white : .black))
+                        .foregroundColor(isFollowing ? (colorScheme == .dark ? .white : .black) : (colorScheme == .dark ? .black : .white))
                         .clipShape(Capsule())
                 }
                 .disabled(working)
