@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Supabase
 
 struct ComentariosView: View {
     let postID: UUID
@@ -17,6 +18,10 @@ struct ComentariosView: View {
     @State private var reachedEnd = false
     @State private var beforeCursor: Date? = nil
     @State private var lastRequestedCursor: Date? = nil
+
+    // ❤️ Estado de likes por comentario
+    @State private var likedByMe: Set<UUID> = []            // ids de comentarios con like mío
+    @State private var likeCounts: [UUID: Int] = [:]        // comentario_id -> count
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,14 +54,24 @@ struct ComentariosView: View {
                             }
                         } else {
                             ForEach(respuestasByParent[nil] ?? []) { c in
-                                CommentThreadNode(
-                                    comentario: c,
-                                    nivel: 0,
-                                    childrenProvider: { respuestasByParent[$0] ?? [] },
-                                    onReply: { handleReply(to: $0) }
-                                )
+                                VStack(alignment: .leading, spacing: 6) {
+                                    CommentThreadNode(
+                                        comentario: c,
+                                        nivel: 0,
+                                        childrenProvider: { respuestasByParent[$0] ?? [] },
+                                        onReply: { handleReply(to: $0) }
+                                    )
+                                    // Barra de acciones (❤️ + responder)
+                                    CommentActionsBar(
+                                        liked: likedByMe.contains(c.id),
+                                        count: likeCounts[c.id] ?? 0,
+                                        onToggleLike: { Task { await toggleCommentLike(c.id) } },
+                                        onReply: { handleReply(to: c) }
+                                    )
+                                }
                                 .padding(.horizontal)
                             }
+
                             if !reachedEnd {
                                 BottomSentinel { triggerLoadMoreIfNeeded() }
                                     .frame(height: 1)
@@ -121,6 +136,8 @@ struct ComentariosView: View {
         reachedEnd = false
         beforeCursor = nil
         lastRequestedCursor = nil
+        likedByMe.removeAll()
+        likeCounts.removeAll()
         await loadMore(reset: true)
     }
 
@@ -140,7 +157,7 @@ struct ComentariosView: View {
             struct P: Encodable {
                 let p_post: UUID
                 let p_limit: Int
-                let p_before: Date?   // 👈 usa Date?, el SDK lo serializa a timestamptz
+                let p_before: Date?   // el SDK serializa a timestamptz
             }
 
             let params = P(
@@ -150,7 +167,7 @@ struct ComentariosView: View {
             )
 
             let res = try await SupabaseManager.shared.client
-                .rpc("api_get_post_comments", params: params)   // 👈 nuevo nombre
+                .rpc("api_get_post_comments", params: params)
                 .execute()
 
             let page = try res.decodedList(to: Comentario.self)
@@ -168,9 +185,10 @@ struct ComentariosView: View {
             if page.isEmpty {
                 reachedEnd = true
             } else {
-                // La RPC devuelve DESC; el más antiguo de la página es el último en DESC,
-                // pero para cursor "antes de" nos sirve el último de la página
+                // cursor para la siguiente página
                 beforeCursor = page.last?.creado_en
+                // 🔁 precargar likes para la página llegada
+                await preloadLikes(for: page.map { $0.id })
             }
         } catch is CancellationError {
             return
@@ -201,7 +219,7 @@ struct ComentariosView: View {
             let res = try await SupabaseManager.shared.client
                 .from("comentarios")
                 .insert(nuevo)
-                .select("*, perfil:autor_id(username,avatar_url)") // 👈 trae avatar también
+                .select("*, perfil:autor_id(username,avatar_url)")
                 .single()
                 .execute()
 
@@ -209,6 +227,9 @@ struct ComentariosView: View {
             comentarios.append(creado)
             comentarios.sort { $0.creado_en < $1.creado_en }
             respuestasByParent = Dictionary(grouping: comentarios, by: { $0.comentario_padre_id })
+
+            // inicia contadores del nuevo comentario
+            likeCounts[creado.id] = 0
 
             await MainActor.run {
                 nuevoComentario = ""
@@ -219,5 +240,143 @@ struct ComentariosView: View {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             print("❌ Error al enviar comentario: \(error)")
         }
+    }
+
+    // MARK: - ❤️ Likes de comentarios (batch + toggle)
+
+    /// Carga likes para un conjunto de comentarios y rellena `likeCounts` y `likedByMe`.
+    private func preloadLikes(for commentIDs: [UUID]) async {
+        guard !commentIDs.isEmpty else { return }
+        let client = SupabaseManager.shared.client
+
+        do {
+            let me = try await client.auth.session.user.id
+
+            // Traemos todas las filas de likes para estos comentarios
+            struct Row: Decodable { let comentario_id: UUID; let autor_id: UUID }
+
+            // Nota: supabase-swift admite `.in("comentario_id", values: [String])`
+            let res = try await client
+                .from("comentario_likes")
+                .select("comentario_id, autor_id", head: false)
+                .in("comentario_id", values: commentIDs.map { $0.uuidString })
+                .execute()
+
+            let rows = try res.decodedList(to: Row.self)
+
+            // Recuenta por comentario y detecta si yo di like
+            var counts: [UUID: Int] = likeCounts
+            var liked = likedByMe
+
+            for id in commentIDs { if counts[id] == nil { counts[id] = 0 } }
+
+            for r in rows {
+                counts[r.comentario_id, default: 0] += 1
+                if r.autor_id == me { liked.insert(r.comentario_id) }
+            }
+
+            await MainActor.run {
+                likeCounts.merge(counts) { _, new in new }
+                likedByMe = liked
+            }
+        } catch {
+            // silencioso para no spamear
+        }
+    }
+
+    /// Toggle like optimista para un comentario.
+    private func toggleCommentLike(_ commentID: UUID) async {
+        let client = SupabaseManager.shared.client
+
+        do {
+            let me = try await client.auth.session.user.id
+            let iLiked = likedByMe.contains(commentID)
+
+            // Optimista
+            await MainActor.run {
+                if iLiked {
+                    likedByMe.remove(commentID)
+                    likeCounts[commentID, default: 1] -= 1
+                } else {
+                    likedByMe.insert(commentID)
+                    likeCounts[commentID, default: 0] += 1
+                }
+            }
+
+            if iLiked {
+                // Quitar like
+                _ = try await client
+                    .from("comentario_likes")
+                    .delete()
+                    .eq("comentario_id", value: commentID.uuidString)
+                    .eq("autor_id", value: me.uuidString)
+                    .execute()
+            } else {
+                // Dar like (idempotente)
+                _ = try await client
+                    .from("comentario_likes")
+                    .upsert(
+                        ["comentario_id": commentID.uuidString, "autor_id": me.uuidString],
+                        onConflict: "comentario_id,autor_id"
+                    )
+                    .execute()
+            }
+        } catch {
+            // revertir optimismo si falló
+            await MainActor.run {
+                if likedByMe.contains(commentID) {
+                    likedByMe.remove(commentID)
+                    likeCounts[commentID, default: 1] -= 1
+                } else {
+                    likedByMe.insert(commentID)
+                    likeCounts[commentID, default: 0] += 1
+                }
+            }
+            print("❌ toggleCommentLike error:", error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - Barra de acciones por comentario
+
+private struct CommentActionsBar: View {
+    let liked: Bool
+    let count: Int
+    let onToggleLike: () -> Void
+    let onReply: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Button(action: onToggleLike) {
+                HStack(spacing: 6) {
+                    Image(systemName: liked ? "heart.fill" : "heart")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(liked ? .red : .primary)
+                        .symbolEffect(.bounce, value: liked)
+                    Text("\(max(0, count))")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onReply) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrowshape.turn.up.left")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Responder")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+        }
+        .padding(.leading, 52) // un poco de indent para alinear con avatar del comment
+        .padding(.top, 2)
+        .foregroundStyle(.secondary)
     }
 }
