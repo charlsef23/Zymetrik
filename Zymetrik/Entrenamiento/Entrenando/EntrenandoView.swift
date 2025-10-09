@@ -133,6 +133,10 @@ struct EntrenandoView: View {
             if setsPorEjercicio.isEmpty {
                 setsPorEjercicio = Dictionary(uniqueKeysWithValues: ejercicios.map { ($0.id, []) })
             }
+            // Inicia automáticamente el cronómetro al abrir la pantalla si no está activo
+            if !timerActivo {
+                iniciarTimer()
+            }
         }
         .onDisappear {
             temporizador?.invalidate()
@@ -326,3 +330,4 @@ struct EntrenandoView: View {
         return String(format: "%d:%02d:%02d", horas, minutos, segundosRestantes)
     }
 }
+
