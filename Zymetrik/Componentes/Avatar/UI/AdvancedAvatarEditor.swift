@@ -12,9 +12,10 @@ struct AdvancedAvatarEditor: View {
     @State private var saturation: Double = 1
     @State private var isProcessing = false
 
-    // NUEVO
-    @State private var quarterTurns: Int = 0
-    @State private var autoFaceCenter: Bool = true
+    @State private var zoomScale: CGFloat = 1.0
+    @State private var lastZoomScale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
 
     private let imageProcessor = ImageProcessor()
     
@@ -64,15 +65,47 @@ struct AdvancedAvatarEditor: View {
                         .tint(.blue)
                 }
             } else {
-                Image(uiImage: processedImage)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 200, height: 200)
-                    .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-                    .overlay(
-                        Circle().stroke(Color.white, lineWidth: 4)
+                ZStack {
+                    Circle()
+                        .fill(Color(.systemGray6))
+                        .frame(width: 200, height: 200)
+                        .overlay(
+                            GeometryReader { geo in
+                                let size = min(geo.size.width, geo.size.height)
+                                let frameSize = CGSize(width: size, height: size)
+                                Image(uiImage: basePreviewImage)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: frameSize.width, height: frameSize.height)
+                                    .scaleEffect(zoomScale)
+                                    .offset(offset)
+                                    .clipped()
+                            }
+                            .clipShape(Circle())
+                        )
+                }
+                .frame(width: 200, height: 200)
+                .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+                .overlay(Circle().stroke(Color.white, lineWidth: 4))
+                .gesture(
+                    SimultaneousGesture(
+                        DragGesture()
+                            .onChanged { value in
+                                offset = CGSize(width: lastOffset.width + value.translation.width,
+                                                height: lastOffset.height + value.translation.height)
+                            }
+                            .onEnded { _ in
+                                lastOffset = offset
+                            },
+                        MagnificationGesture()
+                            .onChanged { value in
+                                zoomScale = max(0.5, min(3.0, lastZoomScale * value))
+                            }
+                            .onEnded { _ in
+                                lastZoomScale = zoomScale
+                            }
                     )
+                )
             }
         }
     }
@@ -111,30 +144,12 @@ struct AdvancedAvatarEditor: View {
             HStack {
                 Text("Ajustes").font(.headline).fontWeight(.semibold)
                 Spacer()
-                if brightness != 0 || contrast != 1 || saturation != 1 || quarterTurns != 0 {
+                if brightness != 0 || contrast != 1 || saturation != 1 || zoomScale != 1.0 || offset != .zero {
                     ResetButton {
                         withAnimation(.easeInOut) { resetAdjustments() }
                         HapticManager.shared.lightImpact()
                     }
                 }
-            }
-
-            // NUEVOS CONTROLES
-            Toggle("Auto-centrar en rostro", isOn: $autoFaceCenter)
-                .tint(.blue)
-
-            HStack(spacing: 12) {
-                Button {
-                    quarterTurns = (quarterTurns + 1) % 4
-                    HapticManager.shared.selection()
-                } label: {
-                    Label("Rotar 90º", systemImage: "rotate.right")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color(.systemGray6))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
             }
 
             // Sliders
@@ -173,6 +188,14 @@ struct AdvancedAvatarEditor: View {
         }
     }
     
+    // MARK: - Imagen para preview sin crop final
+    private var basePreviewImage: UIImage {
+        var image = originalImage.normalizedUp()
+        image = selectedFilter.apply(to: image)
+        image = imageProcessor.adjustImage(image, brightness: brightness, contrast: contrast, saturation: saturation)
+        return image
+    }
+
     // MARK: - Imagen procesada
     private var processedImage: UIImage {
         // 1) Normaliza orientación
@@ -180,14 +203,9 @@ struct AdvancedAvatarEditor: View {
         // 2) Filtros/Ajustes
         image = selectedFilter.apply(to: image)
         image = imageProcessor.adjustImage(image, brightness: brightness, contrast: contrast, saturation: saturation)
-        // 3) Rotación manual
-        image = image.rotated(quarterTurns: quarterTurns)
-        // 4) Recorte final
-        if autoFaceCenter {
-            return ImageCropper.smartCrop(image, to: CGSize(width: 400, height: 400))
-        } else {
-            return ImageCropper.centerSquare(image, size: 400)
-        }
+        // 3) Aplicar recorte circular centrado usando transformaciones del usuario (zoom y desplazamiento)
+        let targetSize = CGSize(width: 400, height: 400)
+        return ImageCropper.crop(image, to: targetSize, zoomScale: zoomScale, offset: offset)
     }
 
     // MARK: - Acciones
@@ -195,8 +213,10 @@ struct AdvancedAvatarEditor: View {
         brightness = 0
         contrast = 1
         saturation = 1
-        quarterTurns = 0
-        autoFaceCenter = true
+        zoomScale = 1.0
+        lastZoomScale = 1.0
+        offset = .zero
+        lastOffset = .zero
     }
 
     private func saveImage() {
@@ -219,6 +239,40 @@ struct AdvancedAvatarEditor: View {
                 let result = self.processedImage
                 continuation.resume(returning: result)
             }
+        }
+    }
+}
+
+extension ImageCropper {
+    /// Crops the image to a square of target size using a center-based zoom and offset in preview space.
+    static func crop(_ image: UIImage, to targetSize: CGSize, zoomScale: CGFloat, offset: CGSize) -> UIImage {
+        let baseSize = min(targetSize.width, targetSize.height)
+        let canvas = CGSize(width: baseSize, height: baseSize)
+        // Render into a square context applying scale and translation
+        let renderer = UIGraphicsImageRenderer(size: canvas)
+        return renderer.image { ctx in
+            ctx.cgContext.setFillColor(UIColor.clear.cgColor)
+            ctx.cgContext.fill(CGRect(origin: .zero, size: canvas))
+            // Compute drawing rect. Start with fitting the image to canvas, then apply scale and offset.
+            let imgSize = image.size
+            let scaleToFill = max(canvas.width / imgSize.width, canvas.height / imgSize.height)
+            let baseWidth = imgSize.width * scaleToFill
+            let baseHeight = imgSize.height * scaleToFill
+            var drawRect = CGRect(x: (canvas.width - baseWidth) / 2.0,
+                                  y: (canvas.height - baseHeight) / 2.0,
+                                  width: baseWidth,
+                                  height: baseHeight)
+            // Apply user zoom
+            let z = max(0.5, min(3.0, zoomScale))
+            let center = CGPoint(x: canvas.width/2, y: canvas.height/2)
+            // Translate by offset (note: offset is in preview points, same scale as canvas 200pt vs 400px target; we assume proportional)
+            let scaleFactor = canvas.width / 200.0 // preview circle is 200pt wide
+            let translatedOffset = CGSize(width: offset.width * scaleFactor, height: offset.height * scaleFactor)
+            drawRect = drawRect.applying(CGAffineTransform(translationX: translatedOffset.width, y: translatedOffset.height))
+            // Apply zoom around center by expanding rect size and shifting origin to keep center stable
+            let newSize = CGSize(width: drawRect.width * z, height: drawRect.height * z)
+            drawRect = CGRect(x: center.x - newSize.width/2, y: center.y - newSize.height/2, width: newSize.width, height: newSize.height)
+            image.draw(in: drawRect)
         }
     }
 }
