@@ -98,7 +98,10 @@ struct EstadisticaEjercicioCard: View {
                     
                     HStack(spacing: 8) {
                         Pill(text: "\(vm.sesiones.count) sesiones")
-                        if let last = vm.sesiones.last?.fecha { Pill(text: relativeDate(last), icon: "clock") }
+                        Pill(text: ejercicio.categoria)
+                        if let subtipo = ejercicio.subtipo, !subtipo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Pill(text: subtipo)
+                        }
                     }
                     .font(.caption).foregroundStyle(.secondary)
                 }
@@ -195,10 +198,26 @@ struct EstadisticaEjercicioCard: View {
 
     // 👇👇 AÑADE ESTO DENTRO DEL struct EstadisticaEjercicioCard
     private func relativeDate(_ date: Date) -> String {
-        let f = RelativeDateTimeFormatter()
-        f.locale = .current
-        f.unitsStyle = .short   // .abbreviated también vale si prefieres “h”/“min”
-        return f.localizedString(for: date, relativeTo: Date())
+        // Si la fecha es de hoy, muestra la hora local (por ejemplo, "14:35").
+        // Si no es de hoy, muestra un relativo (por ejemplo, "hace 2 días").
+        let calendar = Calendar.current
+        let timeZone = TimeZone.current
+
+        if calendar.isDateInToday(date) {
+            let df = DateFormatter()
+            df.calendar = calendar
+            df.timeZone = timeZone
+            df.locale = .current
+            df.dateStyle = .none
+            df.timeStyle = .short
+            return df.string(from: date)
+        } else {
+            let f = RelativeDateTimeFormatter()
+            f.calendar = calendar
+            f.locale = .current
+            f.unitsStyle = .short
+            return f.localizedString(for: date, relativeTo: Date())
+        }
     }
 }
 

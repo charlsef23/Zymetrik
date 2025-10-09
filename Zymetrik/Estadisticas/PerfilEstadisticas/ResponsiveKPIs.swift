@@ -7,13 +7,13 @@ struct ResponsiveKPIs: View {
     private var metrics: KPIMetrics { KPIMetrics(sesiones: sesiones) }
 
     var body: some View {
-        GeometryReader { geo in
-            let cols = columnsFor(width: geo.size.width, sizeCategory: sizeCategory)
-            LazyVGrid(columns: cols, spacing: 10) {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
                 KPIBlock(title: "Mejor RM", value: metrics.bestRMString, icon: "trophy.fill", tint: .purple)
                 KPIBlock(title: "Volumen", value: metrics.totalVolumenString, icon: "cube.box.fill", tint: .blue)
                 KPIBlock(title: "Última", value: metrics.ultimaFechaString, icon: "clock.fill", tint: .orange)
             }
+            .padding(.horizontal, 2)
         }
         .frame(minHeight: 48)
     }
