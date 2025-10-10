@@ -91,19 +91,20 @@ struct EstadisticaEjercicioCard: View {
                 .overlay(Circle().strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
                 .frame(width: 44, height: 44)
                 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(ejercicio.nombre)
-                        .font(.system(.headline, design: .rounded)).fontWeight(.semibold)
-                        .lineLimit(1).minimumScaleFactor(0.85)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .allowsTightening(true)
                     
                     HStack(spacing: 8) {
                         Pill(text: "\(vm.sesiones.count) sesiones")
                         Pill(text: ejercicio.categoria)
-                        if let subtipo = ejercicio.subtipo, !subtipo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Pill(text: subtipo)
-                        }
                     }
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 }
                 
                 Spacer(minLength: 8)
