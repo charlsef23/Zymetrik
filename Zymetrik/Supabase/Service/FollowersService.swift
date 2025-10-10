@@ -150,4 +150,17 @@ public struct FollowersService {
             .execute()
         return (r.count ?? 0) > 0
     }
+
+    // Check if target user follows current user (i.e., they follow me)
+    public func doesFollowMe(currentUserID: String, targetUserID: String) async throws -> Bool {
+        // Returns true if targetUserID follows currentUserID
+        let r = try await client
+            .from("followers")
+            .select("follower_id", count: .exact)
+            .eq("follower_id", value: targetUserID)
+            .eq("followed_id", value: currentUserID)
+            .limit(1)
+            .execute()
+        return (r.count ?? 0) > 0
+    }
 }

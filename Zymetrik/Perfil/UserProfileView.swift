@@ -13,6 +13,7 @@ struct UserProfileView: View {
 
     @State private var selectedTab: PerfilTab = .entrenamientos
     @State private var isFollowing = false
+    @State private var followsMe = false
     @State private var numeroDePosts = 0
     @State private var seguidoresCount = 0
     @State private var seguidosCount = 0
@@ -77,7 +78,7 @@ struct UserProfileView: View {
                         Button {
                             Task { await toggleFollow() }
                         } label: {
-                            Text(isFollowing ? "Siguiendo" : "Seguir")
+                            Text(isFollowing ? "Siguiendo" : (followsMe ? "Te sigue" : "Seguir"))
                                 .fontWeight(.semibold)
                                 .frame(maxWidth: .infinity)
                                 .padding()
@@ -258,6 +259,7 @@ struct UserProfileView: View {
             isMe = (me == profileUserID)
             if !isMe && !profileUserID.isEmpty {
                 isFollowing = try await FollowersService.shared.isFollowing(currentUserID: me, targetUserID: profileUserID)
+                followsMe = try await FollowersService.shared.doesFollowMe(currentUserID: me, targetUserID: profileUserID)
             }
         } catch {
             isFollowing = false
@@ -342,3 +344,4 @@ struct UserProfileView: View {
         }
     }
 }
+

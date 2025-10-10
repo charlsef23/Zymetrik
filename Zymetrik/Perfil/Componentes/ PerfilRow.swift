@@ -6,6 +6,7 @@ public struct PerfilRow: View {
     public let showFollowButton: Bool
     @Environment(\.colorScheme) private var colorScheme
 
+    @State private var followsMe = false
     @State private var isFollowing = false
     @State private var working = false
     @State private var myUserID: String = ""
@@ -33,7 +34,7 @@ public struct PerfilRow: View {
 
             if showFollowButton, !myUserID.isEmpty, myUserID != perfil.id {
                 Button(action: { Task { await toggleFollow() } }) {
-                    Text(isFollowing ? "Siguiendo" : "Seguir")
+                    Text(isFollowing ? "Siguiendo" : (followsMe ? "Te sigue" : "Seguir"))
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .padding(.horizontal, 12)
@@ -57,8 +58,10 @@ public struct PerfilRow: View {
                 currentUserID: myUserID,
                 targetUserID: perfil.id
             )
+            followsMe = try await FollowersService.shared.doesFollowMe(currentUserID: myUserID, targetUserID: perfil.id)
+            // Other existing code...
         } catch {
-            isFollowing = false
+            print("Error loading initial state: \(error)")
         }
     }
 
