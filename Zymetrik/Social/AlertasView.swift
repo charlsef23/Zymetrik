@@ -1,115 +1,228 @@
 import SwiftUI
+import Supabase
 
-struct Alerta: Identifiable {
-    let id = UUID()
-    let tipo: TipoAlerta
-    let usuario: String
-    let mensaje: String
-    let hora: String
+// MARK: - ViewModel
 
-    var fotoPerfilURL: String {
-        "https://api.dicebear.com/7.x/initials/svg?seed=\(usuario)"
+@MainActor
+final class AlertasViewModel: ObservableObject {
+    @Published var items: [AppNotification] = []
+    @Published var loading = false
+    @Published var error: String?
+    
+    private var pollTask: Task<Void, Never>?
+    private var isActive = false
+    
+    func load(initial: Bool = false) async {
+        if initial { loading = true }
+        defer { loading = false }
+        do {
+            let rows = try await NotificacionesService.shared.fetchNotifications(limit: 100)
+            self.items = rows
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+    
+    func refresh() async { await load() }
+    
+    func markAsRead(_ notif: AppNotification) async {
+        guard !notif.isRead else { return }
+        do {
+            try await NotificacionesService.shared.markNotificationRead(notif.id)
+            if let idx = items.firstIndex(where: { $0.id == notif.id }) {
+                let n = items[idx]
+                items[idx] = AppNotification(
+                    id: n.id,
+                    type: n.type,
+                    actor: n.actor,
+                    message: n.message,
+                    created_at: n.created_at,
+                    read_at: Date(),
+                    post_id: n.post_id,
+                    comment_id: n.comment_id,
+                    chat_id: n.chat_id
+                )
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+    
+    func markAllRead() async {
+        do {
+            try await NotificacionesService.shared.markAllNotificationsRead()
+            items = items.map { n in
+                AppNotification(
+                    id: n.id,
+                    type: n.type,
+                    actor: n.actor,
+                    message: n.message,
+                    created_at: n.created_at,
+                    read_at: Date(),
+                    post_id: n.post_id,
+                    comment_id: n.comment_id,
+                    chat_id: n.chat_id
+                )
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+    
+    func startPolling(interval: TimeInterval = 20) {
+        isActive = true
+        pollTask?.cancel()
+        pollTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled && self.isActive {
+                await self.load()
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+            }
+        }
+    }
+    func stopPolling() {
+        isActive = false
+        pollTask?.cancel()
+        pollTask = nil
     }
 }
 
-enum TipoAlerta: String, CaseIterable {
-    case solicitud, meGusta, comentario
-
-    var icono: String {
-        switch self {
-        case .solicitud: return "person.crop.circle.badge.plus"
-        case .meGusta: return "heart.fill"
-        case .comentario: return "text.bubble.fill"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .solicitud: return .blue
-        case .meGusta: return .red
-        case .comentario: return .orange
-        }
-    }
-
-    var titulo: String {
-        switch self {
-        case .solicitud: return "Solicitudes"
-        case .meGusta: return "Me gustas"
-        case .comentario: return "Comentarios"
-        }
-    }
-}
+// MARK: - View
 
 struct AlertasView: View {
-    @State private var alertas: [Alerta] = [
-        Alerta(tipo: .solicitud, usuario: "luciafit", mensaje: "quiere seguirte", hora: "Hace 2 min"),
-        Alerta(tipo: .meGusta, usuario: "alejandroGym", mensaje: "le dio me gusta a tu entrenamiento", hora: "Hace 10 min"),
-        Alerta(tipo: .comentario, usuario: "marta.run", mensaje: "comentó: “brutal sesión 🔥”", hora: "Hace 20 min"),
-        Alerta(tipo: .meGusta, usuario: "sara.power", mensaje: "le dio me gusta a tu foto", hora: "Hace 3 h")
-    ]
-
+    @StateObject private var vm = AlertasViewModel()
+    @State private var myUserID: UUID?
+    
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(TipoAlerta.allCases, id: \.self) { tipo in
-                    let alertasTipo = alertas.filter { $0.tipo == tipo }
-                    if !alertasTipo.isEmpty {
-                        Text(tipo.titulo)
+                ForEach(NotificationType.allCases, id: \.self) { type in
+                    let sectionItems = vm.items.filter { $0.type == type }
+                    if !sectionItems.isEmpty {
+                        Text(type.tituloSeccion)
                             .font(.headline)
                             .padding(.horizontal)
-
-                        ForEach(alertasTipo) { alerta in
-                            alertaRow(alerta)
+                            .padding(.top, 8)
+                        
+                        ForEach(sectionItems) { n in
+                            alertaRow(n)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    // Solo marcar como leída; sin navegar a post/comentario
+                                    Task { await vm.markAsRead(n) }
+                                }
                         }
                     }
                 }
             }
             .padding(.top)
+            .refreshable { await vm.refresh() }
         }
         .navigationTitle("Alertas")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if vm.items.contains(where: { !$0.isRead }) {
+                    Button("Marcar leídas") { Task { await vm.markAllRead() } }
+                }
+            }
+        }
+        .task {
+            await vm.load(initial: true)
+            vm.startPolling(interval: 20)
+            myUserID = await SupabaseManager.shared.currentUserUUID()
+        }
+        .onDisappear { vm.stopPolling() }
+        .alert("Error", isPresented: .constant(vm.error != nil), actions: {
+            Button("OK") { vm.error = nil }
+        }, message: { Text(vm.error ?? "") })
     }
+    
+    // MARK: - Row UI (sin CTAs de post/comentario)
 
-    private func alertaRow(_ alerta: Alerta) -> some View {
+    @ViewBuilder
+    private func alertaRow(_ n: AppNotification) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            AsyncImage(url: URL(string: alerta.fotoPerfilURL)) { image in
-                image.resizable()
-            } placeholder: {
-                Circle().fill(Color.gray.opacity(0.3))
+            // Avatar → perfil
+            NavigationLink {
+                destinationProfile(for: n.actor)
+            } label: {
+                avatar(n.actor.avatar_url, username: n.actor.username)
             }
-            .frame(width: 48, height: 48)
-            .clipShape(Circle())
-
+            .buttonStyle(.plain)
+            
             VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: alerta.tipo.icono)
-                        .foregroundColor(alerta.tipo.color)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: n.type.sfSymbol)
+                        .foregroundStyle(color(for: n.type))
                         .font(.subheadline)
-
-                    Text("@\(alerta.usuario) \(alerta.mensaje)")
+                    
+                    // @username → perfil
+                    NavigationLink {
+                        destinationProfile(for: n.actor)
+                    } label: {
+                        Text("@\(n.actor.username)")
+                            .font(.body.weight(.bold))
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Text(n.message)
                         .font(.body)
-                        .lineLimit(2)
+                        .lineLimit(3)
                 }
-
-                Text(alerta.hora)
+                
+                Text(n.created_at.timeAgoDisplay())
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(.gray)
             }
-
-            Spacer()
-
-            if alerta.tipo == .solicitud {
-                Button("Aceptar") {
-                    // Acción para aceptar solicitud
-                }
-                .font(.caption)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .clipShape(Capsule())
-            }
+            
+            Spacer(minLength: 8)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+        .background(n.isRead ? Color.clear : Color.blue.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 4)
+    }
+    
+    // MARK: - Destino de perfil
+
+    @ViewBuilder
+    private func destinationProfile(for actor: NotificationActor) -> some View {
+        if idsEqual(actor.id, myUserID) {
+            PerfilView()
+        } else {
+            UserProfileView(username: actor.username)
+        }
+    }
+    
+    // MARK: - Helpers
+
+    private func avatar(_ url: String?, username: String) -> some View {
+        let fallback = "https://api.dicebear.com/7.x/initials/svg?seed=\(username)"
+        let u = URL(string: (url?.isEmpty == false ? url! : fallback))
+        return AsyncImage(url: u) { img in
+            img.resizable()
+        } placeholder: {
+            Circle().fill(Color.gray.opacity(0.3))
+        }
+        .frame(width: 48, height: 48)
+        .clipShape(Circle())
+    }
+    
+    private func color(for type: NotificationType) -> Color {
+        switch type {
+        case .follow:       return .blue
+        case .like_post:    return .red
+        case .like_comment: return .pink
+        case .comment:      return .orange
+        case .dm:           return .purple
+        case .reminder:     return .teal
+        }
+    }
+    
+    private func idsEqual(_ a: UUID?, _ b: UUID?) -> Bool {
+        guard let a, let b else { return false }
+        return a == b
     }
 }
