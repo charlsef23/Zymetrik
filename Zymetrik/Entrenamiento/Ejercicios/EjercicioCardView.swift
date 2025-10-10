@@ -35,7 +35,7 @@ struct EjercicioCardView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(ejercicio.nombre)
-                        .font(.headline.weight(.semibold))
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .lineLimit(1)
 
                     if !ejercicio.descripcion.isEmpty {
@@ -45,10 +45,14 @@ struct EjercicioCardView: View {
                             .lineLimit(2)
                     }
 
-                    // Chips internos: parte del cuerpo + tipo
+                    // Chips internos: categoria + subtipo
                     HStack(spacing: 8) {
-                        Chip(text: ejercicio.tipo)
-                        Chip(text: ejercicio.categoria.isEmpty ? "General" : ejercicio.categoria)
+                        let categoria = (ejercicio.categoria).isEmpty ? "General" : (ejercicio.categoria)
+                        let subtipo = (ejercicio.subtipo ?? "").isEmpty ? "" : (ejercicio.subtipo ?? "")
+                        Chip(text: categoria)
+                        if !subtipo.isEmpty {
+                            Chip(text: subtipo)
+                        }
                     }
                 }
                 Spacer()
