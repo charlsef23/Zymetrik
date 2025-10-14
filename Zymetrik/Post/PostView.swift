@@ -13,6 +13,7 @@ struct PostView: View {
     @State private var guardado = false
     @State private var mostrarComentarios = false
     @State private var mostrarConfirmacionEliminar = false
+    @State private var isDeleting = false
 
     // Compartir
     @State private var mostrarShare = false
@@ -82,7 +83,7 @@ struct PostView: View {
         PostHeaderMejorado(
             post: post,
             isOwnPost: isOwnPost,
-            onEliminar: { mostrarConfirmacionEliminar = true },
+            onEliminar: { mostrarConfirmacionEliminar = true }, // <- muestra confirmación
             onCompartir: { mostrarShareOptions = true },
             preloadedAvatar: avatarImage,
             onReportar: { mostrarReportar = true }
@@ -181,7 +182,11 @@ struct PostView: View {
             .presentationDetents([.medium])
         }
         .alert("¿Eliminar este post?", isPresented: $mostrarConfirmacionEliminar) {
-            Button("Eliminar", role: .destructive) { self.eliminarPost() }
+            Button(isDeleting ? "Eliminando…" : "Eliminar", role: .destructive) {
+                guard !isDeleting else { return }
+                eliminarPost()
+            }
+            .disabled(isDeleting)
             Button("Cancelar", role: .cancel) {}
         }
         .alert("Reporte enviado", isPresented: $reportSuccess) {
@@ -312,8 +317,17 @@ struct PostView: View {
 
     private func eliminarPost() {
         Task {
+            guard !isDeleting else { return }
+            isDeleting = true
+            defer { isDeleting = false }
+
+            // RPC delete_post_cascade
+            struct Params: Encodable { let p_post_id: String }
             do {
-                try await SupabaseService.shared.eliminarPost(postID: post.id)
+                _ = try await SupabaseManager.shared.client
+                    .rpc("delete_post_cascade", params: Params(p_post_id: post.id.uuidString))
+                    .execute()
+
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 onPostEliminado?()
             } catch {

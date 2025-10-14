@@ -20,7 +20,7 @@ final class OSClickHandler: NSObject, OSNotificationClickListener {
 
 // MARK: - AppDelegate (todo en MainActor para evitar data races en Swift 6)
 @MainActor
-final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+final class AppDelegate: NSObject, UIApplicationDelegate, @MainActor UNUserNotificationCenterDelegate {
 
     private let clickHandler = OSClickHandler()
     private var loginObserver: NSObjectProtocol?
@@ -45,11 +45,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            self.requestPushPermissionAndLink()
+            Task { @MainActor in
+                self.requestPushPermissionAndLink()
+            }
         }
 
         // Si ya había sesión (app relanzada), enlaza
-        linkOneSignalToCurrentUser()
+        Task { @MainActor in
+            self.linkOneSignalToCurrentUser()
+        }
 
         // Debug post-arranque
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
@@ -142,3 +146,4 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         print("   token:", sub.token ?? "nil")
     }
 }
+

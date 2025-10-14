@@ -69,8 +69,8 @@ struct SettingsView: View {
                         title: "Soporte",
                         items: [
                             .init(icon: "envelope.fill",          tint: .teal,   title: "Enviar feedback",        destination: AnyView(FeedbackView())),
-                            .init(icon: "questionmark.circle.fill", tint: .indigo, title: "Contactar con soporte",  destination: AnyView(Text("SoporteView()"))),
-                            .init(icon: "book.fill",              tint: .brown,  title: "FAQ",                    destination: AnyView(Text("FAQView()")))
+                            .init(icon: "questionmark.circle.fill", tint: .indigo, title: "Contactar con soporte",  destination: AnyView(SupportView())),
+                            .init(icon: "book.fill",              tint: .brown,  title: "FAQ",                    destination: AnyView(FAQView()))
                         ]
                     )
 
