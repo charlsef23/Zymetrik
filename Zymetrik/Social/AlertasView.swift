@@ -93,10 +93,15 @@ struct AlertasView: View {
     @StateObject private var vm = AlertasViewModel()
     @State private var myUserID: UUID?
     
+    // Ocultamos DM en la UI
+    private var visibleTypes: [NotificationType] {
+        NotificationType.allCases.filter { $0 != .dm }
+    }
+    
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(NotificationType.allCases, id: \.self) { type in
+                ForEach(visibleTypes, id: \.self) { type in
                     let sectionItems = vm.items.filter { $0.type == type }
                     if !sectionItems.isEmpty {
                         Text(type.tituloSeccion)
@@ -105,12 +110,13 @@ struct AlertasView: View {
                             .padding(.top, 8)
                         
                         ForEach(sectionItems) { n in
-                            alertaRow(n)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    // Solo marcar como leída; sin navegar a post/comentario
-                                    Task { await vm.markAsRead(n) }
-                                }
+                            NavigationLink {
+                                destinationFor(n)
+                                    .task { await vm.markAsRead(n) }
+                            } label: {
+                                alertaRow(n)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -135,36 +141,31 @@ struct AlertasView: View {
         .alert("Error", isPresented: .constant(vm.error != nil), actions: {
             Button("OK") { vm.error = nil }
         }, message: { Text(vm.error ?? "") })
+        .hideTabBarScope()
     }
     
-    // MARK: - Row UI (sin CTAs de post/comentario)
+    // MARK: - Row UI
 
     @ViewBuilder
     private func alertaRow(_ n: AppNotification) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            // Avatar → perfil
-            NavigationLink {
-                destinationProfile(for: n.actor)
-            } label: {
-                avatar(n.actor.avatar_url, username: n.actor.username)
-            }
-            .buttonStyle(.plain)
-            
+            avatar(n.actor.avatar_url, username: n.actor.username)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: n.type.sfSymbol)
                         .foregroundStyle(color(for: n.type))
                         .font(.subheadline)
                     
-                    // @username → perfil
-                    NavigationLink {
-                        destinationProfile(for: n.actor)
-                    } label: {
-                        Text("@\(n.actor.username)")
-                            .font(.body.weight(.bold))
-                            .foregroundStyle(.primary)
+                    if shouldShowHandle(for: n) {
+                        NavigationLink {
+                            destinationProfile(for: n.actor)
+                        } label: {
+                            Text("@\(n.actor.username)")
+                                .font(.body.weight(.bold))
+                                .foregroundStyle(.primary)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                     
                     Text(n.message)
                         .font(.body)
@@ -185,7 +186,41 @@ struct AlertasView: View {
         .padding(.horizontal, 4)
     }
     
-    // MARK: - Destino de perfil
+    // MARK: - Destinos: siempre abrimos el post, con foco opcional en comentario
+    @ViewBuilder
+    private func destinationFor(_ n: AppNotification) -> some View {
+        switch n.type {
+        case .like_post:
+            if let pid = n.post_id {
+                PostDetailView(postID: pid, focusCommentID: nil)
+            } else {
+                FallbackView(text: "No se encontró el post.")
+            }
+        case .comment:
+            if let pid = n.post_id {
+                // Si viene comment_id → enfoca ese comentario, si no, solo el post
+                PostDetailView(postID: pid, focusCommentID: n.comment_id)
+            } else {
+                FallbackView(text: "No se pudo abrir el comentario.")
+            }
+        case .like_comment:
+            if let pid = n.post_id {
+                PostDetailView(postID: pid, focusCommentID: n.comment_id)
+            } else {
+                FallbackView(text: "No se encontró el comentario.")
+            }
+        case .follow:
+            // Para follow abrimos perfil del actor
+            destinationProfile(for: n.actor)
+        case .reminder:
+            RemindersView()
+        case .dm:
+            // Oculto en visibleTypes, no debería entrar aquí
+            FallbackView(text: "DM oculto")
+        }
+    }
+    
+    // MARK: - Perfil
 
     @ViewBuilder
     private func destinationProfile(for actor: NotificationActor) -> some View {
@@ -198,6 +233,12 @@ struct AlertasView: View {
     
     // MARK: - Helpers
 
+    private func shouldShowHandle(for n: AppNotification) -> Bool {
+        let msg = n.message.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let handle = "@\(n.actor.username)".lowercased()
+        return !msg.contains(handle)
+    }
+    
     private func avatar(_ url: String?, username: String) -> some View {
         let fallback = "https://api.dicebear.com/7.x/initials/svg?seed=\(username)"
         let u = URL(string: (url?.isEmpty == false ? url! : fallback))
@@ -224,5 +265,21 @@ struct AlertasView: View {
     private func idsEqual(_ a: UUID?, _ b: UUID?) -> Bool {
         guard let a, let b else { return false }
         return a == b
+    }
+}
+
+// ====== Placeholders: sustituye por tus vistas reales ======
+
+private struct RemindersView: View {
+    var body: some View {
+        Text("Recordatorios")
+            .navigationTitle("Recordatorios")
+    }
+}
+
+private struct FallbackView: View {
+    let text: String
+    var body: some View {
+        Text(text).foregroundStyle(.secondary).padding()
     }
 }

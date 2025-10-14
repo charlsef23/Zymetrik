@@ -182,7 +182,7 @@ private struct EnhancedPesoChart: View {
                     yStart: .value("Base", baseY),
                     yEnd: .value("Peso", s.pesoTotal)
                 )
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.linear)
                 .foregroundStyle(areaShapeStyle)
             }
 
@@ -190,15 +190,28 @@ private struct EnhancedPesoChart: View {
             ForEach(datos, id: \.id) { s in
                 LineMark(x: .value("Fecha", s.fecha), y: .value("Peso", s.pesoTotal))
                     .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    .interpolationMethod(.catmullRom)
+                    .interpolationMethod(.linear)
                     .foregroundStyle(lineShapeStyle)
                     .shadow(color: Color.blue.opacity(0.25), radius: 6, y: 3)
+            }
+
+            // Puntos para cada entrenamiento
+            ForEach(datos, id: \.id) { s in
+                PointMark(
+                    x: .value("Fecha", s.fecha),
+                    y: .value("Peso", s.pesoTotal)
+                )
+                .symbol(.circle)
+                .symbolSize(28)
+                .foregroundStyle(lineShapeStyle)
+                .shadow(color: Color.blue.opacity(0.15), radius: 2, y: 1)
             }
 
             // Media móvil
             ForEach(mediaMovil, id: \.fecha) { item in
                 LineMark(x: .value("Fecha", item.fecha), y: .value("Media", item.valor))
                     .lineStyle(StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+                    .interpolationMethod(.linear)
                     .foregroundStyle(Color.mint.opacity(0.85))
             }
 
@@ -246,6 +259,8 @@ private struct EnhancedPesoChart: View {
                 .font(.caption2).foregroundStyle(.secondary)
             }
         }
+        .chartXScale(range: .plotDimension(padding: 16))
+        .chartYScale(domain: .automatic(includesZero: false), range: .plotDimension(padding: 12))
         .chartXSelection(value: $selectedDate)
         .chartBackground(alignment: .bottom) { _ in
             if let selectedDate,
@@ -315,4 +330,3 @@ private func formatPesoShort(_ value: Double) -> String {
     let nf = NumberFormatter(); nf.numberStyle = .decimal; nf.maximumFractionDigits = 0
     return "\(nf.string(from: value as NSNumber) ?? "-")"
 }
-
