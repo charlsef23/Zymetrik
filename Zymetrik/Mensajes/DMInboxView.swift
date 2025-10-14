@@ -31,16 +31,6 @@ struct DMInboxView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(.systemBackground),
-                        Color(.systemBackground).opacity(0.95)
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-
                 Group {
                     if loading {
                         loadingView
@@ -111,9 +101,10 @@ struct DMInboxView: View {
 
     private var loadingView: some View {
         VStack(spacing: 16) {
-            ProgressView().scaleEffect(1.2)
+            ProgressView()
+                .scaleEffect(1.1)
             Text("Cargando conversaciones...")
-                .font(.subheadline)
+                .font(.callout)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -142,7 +133,10 @@ struct DMInboxView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 12)
-                    .background(.blue)
+                    .background(
+                        LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .shadow(color: .blue.opacity(0.25), radius: 12, x: 0, y: 6)
                     .clipShape(Capsule())
             }
         }
@@ -188,7 +182,10 @@ struct DMInboxView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 12)
-                    .background(.blue)
+                    .background(
+                        LinearGradient(colors: [.blue, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .shadow(color: .blue.opacity(0.25), radius: 12, x: 0, y: 6)
                     .clipShape(Capsule())
             }
         }
@@ -203,11 +200,23 @@ struct DMInboxView: View {
                 }
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) { /* TODO: implement delete */ } label: {
+                        Label("Eliminar", systemImage: "trash")
+                    }
+                }
+                .swipeActions(edge: .leading) {
+                    Button { /* TODO: implement mute */ } label: {
+                        Label("Silenciar", systemImage: "bell.slash")
+                    }
+                    .tint(.orange)
+                }
             }
         }
         .listStyle(.plain)
+        .contentMargins(.vertical, 8)
         .refreshable { await load() }
+        .animation(.easeInOut(duration: 0.2), value: filteredItems)
     }
 
     // MARK: - Data Loading
@@ -319,21 +328,23 @@ struct ConversationRow: View {
                         url: URL(string: item.otherPerfil?.avatar_url ?? ""),
                         size: 56
                     )
+                    .clipShape(Circle())
 
                     if item.isOnline {
                         Circle()
                             .fill(.green)
-                            .frame(width: 16, height: 16)
+                            .frame(width: 14, height: 14)
                             .overlay(
                                 Circle().stroke(.background, lineWidth: 3)
                             )
+                            .offset(x: 2, y: 2)
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text(item.otherPerfil?.username ?? "Conversación")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 17, weight: .semibold))
                             .foregroundColor(.primary)
                             .lineLimit(1)
 
@@ -361,19 +372,24 @@ struct ConversationRow: View {
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(.blue)
+                                .background(
+                                    LinearGradient(colors: [.blue, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
                                 .clipShape(Capsule())
+                                .overlay(
+                                    Capsule().stroke(.white.opacity(0.25), lineWidth: 1)
+                                )
+                                .frame(minWidth: 28)
                         }
                     }
                 }
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .buttonStyle(ScaledButtonStyle())
     }
 
     private func shortDate(_ date: Date) -> String {
@@ -393,3 +409,13 @@ struct ConversationRow: View {
         return f.string(from: date)
     }
 }
+
+// MARK: - Utilities
+struct ScaledButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.08), value: configuration.isPressed)
+    }
+}
+
