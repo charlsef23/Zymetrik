@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		07C51E132E9AC00000D1AD52 /* OneSignalFramework in Frameworks */ = {isa = PBXBuildFile; productRef = 07C51E122E9AC00000D1AD52 /* OneSignalFramework */; };
 		19B1A5562DCCC6EC00373CAE /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 19B1A5552DCCC6EC00373CAE /* Auth */; };
 		19B1A5582DCCC6EC00373CAE /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = 19B1A5572DCCC6EC00373CAE /* PostgREST */; };
 		19B1A55A2DCCC6EC00373CAE /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = 19B1A5592DCCC6EC00373CAE /* Realtime */; };
@@ -49,6 +50,7 @@
 				19B1A55C2DCCC6EC00373CAE /* Storage in Frameworks */,
 				19B1A55A2DCCC6EC00373CAE /* Realtime in Frameworks */,
 				19B1A5582DCCC6EC00373CAE /* PostgREST in Frameworks */,
+				07C51E132E9AC00000D1AD52 /* OneSignalFramework in Frameworks */,
 				19B1A5562DCCC6EC00373CAE /* Auth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -97,6 +99,7 @@
 				19B1A5592DCCC6EC00373CAE /* Realtime */,
 				19B1A55B2DCCC6EC00373CAE /* Storage */,
 				19B1A55D2DCCC6EC00373CAE /* Supabase */,
+				07C51E122E9AC00000D1AD52 /* OneSignalFramework */,
 			);
 			productName = FitFlow;
 			productReference = 19B5453E2DADB6520004E203 /* Zymetrik.app */;
@@ -128,6 +131,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				19B1A5542DCCC6EC00373CAE /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				07C51E112E9AC00000D1AD52 /* XCRemoteSwiftPackageReference "OneSignal-XCFramework" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 19B5453F2DADB6520004E203 /* Products */;
@@ -383,6 +387,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		07C51E112E9AC00000D1AD52 /* XCRemoteSwiftPackageReference "OneSignal-XCFramework" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/OneSignal/OneSignal-XCFramework";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.2.14;
+			};
+		};
 		19B1A5542DCCC6EC00373CAE /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase-community/supabase-swift";
@@ -394,6 +406,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		07C51E122E9AC00000D1AD52 /* OneSignalFramework */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 07C51E112E9AC00000D1AD52 /* XCRemoteSwiftPackageReference "OneSignal-XCFramework" */;
+			productName = OneSignalFramework;
+		};
 		19B1A5552DCCC6EC00373CAE /* Auth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 19B1A5542DCCC6EC00373CAE /* XCRemoteSwiftPackageReference "supabase-swift" */;

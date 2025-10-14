@@ -3,17 +3,15 @@ import Supabase
 
 @MainActor
 struct RootView: View {
-    // Estado de sesión
     @State private var isLoggedIn = false
     @State private var isCheckingSession = true
 
-    // Stores/App State
     @StateObject private var appState = AppState()
     @StateObject private var contentStore = ContentStore.shared
     @StateObject private var planStore = TrainingPlanStore()
     @StateObject private var uiState = AppUIState()
     @StateObject private var routine = RoutineTracker.shared
-    @StateObject private var subs = SubscriptionStore.shared   // 👈 usa SubscriptionStore
+    @StateObject private var subs = SubscriptionStore.shared
 
     var body: some View {
         Group {
@@ -47,7 +45,6 @@ struct RootView: View {
             }
         }
         .task {
-            // cargar y refrescar suscripciones
             await subs.loadProducts()
             await subs.refresh()
         }
