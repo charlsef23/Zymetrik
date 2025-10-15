@@ -24,10 +24,7 @@ struct MessageBubble: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .contextMenu {
                         if isMine {
-                            Button("Editar") {
-                                draft = message.content
-                                editing = true
-                            }
+                            Button("Editar") { draft = message.content; editing = true }
                             Button("Eliminar para todos", role: .destructive) { onDeleteForAll() }
                         }
                         Button("Eliminar para mí", role: .destructive) { onDeleteForMe() }
@@ -39,9 +36,9 @@ struct MessageBubble: View {
                         .foregroundStyle(.secondary)
 
                     if isMine {
-                        Image(systemName: seenByOther ? "checkmark.circle.fill" : "checkmark")
+                        Image(systemName: iconForDelivery())
                             .font(.caption2)
-                            .foregroundStyle(seenByOther ? .blue : .secondary)
+                            .foregroundStyle(colorForDelivery())
                             .accessibilityLabel(seenByOther ? "Visto" : "Enviado")
                     }
                 }
@@ -54,16 +51,12 @@ struct MessageBubble: View {
         .sheet(isPresented: $editing) {
             NavigationStack {
                 VStack {
-                    TextEditor(text: $draft)
-                        .padding()
-                        .frame(minHeight: 150)
+                    TextEditor(text: $draft).padding().frame(minHeight: 150)
                     Spacer()
                 }
                 .navigationTitle("Editar mensaje")
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Cancelar") { editing = false }
-                    }
+                    ToolbarItem(placement: .topBarLeading) { Button("Cancelar") { editing = false } }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Guardar") {
                             onEdit(draft.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -77,9 +70,22 @@ struct MessageBubble: View {
     }
 
     private func timeString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.timeStyle = .short
-        f.dateStyle = .none
-        return f.string(from: date)
+        let f = DateFormatter(); f.timeStyle = .short; f.dateStyle = .none; return f.string(from: date)
+    }
+    private func iconForDelivery() -> String {
+        if seenByOther { return "checkmark.circle.fill" }
+        switch message._delivery {
+        case .failed: return "exclamationmark.circle"
+        case .pending: return "clock"
+        default: return "checkmark"
+        }
+    }
+    private func colorForDelivery() -> Color {
+        if seenByOther { return .blue }
+        switch message._delivery {
+        case .failed: return .red
+        case .pending: return .secondary
+        default: return .secondary
+        }
     }
 }

@@ -1,27 +1,22 @@
 import Foundation
 import Supabase
 
+// MARK: - Servicio de Mensajería (DM)
+
 final class DMMessagingService {
     static let shared = DMMessagingService()
     private init() {}
 
     let client = SupabaseManager.shared.client
 
-    // Realtime V2 (chat por conversación)
+    // Realtime V2 (por conversación)
     private var channels: [UUID: RealtimeChannelV2] = [:]
     private var subscribing: Set<UUID> = []
 
-    // Realtime para Inbox (un canal por conversación para “bump”/preview)
+    // Realtime para Inbox (preview/orden)
     private var inboxChannels: [UUID: RealtimeChannelV2] = [:]
 
-    // MARK: - Logger
-    private func log(_ items: Any...) {
-        #if DEBUG
-        print("[DM-RT]", items.map { "\($0)" }.joined(separator: " "))
-        #endif
-    }
-
-    // MARK: - Decoder robusto
+    // MARK: - Robust decoder fechas
     private static let iso8601NoFrac: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withColonSeparatorInTimeZone]
@@ -40,8 +35,8 @@ final class DMMessagingService {
     }()
     private lazy var decoder: JSONDecoder = {
         let d = JSONDecoder()
-        d.dateDecodingStrategy = .custom { decoder in
-            let c = try decoder.singleValueContainer()
+        d.dateDecodingStrategy = .custom { dec in
+            let c = try dec.singleValueContainer()
             let s = try c.decode(String.self)
             if let dt = Self.iso8601Frac.date(from: s) { return dt }
             if let dt = Self.iso8601NoFrac.date(from: s) { return dt }
@@ -52,6 +47,12 @@ final class DMMessagingService {
     }()
     private func decodeList<T: Decodable>(_ data: Data) throws -> [T] { try decoder.decode([T].self, from: data) }
     private func decodeObject<T: Decodable>(_ data: Data) throws -> T { try decoder.decode(T.self, from: data) }
+
+    private func log(_ items: Any...) {
+        #if DEBUG
+        print("[DM-RT]", items.map { "\($0)" }.joined(separator: " "))
+        #endif
+    }
 
     // MARK: - Auth
     func currentUserID() async throws -> UUID {
@@ -76,6 +77,7 @@ final class DMMessagingService {
         let p = GetOrCreateDMParams(a: my, b: other)
         let res = try await client.rpc("get_or_create_dm", params: p).execute()
 
+        // Manejo flexible de respuestas
         if let dict = try? JSONSerialization.jsonObject(with: res.data) as? [String: Any] {
             if let s = dict["get_or_create_dm"] as? String, let id = UUID(uuidString: s) { return id }
             if let s = dict["id"] as? String, let id = UUID(uuidString: s) { return id }
@@ -109,10 +111,8 @@ final class DMMessagingService {
         let res = try await client.rpc("get_perfil_lite", params: p).execute()
         if let one: PerfilLite = try? decodeObject(res.data) { return one }
         let list: [PerfilLite] = try decodeList(res.data)
-        guard let first = list.first else {
-            throw NSError(domain: "RPC", code: -2, userInfo: [NSLocalizedDescriptionKey: "Perfil no encontrado"])
-        }
-        return first
+        if let first = list.first { return first }
+        throw NSError(domain: "RPC", code: -2, userInfo: [NSLocalizedDescriptionKey: "Perfil no encontrado"])
     }
 
     func fetchMessages(conversationID: UUID, before: Date? = nil, after: Date? = nil, pageSize: Int = 50) async throws -> [DMMessage] {
@@ -164,20 +164,66 @@ final class DMMessagingService {
         _ = try? await client.rpc("hide_dm_message_for_me", params: HideParams(conv_id: conversationID, msg_id: messageID)).execute()
     }
 
-    // MARK: - Realtime (chat en conversación)
+    // MARK: - Mute / Unmute (con fallback local)
+    /// Marca una conversación como silenciada o no. Si el RPC `set_dm_mute` no existe, guarda localmente.
+    func setMuted(conversationID: UUID, mute: Bool) async {
+        struct P: Encodable { let conv_id: UUID; let p_mute: Bool }
+        if (try? await client.rpc("set_dm_mute", params: P(conv_id: conversationID, p_mute: mute)).execute()) != nil {
+            LocalMuteStore.shared.set(conversationID: conversationID, muted: mute) // mantener cache
+            return
+        }
+        // Fallback local (solo UX)
+        LocalMuteStore.shared.set(conversationID: conversationID, muted: mute)
+    }
+
+    /// Devuelve si la conversación está silenciada. Intenta RPC `get_dm_mute`; si no existe, usa caché local.
+    func isMuted(conversationID: UUID) async -> Bool {
+        struct P: Encodable { let conv_id: UUID }
+        if let res = try? await client.rpc("get_dm_mute", params: P(conv_id: conversationID)).execute(),
+           let dict = try? JSONSerialization.jsonObject(with: res.data) as? [String: Any] {
+
+            // Respuestas posibles: {"is_muted":true} o {"0":{"is_muted":true}}
+            if let muted = dict["is_muted"] as? Bool {
+                LocalMuteStore.shared.set(conversationID: conversationID, muted: muted)
+                return muted
+            }
+            if let first = dict.values.first as? [String: Any],
+               let muted = first["is_muted"] as? Bool {
+                LocalMuteStore.shared.set(conversationID: conversationID, muted: muted)
+                return muted
+            }
+        }
+        // Fallback local
+        return LocalMuteStore.shared.isMuted(conversationID: conversationID)
+    }
+
+    // MARK: - Eliminar conversación (para mí)
+    /// Deja una conversación (la elimina para el usuario). Intenta RPC `leave_dm_conversation`; si falla, borra la membresía directa (RLS requerida).
+    func deleteConversationForMe(conversationID: UUID) async throws {
+        struct P: Encodable { let conv_id: UUID }
+        if (try? await client.rpc("leave_dm_conversation", params: P(conv_id: conversationID)).execute()) != nil {
+            return
+        }
+        // Fallback: intenta borrar tu fila en dm_members (si RLS lo permite)
+        _ = try? await client
+            .from("dm_members")
+            .delete()
+            .eq("conversation_id", value: conversationID)
+            .execute()
+    }
+
+    // MARK: - Realtime (chat)
     struct RealtimeHandlers {
         var onInserted: ((DMMessage) -> Void)?
         var onUpdated:  ((DMMessage) -> Void)?
-        var onDeletedGlobal: ((UUID) -> Void)?   // Soft-delete llega por UpdateAction
+        var onDeletedGlobal: ((UUID) -> Void)?
         var onTypingChanged: ((UUID, Bool) -> Void)?
         var onMembersUpdated: (([DMMember]) -> Void)?
     }
 
     @discardableResult
     func subscribe(conversationID: UUID, handlers: RealtimeHandlers) async -> RealtimeChannelV2 {
-        if subscribing.contains(conversationID), let ch = channels[conversationID] {
-            return ch
-        }
+        if subscribing.contains(conversationID), let ch = channels[conversationID] { return ch }
         subscribing.insert(conversationID); defer { subscribing.remove(conversationID) }
         await unsubscribe(conversationID: conversationID)
 
@@ -187,50 +233,28 @@ final class DMMessagingService {
 
         let filter = "conversation_id=eq.\(conversationID.uuidString)"
 
-        // INSERT (nuevo mensaje)
         _ = channel.onPostgresChange(
-            InsertAction.self,
-            schema: "public",
-            table: "dm_messages",
-            filter: filter
+            InsertAction.self, schema: "public", table: "dm_messages", filter: filter
         ) { [weak self] change in
-            self?.log("INSERT dm_messages", conversationID, "id:", (change.record["id"] ?? "nil"))
             guard let self else { return }
-            let rec = change.record
-            if let data = try? JSONEncoder().encode(rec),
+            if let data = try? JSONEncoder().encode(change.record),
+               let msg  = try? self.decoder.decode(DMMessage.self, from: data) { handlers.onInserted?(msg) }
+        }
+
+        _ = channel.onPostgresChange(
+            UpdateAction.self, schema: "public", table: "dm_messages", filter: filter
+        ) { [weak self] change in
+            guard let self else { return }
+            if let data = try? JSONEncoder().encode(change.record),
                let msg  = try? self.decoder.decode(DMMessage.self, from: data) {
-                handlers.onInserted?(msg)
+                if msg.deleted_for_all_at != nil { handlers.onDeletedGlobal?(msg.id) }
+                else { handlers.onUpdated?(msg) }
             }
         }
 
-        // UPDATE (ediciones / soft-delete global)
         _ = channel.onPostgresChange(
-            UpdateAction.self,
-            schema: "public",
-            table: "dm_messages",
-            filter: filter
-        ) { [weak self] change in
-            self?.log("UPDATE dm_messages", conversationID, "id:", (change.record["id"] ?? "nil"))
-            guard let self else { return }
-            let rec = change.record
-            if let data = try? JSONEncoder().encode(rec),
-               let msg  = try? self.decoder.decode(DMMessage.self, from: data) {
-                if msg.deleted_for_all_at != nil {
-                    handlers.onDeletedGlobal?(msg.id)
-                } else {
-                    handlers.onUpdated?(msg)
-                }
-            }
-        }
-
-        // Cambios en miembros (typing / read)
-        _ = channel.onPostgresChange(
-            UpdateAction.self,
-            schema: "public",
-            table: "dm_members",
-            filter: filter
+            UpdateAction.self, schema: "public", table: "dm_members", filter: filter
         ) { [weak self] _ in
-            self?.log("UPDATE dm_members", conversationID)
             guard let self else { return }
             Task {
                 if let mems = try? await self.fetchMembers(conversationID: conversationID) {
@@ -257,41 +281,88 @@ final class DMMessagingService {
         }
     }
 
-    // MARK: - Realtime para Inbox
-    /// Suscribe el inbox a una lista de conversaciones. Llama a `onConversationBumped` cuando
-    /// llega/edita/borra un mensaje o cambia last_message_at para esa conversación.
+    // MARK: - Realtime Inbox (preview/orden)
     func subscribeInbox(
         conversationIDs: [UUID],
         onConversationBumped: @escaping (UUID) -> Void
     ) async {
-        // Cerrar canales no deseados
         let wanted = Set(conversationIDs)
         for (id, ch) in inboxChannels where !wanted.contains(id) {
             await ch.unsubscribe()
             inboxChannels.removeValue(forKey: id)
             log("inbox unsubscribed", id)
         }
-
-        // Abrir/asegurar canales para las conversaciones activas
         for convID in wanted {
             if inboxChannels[convID] != nil { continue }
-
             let ch = client.realtimeV2.channel("inbox:\(convID.uuidString)")
             inboxChannels[convID] = ch
-            log("inbox subscribing to inbox:\(convID.uuidString)")
-
             let filter = "conversation_id=eq.\(convID.uuidString)"
-
-            // INSERT/UPDATE/DELETE en dm_messages -> actualizar preview/orden
             _ = ch.onPostgresChange(InsertAction.self, schema: "public", table: "dm_messages", filter: filter) { _ in onConversationBumped(convID) }
             _ = ch.onPostgresChange(UpdateAction.self, schema: "public", table: "dm_messages", filter: filter) { _ in onConversationBumped(convID) }
             _ = ch.onPostgresChange(DeleteAction.self, schema: "public", table: "dm_messages", filter: filter) { _ in onConversationBumped(convID) }
-
-            // Cambios en last_message_at (por trigger)
             _ = ch.onPostgresChange(UpdateAction.self, schema: "public", table: "dm_conversations", filter: "id=eq.\(convID.uuidString)") { _ in onConversationBumped(convID) }
-
             await ch.subscribe()
             log("inbox subscribed inbox:\(convID.uuidString)")
         }
+    }
+}
+
+// MARK: - Almacén local (fallback) para Mute
+
+final class LocalMuteStore {
+    static let shared = LocalMuteStore()
+    private let key = "dm.mute.store"
+    private var setIDs: Set<String>
+
+    private init() {
+        if let data = UserDefaults.standard.array(forKey: key) as? [String] {
+            setIDs = Set(data)
+        } else {
+            setIDs = []
+        }
+    }
+
+    func isMuted(conversationID: UUID) -> Bool {
+        setIDs.contains(conversationID.uuidString)
+    }
+
+    func set(conversationID: UUID, muted: Bool) {
+        if muted { setIDs.insert(conversationID.uuidString) }
+        else { setIDs.remove(conversationID.uuidString) }
+        UserDefaults.standard.set(Array(setIDs), forKey: key)
+    }
+}
+
+
+extension DMMessagingService {
+    /// Devuelve el conteo exacto de no leídos para una conversación usando el RPC `get_dm_unread_count`.
+    /// Si el RPC no existe o falla, devuelve 0.
+    func unreadCount(conversationID: UUID) async -> Int {
+        struct P: Encodable { let conv_id: UUID }
+        struct R: Decodable { let count: Int }
+        do {
+            let res = try await client
+                .rpc("get_dm_unread_count", params: P(conv_id: conversationID))
+                .execute()
+
+            // Intenta decodificar { "count": <Int> } o lista con primero
+            if let obj = try? JSONDecoder().decode(R.self, from: res.data) {
+                return obj.count
+            }
+            if let arr = try? JSONDecoder().decode([R].self, from: res.data), let first = arr.first {
+                return first.count
+            }
+            // fallback para respuestas tipo {"get_dm_unread_count": 3}
+            if let dict = try? JSONSerialization.jsonObject(with: res.data) as? [String: Any],
+               let c = (dict["get_dm_unread_count"] as? Int) ??
+                       (dict["count"] as? Int) {
+                return c
+            }
+        } catch {
+            #if DEBUG
+            print("[DM] unreadCount RPC error:", error.localizedDescription)
+            #endif
+        }
+        return 0
     }
 }

@@ -1,14 +1,8 @@
 import SwiftUI
 
-struct DMInboxItem: Identifiable, Hashable {
-    let id: UUID
-    let conversation: DMConversation
-    let otherPerfil: PerfilLite?
-    var lastMessagePreview: String?
-    var lastAt: Date?
-    var unreadCount: Int = 0
-    var isOnline: Bool = false
-}
+// Activa el conteo exacto de no leídos usando el RPC get_dm_unread_count.
+// Si es false, usa el cálculo rápido (booleano) comparando last_read_at vs último mensaje.
+private let USE_EXACT_UNREAD_COUNT = true
 
 struct DMInboxView: View {
     @EnvironmentObject private var uiState: AppUIState
@@ -20,65 +14,57 @@ struct DMInboxView: View {
     @State private var showingSearch = false
     @State private var searchText = ""
 
-    var filteredItems: [DMInboxItem] {
-        if searchText.isEmpty { return items }
-        return items.filter { item in
-            item.otherPerfil?.username.localizedCaseInsensitiveContains(searchText) == true ||
-            item.lastMessagePreview?.localizedCaseInsensitiveContains(searchText) == true
+    @State private var loadTask: Task<Void, Never>? = nil
+    @State private var mutatingIDs = Set<UUID>() // bloqueo UI al silenciar/eliminar
+
+    // Filtrado:
+    // - texto
+    // - oculta conversaciones sin mensajes (lastAt == nil)
+    private var filteredItems: [DMInboxItem] {
+        let base = items.filter { $0.lastAt != nil } // oculta vacías
+        guard !searchText.isEmpty else { return base }
+        return base.filter {
+            $0.otherPerfil?.username.localizedCaseInsensitiveContains(searchText) == true ||
+            $0.lastMessagePreview?.localizedCaseInsensitiveContains(searchText) == true
         }
     }
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                Group {
-                    if loading {
-                        loadingView
-                    } else if let errorText {
-                        errorView(errorText)
-                    } else if items.isEmpty {
-                        emptyStateView
-                    } else {
-                        conversationsList
-                    }
-                }
+            Group {
+                if loading { loadingView }
+                else if let errorText { errorView(errorText) }
+                else if filteredItems.isEmpty { emptyStateView }
+                else { conversationsList }
             }
             .navigationTitle("Mensajes")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            showingSearch.toggle()
-                        }
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 16, weight: .medium))
+                    Button { withAnimation { showingSearch.toggle() } } label: {
+                        Image(systemName: "magnifyingglass").font(.system(size: 16, weight: .medium))
                     }
-
-                    NavigationLink(
-                        destination:
-                            DMNewChatView(onCreated: { convID, user in
-                                let temp = DMInboxItem(
-                                    id: convID,
-                                    conversation: DMConversation(
-                                        id: convID,
-                                        is_group: false,
-                                        created_at: Date(),
-                                        last_message_at: nil
-                                    ),
-                                    otherPerfil: user,
-                                    lastMessagePreview: nil,
-                                    lastAt: nil
-                                )
-                                pushChat = temp
-                                Task { await load() }
-                            })
-                            .environmentObject(uiState)   // opcional (hereda del árbol)
-                            .hideTabBarScope()            // ocultar también en NewChat
-                    ) {
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 16, weight: .medium))
+                    NavigationLink {
+                        DMNewChatView { convID, user in
+                            // No se mostrará hasta que haya 1er mensaje (lastAt nil)
+                            let temp = DMInboxItem(
+                                id: convID,
+                                conversation: .init(id: convID, is_group: false, created_at: Date(), last_message_at: nil),
+                                otherPerfil: user,
+                                lastMessagePreview: nil,
+                                lastAt: nil,
+                                unreadCount: 0,
+                                isOnline: false,
+                                isMuted: false
+                            )
+                            pushChat = temp
+                            loadTask?.cancel()
+                            loadTask = Task { await load(isRefresh: false) }
+                        }
+                        .environmentObject(uiState)
+                        .hideTabBarScope()
+                    } label: {
+                        Image(systemName: "square.and.pencil").font(.system(size: 16, weight: .medium))
                     }
                 }
             }
@@ -88,141 +74,134 @@ struct DMInboxView: View {
                 placement: .navigationBarDrawer(displayMode: .always),
                 prompt: "Buscar conversaciones..."
             )
-            .task { await load() }
+            .task {
+                loadTask?.cancel()
+                loadTask = Task { await load(isRefresh: false) }
+            }
             .navigationDestination(item: $pushChat) { item in
                 DMChatView(conversationID: item.id, other: item.otherPerfil)
-                    .environmentObject(uiState)  // opcional (hereda del árbol)
-                    .hideTabBarScope()           // ocultar en Chat
+                    .environmentObject(uiState)
+                    .hideTabBarScope()
             }
         }
-        // ⬇️ Inbox también oculta la barra (sin tocar la propiedad directamente)
         .hideTabBarScope()
+        .onDisappear { loadTask?.cancel(); loadTask = nil }
     }
 
+    // MARK: - Views
+
     private var loadingView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.1)
-            Text("Cargando conversaciones...")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        VStack(spacing: 12) {
+            ProgressView().scaleEffect(1.1)
+            Text("Cargando conversaciones…")
+                .font(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func errorView(_ errorText: String) -> some View {
-        VStack(spacing: 20) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 50))
-                .foregroundStyle(.orange)
-
-            VStack(spacing: 8) {
-                Text("Error").font(.headline)
-                Text(errorText)
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+    private func errorView(_ text: String) -> some View {
+        VStack(spacing: 18) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 44)).foregroundStyle(.orange)
+            Text(text).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button("Reintentar") {
+                loadTask?.cancel()
+                loadTask = Task { await load(isRefresh: false) }
             }
-
-            Button {
-                Task { await load() }
-            } label: {
-                Text("Reintentar")
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(
-                        LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .shadow(color: .blue.opacity(0.25), radius: 12, x: 0, y: 6)
-                    .clipShape(Capsule())
-            }
+            .buttonStyle(PrimaryCapsuleButtonStyle())
         }
         .padding()
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 22) {
             Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 60))
-                .foregroundStyle(.blue.opacity(0.6))
-
-            VStack(spacing: 8) {
-                Text("Sin mensajes").font(.title2.weight(.semibold))
-                Text("Empieza una conversación desde un perfil o busca nuevos contactos.")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-            }
-
-            NavigationLink(
-                destination:
-                    DMNewChatView(onCreated: { convID, user in
-                        let temp = DMInboxItem(
-                            id: convID,
-                            conversation: DMConversation(
-                                id: convID,
-                                is_group: false,
-                                created_at: Date(),
-                                last_message_at: nil
-                            ),
-                            otherPerfil: user
-                        )
-                        pushChat = temp
-                        Task { await load() }
-                    })
-                    .environmentObject(uiState)
-                    .hideTabBarScope()
-            ) {
-                Text("Nuevo mensaje")
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(
-                        LinearGradient(colors: [.blue, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .font(.system(size: 56)).foregroundStyle(.blue.opacity(0.65))
+            Text("Sin mensajes").font(.title2.weight(.semibold))
+            Text("Empieza una conversación desde un perfil o busca nuevos contactos.")
+                .font(.body).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 32)
+            NavigationLink {
+                DMNewChatView { convID, user in
+                    pushChat = DMInboxItem(
+                        id: convID,
+                        conversation: .init(id: convID, is_group: false, created_at: Date(), last_message_at: nil),
+                        otherPerfil: user,
+                        lastMessagePreview: nil,
+                        lastAt: nil
                     )
-                    .shadow(color: .blue.opacity(0.25), radius: 12, x: 0, y: 6)
-                    .clipShape(Capsule())
+                    loadTask?.cancel()
+                    loadTask = Task { await load(isRefresh: false) }
+                }
+                .environmentObject(uiState)
+                .hideTabBarScope()
+            } label: {
+                Text("Nuevo mensaje").padding(.horizontal, 24).padding(.vertical, 12)
             }
+            .buttonStyle(PrimaryCapsuleButtonStyle())
         }
-        .padding()
+        .padding(.top, 24)
     }
 
     private var conversationsList: some View {
         List {
             ForEach(filteredItems) { item in
-                ConversationRow(item: item) {
-                    pushChat = item
-                }
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowSeparator(.hidden)
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(role: .destructive) { /* TODO: implement delete */ } label: {
-                        Label("Eliminar", systemImage: "trash")
+                ConversationRow(item: item) { open(item) }
+                    .listRowInsets(.init(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    // Eliminar (trailing)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            Task { await deleteConversation(item) }
+                        } label: {
+                            Label("Eliminar", systemImage: "trash")
+                        }
+                        .disabled(mutatingIDs.contains(item.id))
                     }
-                }
-                .swipeActions(edge: .leading) {
-                    Button { /* TODO: implement mute */ } label: {
-                        Label("Silenciar", systemImage: "bell.slash")
+                    // Silenciar (leading)
+                    .swipeActions(edge: .leading) {
+                        let muted = item.isMuted
+                        Button {
+                            Task { await toggleMute(item, to: !muted) }
+                        } label: {
+                            Label(muted ? "Activar sonido" : "Silenciar",
+                                  systemImage: muted ? "bell" : "bell.slash")
+                        }
+                        .tint(muted ? .blue : .orange)
+                        .disabled(mutatingIDs.contains(item.id))
                     }
-                    .tint(.orange)
-                }
             }
         }
         .listStyle(.plain)
         .contentMargins(.vertical, 8)
-        .refreshable { await load() }
+        .refreshable { await load(isRefresh: true) }
         .animation(.easeInOut(duration: 0.2), value: filteredItems)
     }
 
-    // MARK: - Data Loading
-    private func load() async {
+    // MARK: - Navegación / Leídos
+
+    private func open(_ item: DMInboxItem) {
+        // Navegar
+        pushChat = item
+
+        // Optimista: limpia el badge en UI
+        if let idx = items.firstIndex(where: { $0.id == item.id }) {
+            var it = items[idx]
+            it.unreadCount = 0
+            items[idx] = it
+        }
+
+        // Marca leído en BD (actualiza dm_members.last_read_at)
+        Task {
+            await DMMessagingService.shared.markRead(conversationID: item.id)
+        }
+    }
+
+    // MARK: - Data
+
+    private func load(isRefresh: Bool) async {
+        if Task.isCancelled { return }
         await MainActor.run {
-            loading = true
+            if !isRefresh { loading = true }
             errorText = nil
         }
 
@@ -237,185 +216,167 @@ struct DMInboxView: View {
             try await withThrowingTaskGroup(of: DMInboxItem?.self) { group in
                 for conv in convs {
                     group.addTask {
+                        if Task.isCancelled { return nil }
                         do {
                             async let members = svc.fetchMembers(conversationID: conv.id)
-
-                            let last: DMMessage?
-                            do {
-                                last = try await svc.fetchLastMessage(conversationID: conv.id)
-                            } catch {
-                                let one = try await svc.fetchMessages(conversationID: conv.id, pageSize: 1)
-                                last = one.last
-                            }
+                            async let lastMsg = svc.fetchLastMessage(conversationID: conv.id)
+                            async let muted   = svc.isMuted(conversationID: conv.id)
 
                             let mems = try await members
-                            let otherID = mems.map(\.autor_id).first { $0 != myID }
-                            let other = try await (otherID != nil ? svc.fetchPerfil(id: otherID!) : nil)
+                            let last = try? await lastMsg
+                            let otherID = mems.first(where: { $0.autor_id != myID })?.autor_id
+                            let myRead  = mems.first(where: { $0.autor_id == myID })?.last_read_at
+                            let other   = try await (otherID != nil ? svc.fetchPerfil(id: otherID!) : nil)
+                            let isMuted = await muted
+
+                            // Cálculo booleano rápido
+                            let hasUnreadBool: Bool = {
+                                guard let last, let otherID else { return false }
+                                if last.autor_id == otherID {
+                                    if let myRead { return last.created_at > myRead }
+                                    return true
+                                }
+                                return false
+                            }()
+
+                            // ✅ Evita ternario con await
+                            let unread: Int
+                            if USE_EXACT_UNREAD_COUNT {
+                                let exact = await svc.unreadCount(conversationID: conv.id)
+                                unread = max(0, exact)
+                            } else {
+                                unread = hasUnreadBool ? 1 : 0
+                            }
 
                             return DMInboxItem(
                                 id: conv.id,
                                 conversation: conv,
                                 otherPerfil: other,
                                 lastMessagePreview: last?.content,
-                                lastAt: conv.last_message_at ?? last?.created_at
+                                lastAt: conv.last_message_at ?? last?.created_at,
+                                unreadCount: unread,
+                                isOnline: false,
+                                isMuted: isMuted
                             )
+                        } catch is CancellationError {
+                            return nil
                         } catch {
                             return nil
                         }
                     }
                 }
-                for try await item in group {
-                    if let item { temp.append(item) }
+                for try await it in group {
+                    if Task.isCancelled { break }
+                    if let it { temp.append(it) }
                 }
             }
 
-            temp.sort { (a, b) in (a.lastAt ?? .distantPast) > (b.lastAt ?? .distantPast) }
+            if Task.isCancelled { return }
+
+            // Ordena por fecha del último mensaje
+            temp.sort { ($0.lastAt ?? .distantPast) > ($1.lastAt ?? .distantPast) }
 
             await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.3)) {
+                withAnimation(.easeInOut(duration: 0.25)) {
                     self.items = temp
                 }
             }
 
-            Task {
+            // Suscripción de inbox
+            Task.detached { [ids = temp.map(\.id)] in
                 await DMMessagingService.shared.subscribeInbox(
-                    conversationIDs: temp.map { $0.id },
+                    conversationIDs: ids,
                     onConversationBumped: { convID in
                         Task { await refreshConversationItem(convID) }
                     }
                 )
             }
+        } catch is CancellationError {
+            // Ignorar
         } catch {
-            await MainActor.run { self.errorText = error.localizedDescription }
+            await MainActor.run { errorText = error.localizedDescription }
         }
 
-        await MainActor.run { loading = false }
+        await MainActor.run { if !isRefresh { loading = false } }
     }
 
     private func refreshConversationItem(_ convID: UUID) async {
         do {
             let svc = DMMessagingService.shared
-            let last = try await svc.fetchLastMessage(conversationID: convID)
+            let myID = try await svc.currentUserID()
+            async let last = svc.fetchLastMessage(conversationID: convID)
+            async let mems = svc.fetchMembers(conversationID: convID)
+            async let muted = svc.isMuted(conversationID: convID)
+
+            let lastMsg = try await last
+            let members = try await mems
+            let isMuted = await muted
+
+            let otherID = members.first(where: { $0.autor_id != myID })?.autor_id
+            let myRead  = members.first(where: { $0.autor_id == myID })?.last_read_at
+
+            let hasUnreadBool: Bool = {
+                guard let lastMsg, let otherID else { return false }
+                if lastMsg.autor_id == otherID {
+                    if let myRead { return lastMsg.created_at > myRead }
+                    return true
+                }
+                return false
+            }()
+
+            // ✅ Sin `async let` para unreadExact; todo lineal con await
+            let unread: Int
+            if USE_EXACT_UNREAD_COUNT {
+                let exact = await svc.unreadCount(conversationID: convID)
+                unread = max(0, exact)
+            } else {
+                unread = hasUnreadBool ? 1 : 0
+            }
 
             await MainActor.run {
                 if let idx = items.firstIndex(where: { $0.id == convID }) {
-                    var item = items[idx]
-                    item.lastMessagePreview = last?.content ?? item.lastMessagePreview
-                    item.lastAt = last?.created_at ?? item.lastAt
-                    items[idx] = item
-
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        items.sort { (a, b) in (a.lastAt ?? .distantPast) > (b.lastAt ?? .distantPast) }
+                    var it = items[idx]
+                    it.lastMessagePreview = lastMsg?.content ?? it.lastMessagePreview
+                    it.lastAt = lastMsg?.created_at ?? it.lastAt
+                    it.isMuted = isMuted
+                    it.unreadCount = unread
+                    items[idx] = it
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        items.sort { ($0.lastAt ?? .distantPast) > ($1.lastAt ?? .distantPast) }
                     }
                 }
+            }
+        } catch { /* silent */ }
+    }
+
+    // MARK: - Mutar / Eliminar
+
+    private func toggleMute(_ item: DMInboxItem, to newValue: Bool) async {
+        _ = await MainActor.run { mutatingIDs.insert(item.id) }
+        await DMMessagingService.shared.setMuted(conversationID: item.id, mute: newValue)
+        _ = await MainActor.run {
+            if let idx = items.firstIndex(where: { $0.id == item.id }) {
+                items[idx].isMuted = newValue
+            }
+            mutatingIDs.remove(item.id)
+        }
+    }
+
+    private func deleteConversation(_ item: DMInboxItem) async {
+        _ = await MainActor.run { mutatingIDs.insert(item.id) }
+        do {
+            try await DMMessagingService.shared.deleteConversationForMe(conversationID: item.id)
+            _ = await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    items.removeAll { $0.id == item.id }
+                }
+                mutatingIDs.remove(item.id)
             }
         } catch {
-            // silencioso
-        }
-    }
-}
-
-// MARK: - Conversation Row
-struct ConversationRow: View {
-    let item: DMInboxItem
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 14) {
-                ZStack(alignment: .bottomTrailing) {
-                    AvatarAsyncImage(
-                        url: URL(string: item.otherPerfil?.avatar_url ?? ""),
-                        size: 56
-                    )
-                    .clipShape(Circle())
-
-                    if item.isOnline {
-                        Circle()
-                            .fill(.green)
-                            .frame(width: 14, height: 14)
-                            .overlay(
-                                Circle().stroke(.background, lineWidth: 3)
-                            )
-                            .offset(x: 2, y: 2)
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(item.otherPerfil?.username ?? "Conversación")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-
-                        Spacer()
-
-                        if let date = item.lastAt {
-                            Text(shortDate(date))
-                                .font(.system(size: 13))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    HStack {
-                        Text(item.lastMessagePreview ?? "Toca para escribir...")
-                            .font(.system(size: 15))
-                            .foregroundStyle(item.lastMessagePreview != nil ? .secondary : .tertiary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-
-                        Spacer()
-
-                        if item.unreadCount > 0 {
-                            Text("\(item.unreadCount)")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(
-                                    LinearGradient(colors: [.blue, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                                .clipShape(Capsule())
-                                .overlay(
-                                    Capsule().stroke(.white.opacity(0.25), lineWidth: 1)
-                                )
-                                .frame(minWidth: 28)
-                        }
-                    }
-                }
+            _ = await MainActor.run {
+                errorText = error.localizedDescription
+                mutatingIDs.remove(item.id)
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .buttonStyle(ScaledButtonStyle())
-    }
-
-    private func shortDate(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = .current
-        f.doesRelativeDateFormatting = true
-
-        if Calendar.current.isDateInToday(date) {
-            f.timeStyle = .short
-            f.dateStyle = .none
-        } else if Calendar.current.isDate(date, equalTo: Date(), toGranularity: .weekOfYear) {
-            f.dateFormat = "EEEE"
-        } else {
-            f.dateStyle = .short
-            f.timeStyle = .none
-        }
-        return f.string(from: date)
     }
 }
-
-// MARK: - Utilities
-struct ScaledButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
-            .animation(.easeInOut(duration: 0.08), value: configuration.isPressed)
-    }
-}
-

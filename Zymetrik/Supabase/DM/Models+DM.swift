@@ -13,7 +13,7 @@ public struct DMMessage: Codable, Identifiable, Hashable {
     public let client_tag: String?
     public let edited_at: Date?
     public let deleted_for_all_at: Date?
-    // Solo para UI (estado local de entrega)
+    // Solo UI
     public var _delivery: DeliveryState? = nil
 
     enum CodingKeys: String, CodingKey {
@@ -21,12 +21,8 @@ public struct DMMessage: Codable, Identifiable, Hashable {
              created_at, client_tag, edited_at, deleted_for_all_at
     }
 
-    public static func == (lhs: DMMessage, rhs: DMMessage) -> Bool {
-        lhs.id == rhs.id
-    }
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
+    public static func == (lhs: DMMessage, rhs: DMMessage) -> Bool { lhs.id == rhs.id }
+    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
 public struct DMConversation: Codable, Identifiable, Hashable {
@@ -50,4 +46,16 @@ public struct PerfilLite: Codable, Identifiable, Hashable {
     public let id: UUID
     public let username: String
     public let avatar_url: String?
+}
+
+// Item para el inbox
+public struct DMInboxItem: Identifiable, Hashable {
+    public let id: UUID
+    public let conversation: DMConversation
+    public let otherPerfil: PerfilLite?
+    public var lastMessagePreview: String?
+    public var lastAt: Date?
+    public var unreadCount: Int = 0
+    public var isOnline: Bool = false
+    var isMuted: Bool = false
 }
