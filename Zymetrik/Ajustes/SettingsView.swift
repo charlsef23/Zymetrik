@@ -70,7 +70,8 @@ struct SettingsView: View {
                         items: [
                             .init(icon: "envelope.fill",          tint: .teal,   title: "Enviar feedback",        destination: AnyView(FeedbackView())),
                             .init(icon: "questionmark.circle.fill", tint: .indigo, title: "Contactar con soporte",  destination: AnyView(SupportView())),
-                            .init(icon: "book.fill",              tint: .brown,  title: "FAQ",                    destination: AnyView(FAQView()))
+                            .init(icon: "book.fill",              tint: .brown,  title: "FAQ",                    destination: AnyView(FAQView())),
+                            .init(icon: "lock.doc.fill",                tint: .purple, title: "Politica de privacidad",     destination: AnyView(PrivacyPolicyView()))
                         ]
                     )
 
@@ -82,8 +83,7 @@ struct SettingsView: View {
                                 .init(icon: "exclamationmark.bubble.fill", tint: .green,  title: "Reportes de posts",    destination: AnyView(AdminPostReportsView())),
                                 .init(icon: "tray.full.fill",               tint: .cyan,   title: "Feedback (Admin)",      destination: AnyView(AdminFeedbackListView())),
                                 .init(icon: "person.crop.circle.badge.exclam", tint: .red, title: "Moderación",          destination: AnyView(Text("ModeracionView()"))),
-                                .init(icon: "chart.bar.fill",               tint: .orange, title: "Métricas",            destination: AnyView(Text("MetricasView()"))),
-                                .init(icon: "lock.doc.fill",                tint: .purple, title: "Policies & RLS",     destination: AnyView(Text("PoliciesView()")))
+                                .init(icon: "chart.bar.fill",               tint: .orange, title: "Métricas",            destination: AnyView(Text("MetricasView()")))
                             ]
                         )
                     }
@@ -420,3 +420,4 @@ struct RoundedCorner: Shape {
         return Path(path.cgPath)
     }
 }
+
