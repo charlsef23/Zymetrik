@@ -8,6 +8,10 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Brand Colors
+private let brandGradientColors: [Color] = [.purple, .pink, .orange]
+private let brandAccent: Color = .pink
+
 // MARK: - Utilidades de día (1=Domingo ... 7=Sábado)
 private let weekdayOrderLtoD: [Int] = [2,3,4,5,6,7,1] // Orden visual: L..D
 private let weekdayShortLabel: [Int:String] = [1:"D",2:"L",3:"M",4:"X",5:"J",6:"V",7:"S"]
@@ -113,12 +117,12 @@ struct PlantillasPROView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "calendar")
                                 .font(.headline)
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(brandAccent)
                                 .frame(width: 28, height: 28)
                                 .background(Circle().fill(Color(.tertiarySystemBackground)))
                             DatePicker("Fecha de inicio", selection: $fechaInicio, displayedComponents: .date)
                                 .datePickerStyle(.compact)
-                                .tint(.accentColor)
+                                .tint(brandAccent)
                             Spacer(minLength: 0)
                         }
                         .padding(12)
@@ -128,11 +132,11 @@ struct PlantillasPROView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "clock.arrow.circlepath")
                                 .font(.headline)
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(brandAccent)
                                 .frame(width: 28, height: 28)
                                 .background(Circle().fill(Color(.tertiarySystemBackground)))
                             Stepper("Duración: \(semanas) semanas", value: $semanas, in: 1...16)
-                                .tint(.accentColor)
+                                .tint(brandAccent)
                         }
                         .padding(12)
                         .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
@@ -173,11 +177,11 @@ struct PlantillasPROView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.85)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .background(LinearGradient(colors: brandGradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
                             .foregroundStyle(.white)
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.25)))
                             .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .shadow(color: Color.accentColor.opacity(0.25), radius: 10, x: 0, y: 6)
+                            .shadow(color: brandGradientColors.first!.opacity(0.25), radius: 10, x: 0, y: 6)
                             .overlay(alignment: .topTrailing) {
                                 if !subs.isPro {
                                     HStack(spacing: 6) {
@@ -207,7 +211,7 @@ struct PlantillasPROView: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.85), value: weekdaysSeleccionados)
             }
             .background(
-                LinearGradient(colors: [Color.accentColor.opacity(0.08), Color(.systemBackground)],
+                LinearGradient(colors: [brandGradientColors.first!.opacity(0.08), Color(.systemBackground)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
             )
@@ -244,7 +248,7 @@ struct PlantillasPROView: View {
         HStack(alignment: .center, spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .fill(LinearGradient(colors: brandGradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 44, height: 44)
                 Image(systemName: "dumbbell")
                     .font(.system(size: 20, weight: .bold))
@@ -264,17 +268,19 @@ struct PlantillasPROView: View {
                     mostrandoPaywall = true
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "lock.fill")
+                        Image(systemName: "sparkles")
                         Text("PRO 2,99 €")
                     }
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Capsule().fill(Color.orange.opacity(0.2)))
+                    .background(
+                        LinearGradient(colors: brandGradientColors.map { $0.opacity(0.25) }, startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
                 }
             }
         }
         .padding()
-        .background(RoundedRectangle(cornerRadius: 16).fill(LinearGradient(colors: [Color.accentColor.opacity(0.12), Color(.secondarySystemBackground)], startPoint: .topLeading, endPoint: .bottomTrailing)))
+        .background(RoundedRectangle(cornerRadius: 16).fill(LinearGradient(colors: [brandGradientColors.first!.opacity(0.12), Color(.secondarySystemBackground)], startPoint: .topLeading, endPoint: .bottomTrailing)))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.black.opacity(0.05)))
     }
 
@@ -294,7 +300,7 @@ struct PlantillasPROView: View {
             }
         }
         .padding()
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemBackground)))
+        .background(RoundedRectangle(cornerRadius: 16).fill(LinearGradient(colors: [Color(.secondarySystemBackground), brandGradientColors.first!.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.black.opacity(0.05)))
     }
 
@@ -367,14 +373,14 @@ private struct WeekdayPicker: View {
                     .frame(width: 36, height: 36)
                     .background {
                         if on {
-                            LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.85)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            LinearGradient(colors: brandGradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
                         } else {
                             Color(.secondarySystemBackground)
                         }
                     }
                     .foregroundStyle(on ? .white : .primary)
                     .overlay(Circle().strokeBorder(on ? Color.white.opacity(0.6) : Color.black.opacity(0.08), lineWidth: 1))
-                    .shadow(color: on ? Color.accentColor.opacity(0.25) : .clear, radius: 8, x: 0, y: 4)
+                    .shadow(color: on ? brandGradientColors.first!.opacity(0.25) : .clear, radius: 8, x: 0, y: 4)
                     .clipShape(Circle())
                     .scaleEffect(on ? 1.05 : 1.0)
                     .animation(.spring(response: 0.3, dampingFraction: 0.85), value: selection)
@@ -418,7 +424,7 @@ private struct TemplateCard: View {
     let icon: String
     var onTap: () -> Void
 
-    private var gradientColors: [Color] { [Color.accentColor, Color.accentColor.opacity(0.8)] }
+    private var gradientColors: [Color] { brandGradientColors }
 
     var body: some View {
         Button(action: onTap) {
@@ -427,8 +433,9 @@ private struct TemplateCard: View {
                     RoundedRectangle(cornerRadius: 14)
                         .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing).opacity(0.18))
                         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.06)))
-                        .frame(width: 56, height: 56)
-                    Image(systemName: icon)
+                        .shadow(color: (gradientColors.first ?? .pink).opacity(0.35), radius: 12, x: 0, y: 6)
+                        .frame(width: 64, height: 64)
+                    Image(systemName: icon.isEmpty ? "bolt.fill" : icon)
                         .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
                 }
@@ -448,8 +455,36 @@ private struct TemplateCard: View {
                     .background(Circle().fill(Color(.tertiarySystemBackground)))
             }
             .padding()
-            .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemBackground)))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.black.opacity(0.05)))
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(LinearGradient(colors: [Color(.secondarySystemBackground), Color(.systemBackground)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        LinearGradient(colors: [gradientColors.first!.opacity(0.35), gradientColors.last!.opacity(0.35)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 1
+                    )
+            )
+            .overlay(alignment: .topLeading) {
+                if !SubscriptionStore.shared.isPro {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                        Text("Mejor valor")
+                    }
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule().fill(
+                            LinearGradient(colors: gradientColors.map { $0.opacity(0.9) }, startPoint: .leading, endPoint: .trailing)
+                        )
+                    )
+                    .foregroundStyle(.white)
+                    .padding(8)
+                }
+            }
             .shadow(color: (gradientColors.first ?? Color.black).opacity(0.12), radius: 12, x: 0, y: 6)
         }
         .buttonStyle(PressableCardStyle())
@@ -462,7 +497,7 @@ private struct PreviewSemana: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Previsualización").font(.headline)
+            Text("Previsualización").font(.headline).foregroundStyle(brandAccent)
             ForEach(weekdayOrderLtoD, id: \.self) { d in
                 let items = preview[d] ?? []
                 VStack(alignment: .leading, spacing: 6) {
@@ -482,7 +517,7 @@ private struct PreviewSemana: View {
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(Capsule().fill(Color(.secondarySystemBackground)))
+                                    .background(Capsule().fill(LinearGradient(colors: [Color(.secondarySystemBackground), brandGradientColors.first!.opacity(0.06)], startPoint: .leading, endPoint: .trailing)))
                             }
                             .padding(8)
                             .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemBackground)))
@@ -500,4 +535,3 @@ private struct PreviewSemana: View {
         .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 6)
     }
 }
-

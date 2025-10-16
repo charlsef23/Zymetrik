@@ -361,38 +361,70 @@ private struct PlansMiniCard: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12)
+                    // Vibrant circular badge with glow
+                    Circle()
                         .fill(
-                            LinearGradient(colors: [.purple, .pink, .orange],
-                                           startPoint: .topLeading,
-                                           endPoint: .bottomTrailing)
-                            .opacity(0.18)
+                            AngularGradient(
+                                gradient: Gradient(colors: [.purple, .pink, .orange, .yellow, .purple]),
+                                center: .center
+                            )
                         )
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "wand.and.stars")
-                        .font(.system(size: 18, weight: .bold))
+                        .frame(width: 54, height: 54)
+                        .overlay(
+                            Circle()
+                                .stroke(.white.opacity(0.2), lineWidth: 1)
+                        )
+                        .shadow(color: .pink.opacity(0.25), radius: 10, y: 6)
+
+                    // New, more dynamic icon
+                    Image(systemName: "dumbbell.fill")
+                        .foregroundStyle(.white)
+                        .font(.system(size: 22, weight: .black))
+                        .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
                 }
-                VStack(alignment: .leading, spacing: 2) {
+
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Planes de entrenamiento")
-                        .font(.subheadline).bold()
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
                     Text("Elige una rutina y añádela")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .truncationMode(.tail)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.subheadline)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-            .padding(12)
+            .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color(.secondarySystemBackground))
+                // Card with subtle glass effect
+                ZStack {
+                    // Vibrant backdrop
+                    LinearGradient(
+                        colors: [Color.purple.opacity(0.18), Color.pink.opacity(0.14), Color.orange.opacity(0.12)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    // Soft inner highlight
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(.white.opacity(0.06))
+                        .blur(radius: 6)
+                        .padding(-2)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    // Subtle border
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+                )
             )
+            .contentShape(Rectangle())
+            .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
         }
         .buttonStyle(.plain)
     }
@@ -464,3 +496,4 @@ private struct ActiveRoutineManageCard: View {
         )
     }
 }
+
