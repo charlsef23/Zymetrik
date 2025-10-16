@@ -267,15 +267,19 @@ struct PlantillasPROView: View {
                 Button {
                     mostrandoPaywall = true
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
-                        Text("PRO 2,99 €")
-                    }
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(
-                        LinearGradient(colors: brandGradientColors.map { $0.opacity(0.25) }, startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
+                    Text("PRO 2,99 €")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule().fill(
+                                LinearGradient(colors: brandGradientColors, startPoint: .leading, endPoint: .trailing)
+                            )
+                        )
+                        .overlay(
+                            Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1)
+                        )
+                        .foregroundStyle(.white)
                 }
             }
         }
@@ -467,24 +471,6 @@ private struct TemplateCard: View {
                         lineWidth: 1
                     )
             )
-            .overlay(alignment: .topLeading) {
-                if !SubscriptionStore.shared.isPro {
-                    HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
-                        Text("Mejor valor")
-                    }
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule().fill(
-                            LinearGradient(colors: gradientColors.map { $0.opacity(0.9) }, startPoint: .leading, endPoint: .trailing)
-                        )
-                    )
-                    .foregroundStyle(.white)
-                    .padding(8)
-                }
-            }
             .shadow(color: (gradientColors.first ?? Color.black).opacity(0.12), radius: 12, x: 0, y: 6)
         }
         .buttonStyle(PressableCardStyle())
@@ -535,3 +521,4 @@ private struct PreviewSemana: View {
         .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 6)
     }
 }
+

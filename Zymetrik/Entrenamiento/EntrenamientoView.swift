@@ -236,32 +236,11 @@ struct EntrenamientoView: View {
 
     /// Borra futuros (y cancela rutina si aplica) y abre Plantillas
     private func replaceRoutineThenOpenTemplates() async {
+        // No hacer cambios destructivos por adelantado. Solo abrir plantillas.
         guard !replaceInFlight else { return }
         replaceInFlight = true
         defer { replaceInFlight = false }
 
-        // 1) Borrar futuros (planes + rutina activa) con tu RPC
-        do {
-            _ = try await SupabaseService.shared.deleteFutureWorkouts()
-        } catch {
-            print("❌ Error limpiando futuros:", error)
-            // aun así, intentamos abrir plantillas para no bloquear al usuario
-        }
-
-        // 1b) Limpiar localmente desde la fecha seleccionada
-        await MainActor.run {
-            removeFromSelectedDateForward()
-        }
-
-        // 2) Limpiar estado local de rutina
-        RoutineTracker.shared.activePlanName = nil
-        RoutineTracker.shared.activeRange = nil
-
-        // 3) Refrescar calendario local
-        planStore.preloadWeek(around: fechaSeleccionada)
-        planStore.refresh(day: fechaSeleccionada)
-
-        // 4) Abrir plantillas
         await MainActor.run {
             confirmReplace = false
             goToTemplates()
@@ -439,61 +418,102 @@ private struct ActiveRoutineManageCard: View {
     var onCancelConfirmed: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
+            // Leading badge
             ZStack {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(LinearGradient(colors: [.indigo, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 50, height: 50)
-                    .shadow(color: .blue.opacity(0.25), radius: 8, y: 4)
+                Circle()
+                    .fill(
+                        AngularGradient(
+                            gradient: Gradient(colors: [.purple, .pink, .orange, .yellow, .purple]),
+                            center: .center
+                        )
+                    )
+                    .frame(width: 56, height: 56)
+                    .overlay(Circle().stroke(.white.opacity(0.2), lineWidth: 1))
+                    .shadow(color: .pink.opacity(0.25), radius: 10, y: 6)
                 Image(systemName: "bolt.heart.fill")
                     .foregroundStyle(.white)
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.system(size: 24, weight: .black))
+                    .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(routineName)
                     .font(.subheadline.weight(.semibold))
                 if let r = dateRange {
-                    Text("\(r.lowerBound.formatted(date: .abbreviated, time: .omitted)) – \(r.upperBound.formatted(date: .abbreviated, time: .omitted))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Image(systemName: "calendar")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("\(r.lowerBound.formatted(date: .abbreviated, time: .omitted)) – \(r.upperBound.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     Text("Rutina activa")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                HStack(spacing: 8) {
+
+                HStack(spacing: 10) {
                     Button {
-                        onChange()          // ← ahora dispara confirmación de REEMPLAZO
+                        onChange()
                     } label: {
                         Label("Cambiar", systemImage: "arrow.triangle.2.circlepath")
-                            .labelStyle(.titleAndIcon)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                LinearGradient(colors: [.purple, .pink, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                            .shadow(color: .pink.opacity(0.25), radius: 8, y: 4)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
 
                     Button(role: .destructive) {
-                        onCancelConfirmed() // ← dispara confirmación de CANCELACIÓN
+                        onCancelConfirmed()
                     } label: {
-                        if isCancelling {
-                            ProgressView()
-                        } else {
-                            Label("Cancelar", systemImage: "xmark.circle.fill")
+                        HStack(spacing: 6) {
+                            if isCancelling { ProgressView().tint(.white) } else { Image(systemName: "xmark.circle.fill") }
+                            Text(isCancelling ? "Cancelando…" : "Cancelar")
+                                .font(.caption.weight(.semibold))
                         }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule().fill(Color.red.opacity(0.15))
+                        )
+                        .foregroundStyle(.red)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
                 }
                 .padding(.top, 2)
             }
 
             Spacer(minLength: 0)
         }
-        .padding(12)
+        .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.secondarySystemBackground))
+            ZStack {
+                LinearGradient(
+                    colors: [Color.purple.opacity(0.12), Color.pink.opacity(0.08), Color.orange.opacity(0.06)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(.white.opacity(0.06))
+                    .blur(radius: 6)
+                    .padding(-2)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+            )
         )
+        .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
     }
 }
 
