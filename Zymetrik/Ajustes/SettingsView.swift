@@ -29,26 +29,26 @@ struct SettingsView: View {
                         title: "Zymetrik",
                         items: [
                             .init(icon: "bookmark.fill", tint: .blue,   title: "Guardados",      destination: AnyView(GuardadosView())),
-                            .init(icon: "bell.fill",     tint: .orange, title: "Notificaciones", destination: AnyView(Text("NotificacionesView()")))
+                            .init(icon: "bell.fill",     tint: .orange, title: "Notificaciones", destination: AnyView(NotificationsSettingsView()))
                         ]
                     )
 
                     // MARK: - Privacidad
-                    SettingsSectionCard(
-                        title: "Quién puede ver tu contenido",
-                        items: [
-                            .init(icon: "lock.fill",        tint: .purple, title: "Privacidad de la cuenta", trailing: "Privada", destination: AnyView(Text("PrivacidadView()"))),
-                            .init(icon: "hand.raised.fill", tint: .red,    title: "Cuentas bloqueadas",       trailing: "4",      destination: AnyView(CuentasBloqueadasView()))
-                        ]
-                    )
+                    // SettingsSectionCard(
+                    //    title: "Quién puede ver tu contenido",
+                    //    items: [
+                    //        .init(icon: "lock.fill",        tint: .purple, title: "Privacidad de la cuenta", trailing: "Privada", destination: AnyView(Text("PrivacidadView()"))),
+                    //        .init(icon: "hand.raised.fill", tint: .red,    title: "Cuentas bloqueadas",       trailing: "4",      destination: AnyView(CuentasBloqueadasView()))
+                    //    ]
+                    // )
 
                     // MARK: - Interacciones
-                    SettingsSectionCard(
-                        title: "Cómo pueden interactuar contigo los demás",
-                        items: [
-                            .init(icon: "message.fill", tint: .green, title: "Mensajes", destination: AnyView(Text("MensajesView()")))
-                        ]
-                    )
+                   // SettingsSectionCard(
+                   //     title: "Cómo pueden interactuar contigo los demás",
+                   //     items: [
+                   //         .init(icon: "message.fill", tint: .green, title: "Mensajes", destination: AnyView(Text("MensajesView()")))
+                   //     ]
+                   // )
 
                     // MARK: - Entrenamiento
                     SettingsSectionCard(
