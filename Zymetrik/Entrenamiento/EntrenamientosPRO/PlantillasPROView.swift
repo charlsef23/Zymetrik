@@ -1,5 +1,17 @@
+//
+//  PlantillasPROView.swift
+//  YourAppName
+//
+//  Created by Developer on 2025-10-16.
+//
+
 import SwiftUI
 import UIKit
+
+// MARK: - Utilidades de día (1=Domingo ... 7=Sábado)
+private let weekdayOrderLtoD: [Int] = [2,3,4,5,6,7,1] // Orden visual: L..D
+private let weekdayShortLabel: [Int:String] = [1:"D",2:"L",3:"M",4:"X",5:"J",6:"V",7:"S"]
+private let weekdayLongLabel:  [Int:String] = [1:"Domingo",2:"Lunes",3:"Martes",4:"Miércoles",5:"Jueves",6:"Viernes",7:"Sábado"]
 
 // MARK: - Modelo de plantilla ligera
 struct WeeklyTemplateLite: Identifiable, Equatable {
@@ -15,6 +27,7 @@ struct WeeklyTemplateLite: Identifiable, Equatable {
     }
 }
 
+// MARK: - Vista principal
 struct PlantillasPROView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var planStore: TrainingPlanStore
@@ -26,7 +39,7 @@ struct PlantillasPROView: View {
 
     // Filtros
     @State private var nivel: NivelEntrenamiento = .intermedio
-    @State private var diasPorSemana: Int = 4
+    @State private var diasPorSemana: Int = 4   // sincronizado visualmente con la selección de días
 
     // Config de aplicación
     @State private var fechaInicio: Date = Date()
@@ -39,9 +52,7 @@ struct PlantillasPROView: View {
     // Estado UI
     @State private var mostrandoPaywall = false
     @State private var toastOK = false
-
     @State private var applying = false
-
     @State private var selectedTemplateTitle: String? = nil
 
     // Métricas auxiliares de la planificación
@@ -51,18 +62,22 @@ struct PlantillasPROView: View {
     private var fechaFin: Date {
         Calendar.current.date(byAdding: .day, value: semanas * 7 - 1, to: fechaInicio) ?? fechaInicio
     }
+    private var selectedDaysCount: Int { weekdaysSeleccionados.count }
 
-    // Generador de plantillas según foco/nivel
+    // Generador de plantillas según foco/nivel, filtradas por nº de días seleccionados
     private var plantillas: [WeeklyTemplateLite] {
-        CustomRoutinesLibrary.all.map { r in
-            WeeklyTemplateLite(
-                titulo: r.title,
-                subtitulo: r.subtitle,
-                nivel: r.nivel,
-                diasSemana: r.diasPorSemana,
-                iconName: "dumbbell"
-            )
-        }
+        CustomRoutinesLibrary.all
+            .filter { $0.nivel == nivel }
+            .filter { $0.diasPorSemana == max(0, selectedDaysCount) } // solo rutinas que casan con la selección
+            .map { r in
+                WeeklyTemplateLite(
+                    titulo: r.title,
+                    subtitulo: r.subtitle,
+                    nivel: r.nivel,
+                    diasSemana: r.diasPorSemana,
+                    iconName: "dumbbell"
+                )
+            }
     }
 
     var body: some View {
@@ -80,6 +95,12 @@ struct PlantillasPROView: View {
                                 onTap(template: t)
                             }
                         }
+                        if plantillas.isEmpty {
+                            Text("No hay plantillas de \(selectedDaysCount) día(s) para el nivel \(nivel.rawValue).")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 4)
+                        }
                     }
 
                     if !previewSemana.isEmpty {
@@ -87,6 +108,7 @@ struct PlantillasPROView: View {
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
 
+                    // ====== Configuración de calendario / aplicar ======
                     VStack(spacing: 10) {
                         HStack(spacing: 12) {
                             Image(systemName: "calendar")
@@ -184,7 +206,11 @@ struct PlantillasPROView: View {
                 .animation(.easeInOut(duration: 0.25), value: previewSemana.isEmpty)
                 .animation(.spring(response: 0.3, dampingFraction: 0.85), value: weekdaysSeleccionados)
             }
-            .background(LinearGradient(colors: [Color.accentColor.opacity(0.08), Color(.systemBackground)], startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea())
+            .background(
+                LinearGradient(colors: [Color.accentColor.opacity(0.08), Color(.systemBackground)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
+            )
             .navigationTitle("Plantillas PRO")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -200,6 +226,16 @@ struct PlantillasPROView: View {
                     .presentationDetents([.medium, .large])
             }
             .toast($toastOK, text: "Rutina aplicada ✅")
+            // Mantén sincronizado el contador visible con la selección de días
+            .onChange(of: weekdaysSeleccionados) { oldValue, newValue in
+                diasPorSemana = max(1, selectedDaysCount)
+                // Si ya hay una preview activa, re-mapéala al nuevo patrón de días
+                if let title = selectedTemplateTitle,
+                   let routineDef = CustomRoutinesLibrary.all.first(where: { $0.title == title }) {
+                    let mapped = routineDef.mapToEjercicios(from: ejerciciosCatalogo)
+                    previewSemana = remapPreviewDays(mapped, to: weekdaysSeleccionados)
+                }
+            }
         }
     }
 
@@ -249,7 +285,13 @@ struct PlantillasPROView: View {
             }
             .pickerStyle(.segmented)
 
-            Stepper("Días por semana: \(diasPorSemana)", value: $diasPorSemana, in: 1...7)
+            // Texto informativo sincronizado con el picker de días
+            HStack {
+                Text("Días por semana: \(selectedDaysCount)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
         }
         .padding()
         .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemBackground)))
@@ -261,7 +303,10 @@ struct PlantillasPROView: View {
         guard subs.isPro else { mostrandoPaywall = true; return }
         guard let routineDef = CustomRoutinesLibrary.all.first(where: { $0.title == template.titulo }) else { return }
         let mapped = routineDef.mapToEjercicios(from: ejerciciosCatalogo)
-        previewSemana = mapped
+
+        // Remapear los días de la rutina elegida a los días seleccionados por el usuario
+        let remapped = remapPreviewDays(mapped, to: weekdaysSeleccionados)
+        previewSemana = remapped
         selectedTemplateTitle = template.titulo
     }
 
@@ -283,19 +328,41 @@ struct PlantillasPROView: View {
         toastOK = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { dismiss() }
     }
+
+    /// Remapea los días de una rutina (clave 1..7) a los días seleccionados por el usuario.
+    /// Mantiene el orden L..D, rellena el resto como descanso (arrays vacíos) para que Preview lo muestre.
+    private func remapPreviewDays(_ original: [Int: [Ejercicio]],
+                                  to selected: Set<Int>) -> [Int: [Ejercicio]] {
+        // Diccionario base con todos los días vacíos
+        var out = Dictionary(uniqueKeysWithValues: weekdayOrderLtoD.map { ($0, [Ejercicio]()) })
+
+        // Orden de días definidos por la rutina
+        let routineDays = original.keys.sorted {
+            weekdayOrderLtoD.firstIndex(of: $0)! < weekdayOrderLtoD.firstIndex(of: $1)!
+        }
+
+        // Orden de los días seleccionados por el usuario
+        let selectedDays = selected.sorted {
+            weekdayOrderLtoD.firstIndex(of: $0)! < weekdayOrderLtoD.firstIndex(of: $1)!
+        }
+
+        // Asignación 1 a 1 en orden: Día1 rutina → Primer día seleccionado, etc.
+        for (srcDay, dstDay) in zip(routineDays, selectedDays) {
+            out[dstDay] = original[srcDay] ?? []
+        }
+        return out
+    }
 }
 
 // MARK: - Weekday Picker (1=Dom..7=Sáb; orden L..D)
 private struct WeekdayPicker: View {
     @Binding var selection: Set<Int>
-    private let order: [Int] = [2,3,4,5,6,7,1] // L..D
-    private let label: [Int:String] = [1:"D",2:"L",3:"M",4:"X",5:"J",6:"V",7:"S"]
 
     var body: some View {
         HStack(spacing: 8) {
-            ForEach(order, id: \.self) { d in
+            ForEach(weekdayOrderLtoD, id: \.self) { d in
                 let on = selection.contains(d)
-                Text(label[d] ?? "?")
+                Text(weekdayShortLabel[d] ?? "?")
                     .font(.subheadline.weight(.semibold))
                     .frame(width: 36, height: 36)
                     .background {
@@ -325,7 +392,6 @@ private struct WeekdayPicker: View {
 }
 
 // MARK: - Tarjeta
-
 private struct InfoChip: View {
     let text: String
     var body: some View {
@@ -393,17 +459,15 @@ private struct TemplateCard: View {
 // MARK: - Preview semanal
 private struct PreviewSemana: View {
     let preview: [Int: [Ejercicio]]
-    private let order = [2,3,4,5,6,7,1]
-    private let label: [Int: String] = [1:"Domingo",2:"Lunes",3:"Martes",4:"Miércoles",5:"Jueves",6:"Viernes",7:"Sábado"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Previsualización").font(.headline)
-            ForEach(order, id: \.self) { d in
+            ForEach(weekdayOrderLtoD, id: \.self) { d in
                 let items = preview[d] ?? []
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text(label[d] ?? "").font(.subheadline.weight(.semibold))
+                        Text(weekdayLongLabel[d] ?? "").font(.subheadline.weight(.semibold))
                         Spacer()
                         Text(items.isEmpty ? "Descanso" : "\(items.count) ejercicios")
                             .font(.caption).foregroundStyle(.secondary)
@@ -436,3 +500,4 @@ private struct PreviewSemana: View {
         .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 6)
     }
 }
+
