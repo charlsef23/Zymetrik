@@ -7,8 +7,8 @@ struct WeeklyTemplateLite: Identifiable, Equatable {
     let titulo: String
     let subtitulo: String
     let nivel: NivelEntrenamiento
-    let foco: FocoPlan
     let diasSemana: Int
+    let iconName: String
 
     static func == (lhs: WeeklyTemplateLite, rhs: WeeklyTemplateLite) -> Bool {
         lhs.id == rhs.id
@@ -26,7 +26,6 @@ struct PlantillasPROView: View {
 
     // Filtros
     @State private var nivel: NivelEntrenamiento = .intermedio
-    @State private var foco: FocoPlan = .hibrido
     @State private var diasPorSemana: Int = 4
 
     // Config de aplicación
@@ -43,6 +42,8 @@ struct PlantillasPROView: View {
 
     @State private var applying = false
 
+    @State private var selectedTemplateTitle: String? = nil
+
     // Métricas auxiliares de la planificación
     private var sesionesPorSemana: Int {
         previewSemana.values.filter { !$0.isEmpty }.count
@@ -53,21 +54,15 @@ struct PlantillasPROView: View {
 
     // Generador de plantillas según foco/nivel
     private var plantillas: [WeeklyTemplateLite] {
-        [
-            WeeklyTemplateLite(titulo: "Full Body \(diasPorSemana)x",
-                               subtitulo: "Rutina global por patrones",
-                               nivel: nivel, foco: foco, diasSemana: diasPorSemana),
-            WeeklyTemplateLite(titulo: "Push / Pull / Legs",
-                               subtitulo: "Fuerza por bloques",
-                               nivel: nivel, foco: .fuerza, diasSemana: max(diasPorSemana, 3)),
-            WeeklyTemplateLite(titulo: "Cardio Interválico",
-                               subtitulo: "Tempo · Intervalos · Fondo",
-                               nivel: nivel, foco: .cardio, diasSemana: diasPorSemana),
-            WeeklyTemplateLite(titulo: "Híbrido Atleta",
-                               subtitulo: "Fuerza + MetCon + Cardio",
-                               nivel: nivel, foco: .hibrido, diasSemana: diasPorSemana)
-        ]
-        .filter { foco == .hibrido ? true : ($0.foco == foco) }
+        CustomRoutinesLibrary.all.map { r in
+            WeeklyTemplateLite(
+                titulo: r.title,
+                subtitulo: r.subtitle,
+                nivel: r.nivel,
+                diasSemana: r.diasPorSemana,
+                iconName: "dumbbell"
+            )
+        }
     }
 
     var body: some View {
@@ -81,7 +76,7 @@ struct PlantillasPROView: View {
 
                     LazyVStack(spacing: 12) {
                         ForEach(plantillas, id: \.titulo) { t in
-                            TemplateCard(template: t, icon: foco.icon) {
+                            TemplateCard(template: t, icon: t.iconName) {
                                 onTap(template: t)
                             }
                         }
@@ -215,13 +210,13 @@ struct PlantillasPROView: View {
                 Circle()
                     .fill(LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 44, height: 44)
-                Image(systemName: foco.icon)
+                Image(systemName: "dumbbell")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(.white)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("Elige tu plan de entrenamiento").font(.headline)
-                Text("Personaliza nivel, foco y días").font(.caption).foregroundStyle(.secondary)
+                Text("Personaliza nivel y días").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             if subs.isPro {
@@ -254,11 +249,6 @@ struct PlantillasPROView: View {
             }
             .pickerStyle(.segmented)
 
-            Picker("Foco", selection: $foco) {
-                ForEach(FocoPlan.allCases) { f in Label(f.rawValue, systemImage: f.icon).tag(f) }
-            }
-            .pickerStyle(.segmented)
-
             Stepper("Días por semana: \(diasPorSemana)", value: $diasPorSemana, in: 1...7)
         }
         .padding()
@@ -269,13 +259,10 @@ struct PlantillasPROView: View {
     // MARK: - Actions
     private func onTap(template: WeeklyTemplateLite) {
         guard subs.isPro else { mostrandoPaywall = true; return }
-        previewSemana = TemplateEngineLite.buildPreview(
-            catalog: ejerciciosCatalogo,
-            nivel: template.nivel,
-            foco: template.foco,
-            dias: weekdaysSeleccionados,
-            diasPorSemana: template.diasSemana
-        )
+        guard let routineDef = CustomRoutinesLibrary.all.first(where: { $0.title == template.titulo }) else { return }
+        let mapped = routineDef.mapToEjercicios(from: ejerciciosCatalogo)
+        previewSemana = mapped
+        selectedTemplateTitle = template.titulo
     }
 
     @MainActor
@@ -289,7 +276,7 @@ struct PlantillasPROView: View {
             weeks: semanas,
             planStore: planStore
         )
-        routine.activePlanName = "\(foco.rawValue) \(diasPorSemana)x · \(nivel.rawValue)"
+        routine.activePlanName = selectedTemplateTitle ?? "Rutina"
         if let first = affected.min(), let last = affected.max() {
             routine.activeRange = first...last
         }
@@ -365,14 +352,7 @@ private struct TemplateCard: View {
     let icon: String
     var onTap: () -> Void
 
-    private var gradientColors: [Color] {
-        switch template.foco {
-        case .fuerza: return [.red, .orange]
-        case .cardio: return [.blue, .teal]
-        case .hibrido: return [.purple, .pink]
-        @unknown default: return [Color.accentColor, Color.accentColor.opacity(0.8)]
-        }
-    }
+    private var gradientColors: [Color] { [Color.accentColor, Color.accentColor.opacity(0.8)] }
 
     var body: some View {
         Button(action: onTap) {
@@ -391,7 +371,6 @@ private struct TemplateCard: View {
                     Text(template.subtitulo).font(.subheadline).foregroundStyle(.secondary)
                     HStack(spacing: 6) {
                         InfoChip(text: template.nivel.rawValue)
-                        InfoChip(text: template.foco.rawValue)
                         InfoChip(text: "\(template.diasSemana)x")
                     }
                 }

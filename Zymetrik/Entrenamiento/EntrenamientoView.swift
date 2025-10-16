@@ -49,7 +49,7 @@ struct EntrenamientoView: View {
                 )
 
                 // 🔒/🔓 Tarjetas bajo calendario
-                if !subs.isPro {
+                if RoutineTracker.shared.activePlanName == nil {
                     PlansMiniCard(onTap: { openTemplates(replaceCurrent: false) })
                         .padding(.horizontal)
                         .padding(.top, 4)
@@ -248,6 +248,11 @@ struct EntrenamientoView: View {
             // aun así, intentamos abrir plantillas para no bloquear al usuario
         }
 
+        // 1b) Limpiar localmente desde la fecha seleccionada
+        await MainActor.run {
+            removeFromSelectedDateForward()
+        }
+
         // 2) Limpiar estado local de rutina
         RoutineTracker.shared.activePlanName = nil
         RoutineTracker.shared.activeRange = nil
@@ -273,6 +278,11 @@ struct EntrenamientoView: View {
             try await SupabaseService.shared.cancelActiveRoutine()
         } catch {
             print("❌ RPC cancel:", error)
+        }
+
+        // Borrar localmente desde la fecha seleccionada
+        await MainActor.run {
+            removeFromSelectedDateForward()
         }
 
         // Limpiar estado local + refrescar
@@ -315,6 +325,33 @@ struct EntrenamientoView: View {
             }
         }
         return out
+    }
+    
+    // MARK: - Borrar ejercicios desde fecha seleccionada en adelante (local)
+    private func removeFromSelectedDateForward() {
+        let cal = Calendar.current
+        let startDay = cal.startOfDay(for: fechaSeleccionada)
+        // planStore.ejerciciosPorDia is [String: [Ejercicio]] with keys yyyy-MM-dd
+        // We'll parse and remove for keys >= selected day.
+        let df = DateFormatter()
+        df.calendar = Calendar(identifier: .gregorian)
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = .current
+        df.dateFormat = "yyyy-MM-dd"
+
+        // Collect target dates first to avoid mutating during iteration
+        var targetDates: [Date] = []
+        for (k, _) in planStore.ejerciciosPorDia {
+            if let d = df.date(from: k) {
+                let localStart = cal.startOfDay(for: d)
+                if localStart >= startDay { targetDates.append(localStart) }
+            }
+        }
+        // For each target date, remove all exercises
+        for day in targetDates {
+            let items = planStore.ejercicios(en: day)
+            for e in items { planStore.remove(ejercicioID: e.id, de: day) }
+        }
     }
 }
 
