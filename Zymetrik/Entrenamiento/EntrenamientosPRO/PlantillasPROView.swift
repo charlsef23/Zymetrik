@@ -215,7 +215,7 @@ struct PlantillasPROView: View {
                                startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
             )
-            .navigationTitle("Plantillas PRO")
+            .navigationTitle("Entrenamientos PRO")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if let name = routine.activePlanName {
