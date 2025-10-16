@@ -15,6 +15,7 @@ struct RoutineDaysSheet: View {
         case weekdays = "Por semana"
         case calendar = "Calendario"
     }
+
     @State private var mode: Mode = .weekdays
 
     // Weekdays
@@ -35,45 +36,52 @@ struct RoutineDaysSheet: View {
     }
 
     private let days: Array<(name: String, long: String, num: Int)> = [
-        ("L", "Lunes", 2), ("M", "Martes", 3), ("X", "Miércoles", 4), ("J", "Jueves", 5), ("V", "Viernes", 6), ("S", "Sábado", 7), ("D", "Domingo", 1)
+        ("L","Lunes",2),("M","Martes",3),("X","Miércoles",4),
+        ("J","Jueves",5),("V","Viernes",6),("S","Sábado",7),("D","Domingo",1)
     ]
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    // Encabezado y modo
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Planifica tu rutina")
-                            .font(.title2.weight(.semibold))
-                        Text("Elige por días de semana o por fechas exactas.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
+                VStack(spacing: 20) {
 
+                    // Encabezado
+                    Header()
+
+                    // Selector de modo
                     Picker("", selection: $mode) {
                         Text("Por semana").tag(Mode.weekdays)
                         Text("Calendario").tag(Mode.calendar)
                     }
                     .pickerStyle(.segmented)
-                    .padding(.horizontal)
+                    .padding(.horizontal, 16)
 
-                    if mode == .weekdays {
-                        Group { weekdaysSection }
-                    } else {
-                        Group { calendarSection }
+                    // Contenido según modo
+                    Group {
+                        switch mode {
+                        case .weekdays:
+                            WeekdaysContent(
+                                days: days,
+                                selectedWeekdays: $selectedWeekdays,
+                                weeks: $weeks,
+                                onToggle: toggleWeekday
+                            )
+                        case .calendar:
+                            CalendarContent(
+                                selectedDates: $selectedDates,
+                                calendar: mondayFirstCalendar,
+                                summary: calendarSummary
+                            )
+                        }
                     }
+                    .padding(.horizontal, 16)
 
-                    Spacer(minLength: 8)
-
-                    confirmButton
-                        .padding(.bottom, 8)
+                    Spacer(minLength: 80) // espacio para no tapar el botón
                 }
                 .padding(.top, 12)
             }
-            .background(.thinMaterial)
+            .scrollIndicators(.hidden)
+            .background(.regularMaterial)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") { dismiss() }
@@ -83,116 +91,26 @@ struct RoutineDaysSheet: View {
                         .font(.headline)
                 }
             }
-        }
-        .onAppear { haptics.prepare() }
-    }
-
-    // MARK: - Secciones
-
-    private var weekdaysSection: some View {
-        VStack(spacing: 14) {
-            // Tarjeta de días
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("Días de la semana", systemImage: "calendar.badge.clock")
-                        .font(.headline)
-                    Spacer()
-                    Button {
-                        selectedWeekdays = []
-                    } label: {
-                        Label("Limpiar", systemImage: "xmark.circle")
-                            .labelStyle(.iconOnly)
-                    }
-                    .buttonStyle(.borderless)
-                    .tint(.secondary)
-                    .accessibilityLabel("Limpiar días seleccionados")
+            .onAppear { haptics.prepare() }
+            .safeAreaInset(edge: .bottom) {
+                // Barra inferior pegajosa con el botón de acción
+                VStack(spacing: 0) {
+                    confirmButton
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 18)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(isApplyEnabled ? Color.accentColor : Color.gray.opacity(0.35))
+                                .shadow(color: .accentColor.opacity(0.21), radius: 12, y: 2)
+                        )
                 }
-
-                // Chips de días
-                HStack(spacing: 10) {
-                    ForEach(days, id: \.num) { item in
-                        let isOn = selectedWeekdays.contains(item.num)
-                        WeekdayChip(item: item, isOn: isOn) {
-                            toggleWeekday(item.num)
-                        }
-                    }
-                }
+                .background(.regularMaterial)
+                .shadow(color: .accentColor.opacity(0.18), radius: 16, y: -2)
             }
-            .padding()
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .padding(.horizontal)
-
-            // Tarjeta de semanas
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Semanas a programar", systemImage: "repeat")
-                    .font(.headline)
-                HStack(alignment: .center, spacing: 12) {
-                    let binding = Binding<Double>(
-                        get: { Double(weeks) },
-                        set: { weeks = Int($0.rounded()) }
-                    )
-                    Slider(value: binding, in: 1...24, step: 1)
-                        .tint(.accentColor)
-
-                    Stepper(value: $weeks, in: 1...24) {
-                        Text("\(weeks)")
-                            .font(.headline.monospacedDigit())
-                            .frame(minWidth: 36)
-                    }
-                    .labelsHidden()
-                }
-                Text("Se planificarán \(weeks) semana\(weeks == 1 ? "" : "s").")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .padding()
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .padding(.horizontal)
         }
     }
 
-    private var calendarSection: some View {
-        VStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("Selecciona fechas", systemImage: "calendar")
-                        .font(.headline)
-                    Spacer()
-                    Button {
-                        selectedDates.removeAll()
-                    } label: {
-                        Label("Limpiar", systemImage: "xmark.circle")
-                            .labelStyle(.iconOnly)
-                    }
-                    .buttonStyle(.borderless)
-                    .tint(.secondary)
-                    .accessibilityLabel("Limpiar fechas seleccionadas")
-                }
-
-                MultiDatePicker(
-                    "Fechas",
-                    selection: $selectedDates
-                )
-                .environment(\.calendar, mondayFirstCalendar)
-                .padding(.top, 4)
-
-                if !selectedDates.isEmpty {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Resumen")
-                            .font(.subheadline.weight(.semibold))
-                        Text(calendarSummary)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-            }
-            .padding()
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .padding(.horizontal)
-        }
-    }
+    // MARK: - Botón confirmar
 
     private var confirmButton: some View {
         Button {
@@ -203,7 +121,6 @@ struct RoutineDaysSheet: View {
                 guard !dates.isEmpty else { return }
                 onConfirmChoice(.exactDates(dates: dates))
             case .calendar:
-                // Convierte DateComponents -> Date (normalizado a inicio de día)
                 let cal = mondayFirstCalendar
                 let datesArray: [Date] = selectedDates.compactMap { comps in
                     guard let d = cal.date(from: comps) else { return nil }
@@ -215,22 +132,17 @@ struct RoutineDaysSheet: View {
             }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
+                Image(systemName: "checkmark.circle.fill").imageScale(.medium)
                 Text("Aplicar")
-                    .bold()
+                    .font(.title3.weight(.bold))
             }
             .frame(maxWidth: .infinity)
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill((isApplyEnabled ? Color.accentColor : Color.gray.opacity(0.3)))
-            )
             .foregroundStyle(.white)
-            .padding(.horizontal)
         }
         .disabled(!isApplyEnabled)
-        .animation(.spring(duration: 0.25), value: isApplyEnabled)
+        .animation(.spring(duration: 0.2), value: isApplyEnabled)
         .sensoryFeedback(.selection, trigger: isApplyEnabled)
+        .accessibilityHint("Confirma los días o las fechas seleccionadas")
     }
 
     private var isApplyEnabled: Bool {
@@ -238,23 +150,7 @@ struct RoutineDaysSheet: View {
         (mode == .calendar && !selectedDates.isEmpty)
     }
 
-    private var calendarSummary: String {
-        let cal = mondayFirstCalendar
-        let formatter = DateFormatter()
-        formatter.calendar = cal
-        formatter.locale = Locale.current
-        formatter.dateStyle = .medium
-        let dates: [Date] = selectedDates.compactMap { cal.date(from: $0) }.map { cal.startOfDay(for: $0) }
-        let unique = Array(Set(dates)).sorted()
-        if unique.isEmpty { return "Sin fechas" }
-        if unique.count <= 3 {
-            return unique.map { formatter.string(from: $0) }.joined(separator: ", ")
-        }
-        let first = unique.first!, last = unique.last!
-        return "\(unique.count) fechas entre \(formatter.string(from: first)) y \(formatter.string(from: last))"
-    }
-
-    // MARK: - Helpers
+    // MARK: - Helpers (sin cambios funcionales)
 
     private func toggleWeekday(_ num: Int) {
         if selectedWeekdays.contains(num) {
@@ -266,7 +162,6 @@ struct RoutineDaysSheet: View {
     }
 
     private func dayLongName(for weekday: Int) -> String {
-        // 1=Domingo ... 7=Sábado
         let names = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"]
         return names[(weekday - 1 + 7) % 7]
     }
@@ -278,7 +173,7 @@ struct RoutineDaysSheet: View {
 
         var results: [Date] = []
 
-        // Include today only if today's weekday is selected
+        // Incluye hoy solo si coincide el día
         if weekdays.contains(todayWeekday) {
             results.append(today)
         }
@@ -302,37 +197,204 @@ struct RoutineDaysSheet: View {
         return Set(results)
     }
 
-    private struct WeekdayChip: View {
-        let item: (name: String, long: String, num: Int)
-        let isOn: Bool
-        let action: () -> Void
-
-        var body: some View {
-            Button(action: action) {
-                VStack(spacing: 4) {
-                    Text(item.name)
-                        .font(.headline)
-                    Circle()
-                        .fill(isOn ? Color.accentColor : Color.clear)
-                        .frame(width: 6, height: 6)
-                        .overlay(
-                            Circle().stroke(Color.gray.opacity(0.35), lineWidth: isOn ? 0 : 1)
-                        )
-                        .accessibilityHidden(true)
-                }
-                .frame(width: 48, height: 48)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(isOn ? Color.accentColor.opacity(0.15) : Color(.systemGray6))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(isOn ? Color.accentColor : Color.gray.opacity(0.25), lineWidth: isOn ? 2 : 1)
-                )
-                .foregroundStyle(isOn ? Color.accentColor : Color.primary)
-            }
-            .accessibilityLabel(item.long)
-            .accessibilityAddTraits(isOn ? .isSelected : [])
+    private var calendarSummary: String {
+        let cal = mondayFirstCalendar
+        let formatter = DateFormatter()
+        formatter.calendar = cal
+        formatter.locale = Locale.current
+        formatter.dateStyle = .medium
+        let dates: [Date] = selectedDates.compactMap { cal.date(from: $0) }.map { cal.startOfDay(for: $0) }
+        let unique = Array(Set(dates)).sorted()
+        if unique.isEmpty { return "Sin fechas" }
+        if unique.count <= 3 {
+            return unique.map { formatter.string(from: $0) }.joined(separator: ", ")
         }
+        let first = unique.first!, last = unique.last!
+        return "\(unique.count) fechas entre \(formatter.string(from: first)) y \(formatter.string(from: last))"
+    }
+}
+
+// MARK: - Subvistas internas (estructura & estilo únicamente)
+
+// Cabecera compacta y consistente
+private struct Header: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Planifica tu rutina")
+                .font(.largeTitle.weight(.heavy))
+                .foregroundStyle(LinearGradient(colors: [.accentColor, .blue], startPoint: .leading, endPoint: .trailing))
+            Text("Elige por días de semana o por fechas exactas.")
+                .font(.title3)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 16)
+    }
+}
+
+// Sección: Por semana
+private struct WeekdaysContent: View {
+    let days: Array<(name: String, long: String, num: Int)>
+    @Binding var selectedWeekdays: Set<Int>
+    @Binding var weeks: Int
+    let onToggle: (Int) -> Void
+
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 32), spacing: 8, alignment: .center), count: 7)
+
+    var body: some View {
+        VStack(spacing: 16) {
+
+            SectionCard(title: "Días de la semana", icon: "calendar.badge.clock", actionLabel: "Limpiar", onAction: {
+                selectedWeekdays = []
+            }) {
+                LazyVGrid(columns: columns, alignment: .center, spacing: 10) {
+                    ForEach(days, id: \.num) { item in
+                        let isOn = selectedWeekdays.contains(item.num)
+                        WeekdayChip(item: item, isOn: isOn) { onToggle(item.num) }
+                            .animation(.bouncy, value: isOn)
+                    }
+                }
+                .padding(.top, 2)
+            }
+
+            SectionCard(title: "Semanas a programar", icon: "repeat") {
+                HStack(alignment: .center, spacing: 12) {
+                    let binding = Binding<Double>(
+                        get: { Double(weeks) },
+                        set: { weeks = Int($0.rounded()) }
+                    )
+                    Slider(value: binding, in: 1...24, step: 1)
+                        .tint(.accentColor)
+
+                    Stepper(value: $weeks, in: 1...24) {
+                        Text("\(weeks)")
+                            .font(.title3.monospacedDigit().weight(.semibold))
+                            .frame(minWidth: 44)
+                    }
+                    .labelsHidden()
+                }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle").imageScale(.small)
+                        .foregroundStyle(.secondary)
+                    Text("Se planificarán \(weeks) semana\(weeks == 1 ? "" : "s").")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
+            }
+        }
+    }
+}
+
+// Sección: Calendario
+private struct CalendarContent: View {
+    @Binding var selectedDates: Set<DateComponents>
+    let calendar: Calendar
+    let summary: String
+
+    var body: some View {
+        SectionCard(title: "Selecciona fechas", icon: "calendar", actionLabel: "Limpiar", onAction: {
+            selectedDates.removeAll()
+        }) {
+            MultiDatePicker("Fechas", selection: $selectedDates)
+                .environment(\.calendar, calendar)
+                .padding(.top, 4)
+
+            if !selectedDates.isEmpty {
+                Divider().padding(.vertical, 6)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Resumen").font(.subheadline.weight(.semibold))
+                    Text(summary)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+        }
+    }
+}
+
+// Tarjeta de sección reutilizable
+private struct SectionCard<Content: View>: View {
+    let title: String
+    let icon: String
+    let actionLabel: String?
+    var onAction: (() -> Void)?
+    @ViewBuilder var content: Content
+
+    init(title: String, icon: String, actionLabel: String? = nil, onAction: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.icon = icon
+        self.actionLabel = actionLabel
+        self.onAction = onAction
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(title, systemImage: icon)
+                    .font(.headline)
+                    .symbolEffect(.pulse)
+                    .foregroundStyle(.tint)
+                Spacer()
+                if let actionLabel, let onAction {
+                    Button(actionLabel) { onAction() }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(actionLabel)
+                        .tint(.accentColor)
+                        .font(.body.bold())
+                }
+            }
+            content
+        }
+        .padding(16)
+        .background(.regularMaterial)
+        .shadow(color: .accentColor.opacity(0.13), radius: 12, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.gray.opacity(0.15), lineWidth: 1)
+        )
+    }
+}
+
+// Chip de día compacto y consistente
+private struct WeekdayChip: View {
+    let item: (name: String, long: String, num: Int)
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Text(item.name)
+                    .font(.title2.weight(.bold))
+                Circle()
+                    .fill(isOn ? LinearGradient(colors: [Color.accentColor.opacity(0.9), Color.accentColor.opacity(0.6)], startPoint: .top, endPoint: .bottom) : LinearGradient(colors: [.clear, .clear], startPoint: .top, endPoint: .bottom))
+                    .frame(width: 6, height: 6)
+                    .overlay(
+                        Circle().stroke(Color.gray.opacity(isOn ? 0.0 : 0.35), lineWidth: isOn ? 0 : 1)
+                    )
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 56) // ocupa la celda del grid
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(
+                        isOn
+                        ? LinearGradient(colors: [Color.accentColor.opacity(0.3), Color.accentColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        : LinearGradient(colors: [Color(.systemGray6), Color(.systemGray6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isOn ? Color.accentColor : Color.gray.opacity(0.25), lineWidth: isOn ? 2 : 1)
+            )
+            .foregroundStyle(isOn ? Color.accentColor : Color.primary)
+            .shadow(color: isOn ? Color.accentColor.opacity(0.35) : .clear, radius: isOn ? 6 : 0)
+        }
+        .accessibilityLabel(item.long)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
