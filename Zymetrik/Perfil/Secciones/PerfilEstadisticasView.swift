@@ -7,9 +7,58 @@ struct PerfilEstadisticasView: View {
     @State private var ejerciciosConSesiones: [(ejercicio: EjercicioPostContenido, sesiones: [SesionEjercicio])] = []
     @State private var cargando = true
     @State private var ejerciciosAbiertos: Set<UUID> = []
+    @State private var categoriaSeleccionada: String = "Todas"
+    @State private var categoriasDisponibles: [String] = ["Todas"]
 
     var body: some View {
         ScrollView {
+            // Filtro por categoría
+            if !cargando {
+                VStack(alignment: .leading, spacing: 10) {
+                    // Desplegable de categorías
+                    Menu {
+                        // Opción Todas
+                        Button(action: { categoriaSeleccionada = "Todas" }) {
+                            Label("Todas", systemImage: categoriaSeleccionada == "Todas" ? "checkmark" : "")
+                        }
+                        Divider()
+                        ForEach(categoriasDisponibles.filter { $0 != "Todas" }.sorted(), id: \.self) { cat in
+                            Button(action: { categoriaSeleccionada = cat }) {
+                                Label(cat, systemImage: categoriaSeleccionada == cat ? "checkmark" : "")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(categoriaSeleccionada)
+                                .font(.body)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.down")
+                                .foregroundStyle(.primary.opacity(0.8))
+                                .imageScale(.small)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.accentColor.opacity(0.25), Color.pink.opacity(0.25)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .shadow(color: Color.accentColor.opacity(0.12), radius: 8, x: 0, y: 4)
+                    }
+                }
+                .padding(12)
+                .padding(.horizontal)
+                .padding(.top, 12)
+            }
             LazyVStack(spacing: 16, pinnedViews: []) {
                 if cargando {
                     ProgressView("Cargando…")
@@ -19,7 +68,7 @@ struct PerfilEstadisticasView: View {
                         .foregroundColor(.secondary)
                         .padding(.vertical, 24)
                 } else {
-                    ForEach(ejerciciosConSesiones, id: \.ejercicio.id) { par in
+                    ForEach(filtradosPorCategoria(), id: \.ejercicio.id) { par in
                         EstadisticaEjercicioCard(
                             ejercicio: par.ejercicio,
                             perfilId: perfilId,
@@ -33,6 +82,15 @@ struct PerfilEstadisticasView: View {
         }
         .background(Color(.systemBackground).ignoresSafeArea())
         .task { await cargarTodasLasEstadisticas() }
+    }
+
+    private func filtradosPorCategoria() -> [(ejercicio: EjercicioPostContenido, sesiones: [SesionEjercicio])] {
+        if categoriaSeleccionada == "Todas" { return ejerciciosConSesiones }
+        return ejerciciosConSesiones.filter { par in
+            // Asumimos que EjercicioPostContenido tiene una propiedad `categoria` de tipo String.
+            // Si no existiera, reemplace el acceso a la propiedad con la correcta.
+            return (par.ejercicio.categoria == categoriaSeleccionada)
+        }
     }
 
     func cargarTodasLasEstadisticas() async {
@@ -57,6 +115,8 @@ struct PerfilEstadisticasView: View {
             if uniqueIds.isEmpty {
                 await MainActor.run {
                     ejerciciosConSesiones = []
+                    categoriasDisponibles = ["Todas"]
+                    categoriaSeleccionada = "Todas"
                     cargando = false
                 }
                 return
@@ -84,6 +144,13 @@ struct PerfilEstadisticasView: View {
 
             await MainActor.run {
                 ejerciciosConSesiones = acumulado.map { (ej, ses) in (ejercicio: ej, sesiones: ses) }
+                // Construir categorías disponibles a partir de los ejercicios cargados
+                let cats = Set(ejerciciosConSesiones.compactMap { $0.ejercicio.categoria })
+                let ordenadas = ["Todas"] + cats.sorted()
+                categoriasDisponibles = ordenadas
+                if !ordenadas.contains(categoriaSeleccionada) {
+                    categoriaSeleccionada = "Todas"
+                }
                 cargando = false
             }
         } catch {
