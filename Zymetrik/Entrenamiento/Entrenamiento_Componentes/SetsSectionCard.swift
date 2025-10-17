@@ -12,7 +12,7 @@ struct SetsSectionCard: View {
 
     private var totalSeries: Int { sets.count }
     private var totalReps: Int { sets.reduce(0) { $0 + $1.repeticiones } }
-    private var totalPeso: Double { sets.reduce(0) { $0 + $1.peso } }
+    private var totalKg: Double { sets.reduce(0) { $0 + (Double($1.repeticiones) * $1.peso) } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -46,7 +46,8 @@ struct SetsSectionCard: View {
 
             // Totales
             HStack {
-                Text("\(totalSeries) series · \(totalReps) reps · \(Int(totalPeso)) kg")
+                let kgText = String(format: "%.1f", totalKg)
+                Text("\(totalSeries) series · \(totalReps) reps · \(kgText) kg")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -130,19 +131,19 @@ private struct UltraCleanSetRow: View {
                     value: set.peso,
                     range: 0...2000,
                     step: kgStep,
-                    decimals: 2,
+                    decimals: 1,
                     minusAction: {
-                        let new = max(0, (set.peso - kgStep).roundedTo(2))
+                        let new = max(0, (set.peso - kgStep).roundedTo(1))
                         set.peso = new
                         onChange(set.repeticiones, set.peso)
                     },
                     plusAction: {
-                        let new = min(2000, (set.peso + kgStep).roundedTo(2))
+                        let new = min(2000, (set.peso + kgStep).roundedTo(1))
                         set.peso = new
                         onChange(set.repeticiones, set.peso)
                     },
                     commitAction: { newValue in
-                        let clamped = min(2000, max(0, newValue)).roundedTo(2)
+                        let clamped = min(2000, max(0, newValue)).roundedTo(1)
                         set.peso = clamped
                         onChange(set.repeticiones, set.peso)
                     }

@@ -15,7 +15,8 @@ struct EjercicioPostContenido: Identifiable, Codable {
 
     var totalSeries: Int { sets.count }
     var totalRepeticiones: Int { sets.reduce(0) { $0 + $1.repeticiones } }
-    var totalPeso: Double { sets.reduce(0) { $0 + $1.peso } }
+    var totalPeso: Double { sets.reduce(0) { $0 + (Double($1.repeticiones) * $1.peso) } }
+
 }
 
 struct SetPost: Codable {

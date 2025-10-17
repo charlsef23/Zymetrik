@@ -40,13 +40,10 @@ struct EjercicioEstadisticasView: View {
 
     // ---- 1RM estimado ----
     private var oneRMActual: Double {
-        estimar1RMActual(
-            kgPorSerie: kgPorSerie,
-            repsPorSerie: repsPorSerie,
-            totalPeso: ejercicio.totalPeso,
-            totalSeries: ejercicio.totalSeries
-        )
+        // 1RM real conectado a los sets del ejercicio
+        calcular1RMDesdeSets(ejercicio.sets)
     }
+    
     private var oneRMPrevio: Double? { estimar1RMPrevio(comparativaAnterior) }
     private var oneRMDelta: Double? {
         guard let prev = oneRMPrevio, prev != 0 else { return nil }
@@ -187,16 +184,36 @@ struct EjercicioEstadisticasView: View {
 
 // MARK: - 1RM Helpers
 
-private func oneRMEpley(peso: Double, reps: Int) -> Double {
-    guard reps > 0 else { return peso }
-    return peso * (1.0 + Double(reps) / 30.0)
+private func calcular1RMDesdeSets(_ sets: [SetPost]) -> Double {
+    // Filtra sets válidos
+    let validos = sets.filter { $0.repeticiones > 0 && $0.peso > 0 }
+    guard !validos.isEmpty else { return 0 }
+
+    // Si existe un set de 1 rep, el 1RM es el mayor peso de esos sets
+    if let maxSingle = validos.filter({ $0.repeticiones == 1 }).map({ $0.peso }).max() {
+        return maxSingle
+    }
+
+    // Si no hay singles, usa el máximo 1RM estimado por Brzycki entre todos los sets
+    let estimados = validos.map { s in oneRMBrzycki(peso: s.peso, reps: s.repeticiones) }
+    return estimados.max() ?? 0
+}
+
+private func oneRMBrzycki(peso: Double, reps: Int) -> Double {
+    // Si es 1 repetición, el 1RM es el propio peso levantado
+    if reps <= 1 { return peso }
+    // Brzycki: 1RM = peso * 36 / (37 - reps) (fiable hasta ~10 reps)
+    let r = min(max(reps, 1), 36)
+    let denominator = 37.0 - Double(r)
+    guard denominator > 0 else { return peso }
+    return peso * 36.0 / denominator
 }
 
 private func estimar1RMActual(kgPorSerie: Double, repsPorSerie: Double, totalPeso: Double, totalSeries: Int) -> Double {
     let mediaGlobalSet = totalSeries > 0 ? totalPeso / Double(totalSeries) : 0
     let pesoRef = max(kgPorSerie, mediaGlobalSet)
     let repsRef = max(1, Int(round(repsPorSerie)))
-    return oneRMEpley(peso: pesoRef, reps: repsRef)
+    return oneRMBrzycki(peso: pesoRef, reps: repsRef)
 }
 
 private func estimar1RMPrevio(_ comp: TotalesComparativa?) -> Double? {
@@ -205,7 +222,7 @@ private func estimar1RMPrevio(_ comp: TotalesComparativa?) -> Double? {
     let mediaGlobalSet = c.series > 0 ? c.kg / Double(c.series) : 0
     let pesoRef = max(kgSet, mediaGlobalSet)
     let repsRef = max(1, Int(round(repsSet)))
-    return oneRMEpley(peso: pesoRef, reps: repsRef)
+    return oneRMBrzycki(peso: pesoRef, reps: repsRef)
 }
 
 // MARK: - Fondo glass
@@ -405,3 +422,4 @@ private struct DeltaBadge: View {
             )
     }
 }
+

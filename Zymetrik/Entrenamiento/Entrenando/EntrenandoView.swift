@@ -317,7 +317,7 @@ struct EntrenandoView: View {
             for s in sets where (s.repeticiones > 0 || s.peso > 0) {
                 series += 1
                 repes += s.repeticiones
-                kilos += s.peso
+                kilos += Double(s.repeticiones) * s.peso
             }
         }
         return (series, repes, kilos)
