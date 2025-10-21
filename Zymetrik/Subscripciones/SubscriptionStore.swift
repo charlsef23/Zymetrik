@@ -19,6 +19,7 @@ final class SubscriptionStore: ObservableObject {
     // Cache para sincronía backend
     private var lastExpiresAt: Date?
     private var lastOriginalTxId: String?
+    private var lastWillRenew: Bool?          // ✅ nuevo
 
     // Escucha de updates
     private var updatesTask: Task<Void, Never>?
@@ -138,6 +139,51 @@ final class SubscriptionStore: ObservableObject {
         }
     }
 
+    /// Devuelve true/false si Apple indica renovación automática, o nil si no aplica/no se sabe.
+    private func fetchWillRenew() async -> Bool? {
+        do {
+            // 1) Asegurar productos
+            let prods: [Product] =
+                products.isEmpty
+                ? try await Product.products(for: [monthlyID, yearlyID])
+                : products
+
+            var chosenStatus: Product.SubscriptionInfo.Status?
+            var fallbackStatus: Product.SubscriptionInfo.Status?
+
+            // 2) Buscar status activo (o guardar el primero como fallback)
+            for p in prods {
+                guard let sub = p.subscription else { continue }
+                let statuses = try await sub.status  // [Status]
+
+                for st in statuses {
+                    if fallbackStatus == nil { fallbackStatus = st }
+
+                    // ✅ Compat: algunos SDK no tienen .inBillingRetry
+                    switch st.state {
+                    case .subscribed, .inGracePeriod:
+                        chosenStatus = st
+                    default:
+                        break
+                    }
+                    if chosenStatus != nil { break }
+                }
+                if chosenStatus != nil { break }
+            }
+
+            // 3) Elegir el final
+            let finalStatus = chosenStatus ?? fallbackStatus
+            guard let status = finalStatus else { return nil }
+
+            // 4) Verificar RenewalInfo y devolver willAutoRenew
+            guard let renewalInfo = try? checkVerified(status.renewalInfo) else { return nil }
+            return renewalInfo.willAutoRenew
+        } catch {
+            print("ℹ️ fetchWillRenew error:", error)
+            return nil
+        }
+    }
+
     /// Lee entitlements actuales y actualiza estado local
     private func updateFromStoreKit(trigger: String) async throws {
         var active = false
@@ -155,11 +201,17 @@ final class SubscriptionStore: ObservableObject {
             originalId = String(tx.originalID) // UInt64 -> String
         }
 
+        // 🔹 Consulta si se renovará automáticamente
+        let willRenewFlag = await fetchWillRenew()
+
         self.isPro = active
         self.currentProductId = product
         self.lastExpiresAt = expires
         self.lastOriginalTxId = originalId
-        self.statusText = active ? "PRO activo" : "No PRO"
+        self.lastWillRenew = willRenewFlag
+        self.statusText = active
+            ? (willRenewFlag == false ? "PRO activo (no se renovará)" : "PRO activo")
+            : "No PRO"
     }
 
     /// Mantén un stream de updates para no perder compras
@@ -183,7 +235,7 @@ final class SubscriptionStore: ObservableObject {
             productId: currentProductId,
             environment: (Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt") ? "Sandbox" : "Production",
             status: isPro ? "active" : "expired",
-            willRenew: nil,                    // puedes calcularlo con RenewalInfo si lo necesitas
+            willRenew: lastWillRenew,                 // ✅ ahora lo enviamos
             originalTransactionId: lastOriginalTxId,
             expiresAt: lastExpiresAt,
             lastEvent: trigger

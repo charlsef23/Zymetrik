@@ -15,6 +15,19 @@
 		19B1A55E2DCCC6EC00373CAE /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 19B1A55D2DCCC6EC00373CAE /* Supabase */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		07EF351A2EA55C2E0033F5FC /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		19B5453E2DADB6520004E203 /* Zymetrik.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zymetrik.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -84,6 +97,7 @@
 				19B5453A2DADB6520004E203 /* Sources */,
 				19B5453B2DADB6520004E203 /* Frameworks */,
 				19B5453C2DADB6520004E203 /* Resources */,
+				07EF351A2EA55C2E0033F5FC /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
@@ -112,7 +126,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1620;
+				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					19B5453D2DADB6520004E203 = {
