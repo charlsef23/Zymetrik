@@ -6,7 +6,7 @@ struct MainShellView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Header simple (puedes conservar el tuyo)
+                // Header simple
                 HStack {
                     Text("Inicio").font(.largeTitle.bold())
                     Spacer()
@@ -21,7 +21,8 @@ struct MainShellView: View {
                 ScrollView {
                     LazyVStack(spacing: 24) {
                         ForEach(content.posts) { post in
-                            PostView(post: post)
+                            // 👇 Añadido feedKey
+                            PostView(post: post, feedKey: .paraTi)
                         }
                     }
                     .padding(.top)

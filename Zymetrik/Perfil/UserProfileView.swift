@@ -25,12 +25,21 @@ struct UserProfileView: View {
     @State private var dmOther: PerfilLite? = nil
     @State private var showDMChat = false
 
+    // ⬇️ Estado de bloqueo
+    @State private var iBlockHim = false      // yo bloqueo a este usuario
+    @State private var heBlocksMe = false     // él me bloquea a mí
+
     private var perfilUUID: UUID? { UUID(uuidString: profileUserID) }
+
+    // ✅ Comodines
+    private var isBlockedEither: Bool { iBlockHim || heBlocksMe }
+    private var canSeeProfile: Bool { !isBlockedEither }   // UX: ocultamos contenido si hay bloqueo
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
-                // ⬅️ Header con username solo a la izquierda (como PerfilView)
+
+                // Header
                 headerBar
                     .padding(.horizontal)
 
@@ -44,36 +53,51 @@ struct UserProfileView: View {
                         .font(.title2)
                         .fontWeight(.bold)
 
-                    Text(presentacion.isEmpty ? "" : presentacion)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
+                    if !presentacion.isEmpty {
+                        Text(presentacion)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .padding(.top)
 
-                // Contadores
-                HStack {
-                    Spacer()
-                    counter(title: "Entrenos", value: numeroDePosts)
-                    Spacer()
-                    NavigationLink {
-                        ListaSeguidoresView(userID: profileUserID)
-                    } label: {
-                        counter(title: "Seguidores", value: seguidoresCount)
-                            .foregroundColor(.followNumber)
-                    }
-                    Spacer()
-                    NavigationLink {
-                        ListaSeguidosView(userID: profileUserID)
-                    } label: {
-                        counter(title: "Siguiendo", value: seguidosCount)
-                            .foregroundColor(.followNumber)
-                    }
-                    Spacer()
+                // Banner de estado de bloqueo
+                if heBlocksMe {
+                    blockedBanner(
+                        text: "Este usuario te ha bloqueado. No puedes ver su contenido ni interactuar."
+                    )
+                } else if iBlockHim {
+                    blockedBanner(
+                        text: "Has bloqueado a este usuario. No verás su contenido ni podréis interactuar."
+                    )
                 }
 
-                // Seguir / Siguiendo (oculto en propio perfil)
-                if !isMe && !profileUserID.isEmpty {
+                // Contadores (solo visibles si NO hay bloqueo)
+                if canSeeProfile {
+                    HStack {
+                        Spacer()
+                        counter(title: "Entrenos", value: numeroDePosts)
+                        Spacer()
+                        NavigationLink {
+                            ListaSeguidoresView(userID: profileUserID)
+                        } label: {
+                            counter(title: "Seguidores", value: seguidoresCount)
+                                .foregroundColor(.followNumber)
+                        }
+                        Spacer()
+                        NavigationLink {
+                            ListaSeguidosView(userID: profileUserID)
+                        } label: {
+                            counter(title: "Siguiendo", value: seguidosCount)
+                                .foregroundColor(.followNumber)
+                        }
+                        Spacer()
+                    }
+                }
+
+                // Acciones (Seguir / Mensaje) — ocultas si hay bloqueo o es mi perfil
+                if !isMe && !profileUserID.isEmpty && !isBlockedEither {
                     HStack(spacing: 12) {
                         Button {
                             Task { await toggleFollow() }
@@ -104,34 +128,74 @@ struct UserProfileView: View {
                     .padding(.horizontal)
                 }
 
-                // Tabs
-                HStack {
-                    ForEach(PerfilTab.allCases, id: \.self) { tab in
-                        Button {
-                            selectedTab = tab
+                // Botón Bloquear / Desbloquear:
+                // - Solo se muestra si NO es mi perfil
+                // - Si yo lo bloqueé → aparece botón "Desbloquear"
+                // - Si me bloqueó → NO muestro botón (solo puede desbloquear quien bloqueó)
+                if !isMe && !profileUserID.isEmpty {
+                    if iBlockHim {
+                        Button(role: .destructive) {
+                            Task { await toggleBlock() }   // esto hará "unblock"
                         } label: {
-                            Text(tab.rawValue)
-                                .fontWeight(selectedTab == tab ? .bold : .regular)
-                                .foregroundColor(selectedTab == tab ? .primary : .gray)
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 16)
-                                .background(
-                                    Capsule().fill(selectedTab == tab ? Color(.systemGray5) : Color.clear)
-                                )
+                            Label("Desbloquear", systemImage: "hand.raised.slash.fill")
+                                .font(.body.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color(.systemGray6))
+                                .foregroundColor(.primary)
+                                .cornerRadius(10)
                         }
-                        .buttonStyle(.plain)
+                        .padding(.horizontal)
+                    } else if !heBlocksMe {
+                        Button {
+                            Task { await toggleBlock() }   // esto hará "block"
+                        } label: {
+                            Label("Bloquear", systemImage: "hand.raised.fill")
+                                .font(.body.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color(.systemGray6))
+                                .foregroundColor(.primary)
+                                .cornerRadius(10)
+                        }
+                        .padding(.horizontal)
                     }
                 }
-                .padding(.vertical, 10)
 
-                // Contenido (borderless / full-bleed)
-                tabContent
-                    .padding(.vertical, 4)
+                // Tabs + Contenido (ocultos si hay bloqueo)
+                if canSeeProfile {
+                    HStack {
+                        ForEach(PerfilTab.allCases, id: \.self) { tab in
+                            Button { selectedTab = tab } label: {
+                                Text(tab.rawValue)
+                                    .fontWeight(selectedTab == tab ? .bold : .regular)
+                                    .foregroundColor(selectedTab == tab ? .primary : .gray)
+                                    .padding(.vertical, 6)
+                                    .padding(.horizontal, 16)
+                                    .background(
+                                        Capsule().fill(selectedTab == tab ? Color(.systemGray5) : Color.clear)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 10)
+
+                    tabContent
+                        .padding(.vertical, 4)
+                } else {
+                    // Placeholder al estar bloqueado
+                    ContentUnavailableView(
+                        "Contenido no disponible",
+                        systemImage: "eye.slash",
+                        description: Text("No puedes ver el contenido de este perfil.")
+                    )
+                    .padding(.top, 8)
+                }
             }
             .padding(.bottom, 16)
         }
         .background(Color(.systemBackground).ignoresSafeArea())
-        // ⬇️ Quitado el navigationTitle centrado
         .task {
             await cargarPerfil()
             await prepararEstado()
@@ -145,15 +209,25 @@ struct UserProfileView: View {
         }
     }
 
-    // MARK: - Header (igual estilo que PerfilView)
+    // MARK: - Header
     private var headerBar: some View {
         HStack {
             Text("@\(username)")
                 .font(.title)
                 .fontWeight(.bold)
-
             Spacer()
         }
+    }
+
+    // MARK: - Banner bloqueado
+    private func blockedBanner(text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundColor(.secondary)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal)
     }
 
     // MARK: - Tab content
@@ -225,7 +299,7 @@ struct UserProfileView: View {
             presentacion = row.presentacion ?? ""
             avatarURL = row.avatar_url
 
-            // Contadores
+            // Contadores (si el backend deja ver; con RLS, fallará si no procede)
             async let postsCount: Int = {
                 let r = try await SupabaseManager.shared.client
                     .from("posts")
@@ -258,18 +332,28 @@ struct UserProfileView: View {
             let me = try await SupabaseManager.shared.client.auth.session.user.id.uuidString
             isMe = (me == profileUserID)
             if !isMe && !profileUserID.isEmpty {
-                isFollowing = try await FollowersService.shared.isFollowing(currentUserID: me, targetUserID: profileUserID)
-                followsMe = try await FollowersService.shared.doesFollowMe(currentUserID: me, targetUserID: profileUserID)
+                async let a = FollowersService.shared.isFollowing(currentUserID: me, targetUserID: profileUserID)
+                async let b = FollowersService.shared.doesFollowMe(currentUserID: me, targetUserID: profileUserID)
+                async let c = BlockService.shared.iBlock(targetUserID: profileUserID)
+                async let d = BlockService.shared.blocksMe(targetUserID: profileUserID)
+
+                let (af, bf, ib, hb) = try await (a, b, c, d)
+                isFollowing = af
+                followsMe  = bf
+                iBlockHim  = ib
+                heBlocksMe = hb
             }
         } catch {
             isFollowing = false
+            iBlockHim = false
+            heBlocksMe = false
         }
     }
 
-    // MARK: - Follow toggle
-
+    // MARK: - Follow toggle (no se muestra si hay bloqueo)
     private func toggleFollow() async {
         guard !profileUserID.isEmpty, !isMe else { return }
+
         working = true
         let wasFollowing = isFollowing
 
@@ -294,9 +378,34 @@ struct UserProfileView: View {
         working = false
     }
 
-    // MARK: - Mensaje directo
+    // MARK: - Bloquear / Desbloquear
+    private func toggleBlock() async {
+        guard !profileUserID.isEmpty, !isMe else { return }
+        working = true
+        defer { working = false }
+
+        do {
+            let status = try await BlockService.shared.toggleBlock(targetUserID: profileUserID)
+            if status == "blocked" {
+                iBlockHim = true
+                // si lo bloqueo, oculto follow y corroijo contador si estaba siguiendo
+                if isFollowing {
+                    isFollowing = false
+                    seguidoresCount = max(0, seguidoresCount - 1)
+                }
+            } else {
+                iBlockHim = false
+            }
+        } catch {
+            print("❌ toggleBlock error:", error)
+        }
+    }
+
+    // MARK: - Mensaje directo (no disponible si bloqueo)
     private func startDM() async {
         guard let uid = perfilUUID else { return }
+        if isBlockedEither { return }
+
         do {
             let convID = try await DMMessagingService.shared.getOrCreateDM(with: uid)
             await MainActor.run {
@@ -305,7 +414,7 @@ struct UserProfileView: View {
                 self.showDMChat = true
             }
         } catch {
-            print("❌ startDM error: \(error)")
+            print("❌ startDM error:", error)
         }
     }
 
@@ -344,4 +453,3 @@ struct UserProfileView: View {
         }
     }
 }
-

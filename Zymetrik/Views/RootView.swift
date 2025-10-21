@@ -13,6 +13,9 @@ struct RootView: View {
     @StateObject private var routine = RoutineTracker.shared
     @StateObject private var subs = SubscriptionStore.shared
 
+    // ⬇️ inyecta BlockStore aquí
+    @StateObject private var blockStore = BlockStore()
+
     var body: some View {
         Group {
             if isCheckingSession {
@@ -38,10 +41,12 @@ struct RootView: View {
         .environmentObject(uiState)
         .environmentObject(routine)
         .environmentObject(subs)
+        .environmentObject(blockStore)       // ⬅️ importante
         .task {
             await checkSession()
             if isLoggedIn {
                 appState.phase = .loading(progress: 0, message: "Preparando…")
+                await blockStore.reload()     // ⬅️ carga contador inicial
             }
         }
         .task {

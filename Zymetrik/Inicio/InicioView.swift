@@ -1,5 +1,23 @@
 import SwiftUI
 
+// MARK: - Params del RPC con nulls explícitos
+private struct FeedParams: Encodable {
+    let p_after_ts: String?     // ISO 8601 o nil
+    let p_before_ts: String?    // ISO 8601 o nil
+    let p_limit: Int
+    let p_user: UUID
+
+    enum CodingKeys: String, CodingKey { case p_after_ts, p_before_ts, p_limit, p_user }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let v = p_after_ts  { try c.encode(v, forKey: .p_after_ts) }  else { try c.encodeNil(forKey: .p_after_ts) }
+        if let v = p_before_ts { try c.encode(v, forKey: .p_before_ts) } else { try c.encodeNil(forKey: .p_before_ts) }
+        try c.encode(p_limit, forKey: .p_limit)
+        try c.encode(p_user, forKey: .p_user)
+    }
+}
+
 struct InicioView: View {
     @State private var posts: [Post] = []
     @State private var cargando = true
@@ -13,7 +31,7 @@ struct InicioView: View {
 
     // Concurrencia
     @State private var loadTask: Task<Void, Never>? = nil
-    @State private var feedGeneration: Int = 0   // invalida respuestas viejas
+    @State private var feedGeneration: Int = 0
 
     enum FeedSelection: String, CaseIterable, Identifiable {
         case paraTi = "Para ti"
@@ -21,8 +39,15 @@ struct InicioView: View {
         var id: String { rawValue }
     }
     @State private var selectedFeed: FeedSelection = .paraTi
-
     private var isParaTi: Bool { selectedFeed == .paraTi }
+
+    // Formatter ISO con fracciones y UTC para el RPC
+    private let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 
     var body: some View {
         NavigationStack {
@@ -37,7 +62,8 @@ struct InicioView: View {
                 ScrollView {
                     LazyVStack(spacing: 24) {
                         ForEach(posts) { post in
-                            PostView(post: post)
+                            PostView(post: post, feedKey: selectedFeed)
+                                .id("\(selectedFeed.rawValue)-\(post.id)") // identidad por feed
                                 .onAppear {
                                     if post.id == posts.last?.id {
                                         triggerLoadMoreIfNeeded()
@@ -51,9 +77,7 @@ struct InicioView: View {
                 .refreshable { await refresh() }
             }
             .ignoresSafeArea(edges: .bottom)
-            .onChange(of: selectedFeed) { _, _ in
-                restartFeed()
-            }
+            .onChange(of: selectedFeed) { _, _ in restartFeed() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
@@ -64,8 +88,7 @@ struct InicioView: View {
                         }
                     } label: {
                         HStack(spacing: 6) {
-                            Text(selectedFeed.rawValue)
-                                .font(.headline)
+                            Text(selectedFeed.rawValue).font(.headline)
                             Image(systemName: "chevron.down")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
@@ -96,10 +119,8 @@ struct InicioView: View {
             errorMsg = nil
         }
         do {
-            // Precarga segura (tu método existente) para no dejar pantalla vacía
             posts = try await SupabaseService.shared.fetchPosts()
             await MainActor.run { cargando = false }
-            // Y arrancamos la paginación real según el feed
             restartFeed()
         } catch {
             await MainActor.run {
@@ -147,7 +168,7 @@ struct InicioView: View {
 
     private func triggerLoadMoreIfNeeded() {
         guard !isLoadingMore, !reachedEnd else { return }
-        guard beforeCursor != lastRequestedCursor else { return } // evita duplicar misma página
+        guard beforeCursor != lastRequestedCursor else { return }
         lastRequestedCursor = beforeCursor
 
         let currentGen = feedGeneration
@@ -157,7 +178,7 @@ struct InicioView: View {
         }
     }
 
-    // MARK: - Carga (único punto de red; ramifica por feed)
+    // MARK: - Carga paginada
     private func loadMore(reset: Bool, generation: Int) async {
         await MainActor.run {
             if isLoadingMore || reachedEnd { return }
@@ -169,30 +190,25 @@ struct InicioView: View {
             try Task.checkCancellation()
             guard generation == feedGeneration else { return }
 
-            let me = try await DMMessagingService.shared.currentUserID()
+            let me = try await DMMessagingService.shared.currentUserID() // UUID
 
             let page: [Post]
             if isParaTi {
-                // === PARA TI: posts de TODO el mundo (tu RPC existente) ===
-                struct Params: Encodable {
-                    let p_user: UUID
-                    let p_after_ts: String?
-                    let p_before_ts: String?
-                    let p_limit: Int
-                }
-                let iso = ISO8601DateFormatter()
-                let params = Params(
-                    p_user: me,
+                // RPC con nulls explícitos para evitar PGRST202
+                let params = FeedParams(
                     p_after_ts: nil,
                     p_before_ts: beforeCursor.map { iso.string(from: $0) },
-                    p_limit: 20
+                    p_limit: 20,
+                    p_user: me
                 )
+
                 let res = try await SupabaseManager.shared.client
                     .rpc("get_feed_posts", params: params)
                     .execute()
+
                 page = try res.decodedList(to: Post.self)
             } else {
-                // === SIGUIENDO: solo autores seguidos (sin RPC nueva) ===
+                // Feed "Siguiendo"
                 page = try await SupabaseService.shared.fetchFollowingPosts(
                     userID: me,
                     before: beforeCursor,
@@ -214,7 +230,7 @@ struct InicioView: View {
                 if page.isEmpty {
                     reachedEnd = true
                 } else {
-                    beforeCursor = page.last?.fecha // keyset por fecha
+                    beforeCursor = page.last?.fecha
                 }
             }
         } catch is CancellationError {

@@ -13,7 +13,7 @@ struct PostDetailView: View {
     var body: some View {
         Group {
             if let post {
-                PostView(post: post)
+                PostView(post: post, feedKey: .paraTi)
                     .onAppear {
                         // If we want to focus a specific comment, open comments sheet.
                         if focusCommentID != nil {

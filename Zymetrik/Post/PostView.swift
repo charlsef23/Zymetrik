@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct PostView: View {
     let post: Post
+    let feedKey: InicioView.FeedSelection      // ⬅️ clave de feed
     var onPostEliminado: (() -> Void)?
     var onGuardadoCambio: ((Bool) -> Void)? = nil
 
@@ -41,10 +42,12 @@ struct PostView: View {
 
     init(
         post: Post,
+        feedKey: InicioView.FeedSelection,
         onPostEliminado: (() -> Void)? = nil,
         onGuardadoCambio: ((Bool) -> Void)? = nil
     ) {
         self.post = post
+        self.feedKey = feedKey
         self.onPostEliminado = onPostEliminado
         self.onGuardadoCambio = onGuardadoCambio
     }
@@ -75,15 +78,29 @@ struct PostView: View {
             }
         }
         .onDisappear { primeTask?.cancel() }
+        // 🔁 Reinicia si cambia el feed o el post
+        .onChange(of: feedKey) { resetStateAndPrime() }
+        .onChange(of: post.id) { resetStateAndPrime() }
     }
 
-    // MARK: - Subvistas (para ayudar al type-checker)
+    // MARK: - Reset del estado para evitar “carrusel invisible”
+    private func resetStateAndPrime() {
+        primeTask?.cancel()
+        ejercicioSeleccionado = post.contenido.first
+        avatarImage = nil
+        imageCache = [:]
+        isReady = false
+        didPrime = false
+        primeTask = Task { await primeAll() }
+    }
+
+    // MARK: - Subvistas
 
     private var headerView: some View {
         PostHeaderMejorado(
             post: post,
             isOwnPost: isOwnPost,
-            onEliminar: { mostrarConfirmacionEliminar = true }, // <- muestra confirmación
+            onEliminar: { mostrarConfirmacionEliminar = true },
             onCompartir: { mostrarShareOptions = true },
             preloadedAvatar: avatarImage,
             onReportar: { mostrarReportar = true }
@@ -116,7 +133,6 @@ struct PostView: View {
             numLikes: $numLikes,
             guardado: $guardado,
             mostrarComentarios: $mostrarComentarios,
-            // Las funciones son async → envolver en Task
             toggleLike: { Task { await self.toggleLike() } },
             toggleSave: { Task { await self.toggleSave() } },
             onShowLikers: { mostrarLikers = true }
@@ -269,7 +285,6 @@ struct PostView: View {
     // MARK: - Report helpers
 
     private func reportPost(reason: String?) async {
-        // Params tipados para el RPC
         struct ReportPostParams: Encodable {
             let p_post_id: String
             let p_reason: String?
@@ -321,7 +336,6 @@ struct PostView: View {
             isDeleting = true
             defer { isDeleting = false }
 
-            // RPC delete_post_cascade
             struct Params: Encodable { let p_post_id: String }
             do {
                 _ = try await SupabaseManager.shared.client
@@ -390,7 +404,7 @@ struct PostView: View {
         let existingAvatar = self.avatarImage
         let existingCache = self.imageCache
 
-        // Intentar obtener del cache de avatares primero
+        // Avatar cache
         if avatarImage == nil {
             if let cacheKey = post.avatar_url, let cachedAvatar = AvatarCache.shared.getImage(forKey: cacheKey) {
                 avatarImage = cachedAvatar
@@ -402,7 +416,7 @@ struct PostView: View {
             }
         }
 
-        // Prefetch de imágenes del carrusel
+        // Carrusel cache
         if imageCache.isEmpty, let preI = await FeedPrefetcher.shared.images(for: postID) {
             imageCache = preI
         }
@@ -506,7 +520,7 @@ private struct PostHeaderMejorado: View {
             }
             .buttonStyle(.plain)
 
-            // Username + tiempo (propio -> PerfilView, otro -> UserProfileView)
+            // Username + tiempo
             VStack(alignment: .leading, spacing: 0) {
                 if isOwnPost {
                     NavigationLink { PerfilView() } label: { usernameAndTime }
@@ -562,7 +576,6 @@ private struct PostHeaderMejorado: View {
 }
 
 // MARK: - Hoja de reportar
-
 private struct ReportPostSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var reason: String = ""

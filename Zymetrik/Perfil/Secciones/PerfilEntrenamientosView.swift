@@ -22,7 +22,7 @@ struct PerfilEntrenamientosView: View {
                         .padding(.vertical, 24)
                 } else {
                     ForEach(posts) { post in
-                        PostView(post: post)
+                        PostView(post: post, feedKey: .paraTi)
                         // Sin padding extra → se respetará el estilo del post
                     }
                 }

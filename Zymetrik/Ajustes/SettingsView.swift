@@ -2,6 +2,9 @@ import SwiftUI
 import Supabase
 
 struct SettingsView: View {
+    // 🔗 Store global de bloqueos (para el trailing en “Cuentas bloqueadas”)
+    @EnvironmentObject private var blockStore: BlockStore
+
     @State private var mostrarShare = false
     @State private var esAdmin = false
 
@@ -34,21 +37,18 @@ struct SettingsView: View {
                     )
 
                     // MARK: - Privacidad
-                    // SettingsSectionCard(
-                    //    title: "Quién puede ver tu contenido",
-                    //    items: [
-                    //        .init(icon: "lock.fill",        tint: .purple, title: "Privacidad de la cuenta", trailing: "Privada", destination: AnyView(Text("PrivacidadView()"))),
-                    //        .init(icon: "hand.raised.fill", tint: .red,    title: "Cuentas bloqueadas",       trailing: "4",      destination: AnyView(CuentasBloqueadasView()))
-                    //    ]
-                    // )
-
-                    // MARK: - Interacciones
-                   // SettingsSectionCard(
-                   //     title: "Cómo pueden interactuar contigo los demás",
-                   //     items: [
-                   //         .init(icon: "message.fill", tint: .green, title: "Mensajes", destination: AnyView(Text("MensajesView()")))
-                   //     ]
-                   // )
+                    SettingsSectionCard(
+                        title: "Quién puede ver tu contenido",
+                        items: [
+                            .init(
+                                icon: "hand.raised.fill",
+                                tint: .red,
+                                title: "Cuentas bloqueadas",
+                                trailing: "\(blockStore.count)",     // ← sincronizado con el store
+                                destination: AnyView(BlockedUsersView())
+                            )
+                        ]
+                    )
 
                     // MARK: - Entrenamiento
                     SettingsSectionCard(
@@ -68,10 +68,10 @@ struct SettingsView: View {
                     SettingsSectionCard(
                         title: "Soporte",
                         items: [
-                            .init(icon: "envelope.fill",          tint: .teal,   title: "Enviar feedback",        destination: AnyView(FeedbackView())),
-                            .init(icon: "questionmark.circle.fill", tint: .indigo, title: "Contactar con soporte",  destination: AnyView(SupportView())),
-                            .init(icon: "book.fill",              tint: .brown,  title: "FAQ",                    destination: AnyView(FAQView())),
-                            .init(icon: "lock.doc.fill",                tint: .purple, title: "Politica de privacidad",     destination: AnyView(PrivacyPolicyView()))
+                            .init(icon: "envelope.fill",             tint: .teal,   title: "Enviar feedback",        destination: AnyView(FeedbackView())),
+                            .init(icon: "questionmark.circle.fill",  tint: .indigo, title: "Contactar con soporte",  destination: AnyView(SupportView())),
+                            .init(icon: "book.fill",                 tint: .brown,  title: "FAQ",                    destination: AnyView(FAQView())),
+                            .init(icon: "lock.doc.fill",             tint: .purple, title: "Política de privacidad", destination: AnyView(PrivacyPolicyView()))
                         ]
                     )
 
@@ -80,10 +80,10 @@ struct SettingsView: View {
                         SettingsSectionCard(
                             title: "Administración",
                             items: [
-                                .init(icon: "exclamationmark.bubble.fill", tint: .green,  title: "Reportes de posts",    destination: AnyView(AdminPostReportsView())),
-                                .init(icon: "tray.full.fill",               tint: .cyan,   title: "Feedback (Admin)",      destination: AnyView(AdminFeedbackListView())),
-                                .init(icon: "person.crop.circle.badge.exclam", tint: .red, title: "Moderación",          destination: AnyView(Text("ModeracionView()"))),
-                                .init(icon: "chart.bar.fill",               tint: .orange, title: "Métricas",            destination: AnyView(Text("MetricasView()")))
+                                .init(icon: "exclamationmark.bubble.fill", tint: .green,  title: "Reportes de posts",   destination: AnyView(AdminPostReportsView())),
+                                .init(icon: "tray.full.fill",               tint: .cyan,   title: "Feedback (Admin)",     destination: AnyView(AdminFeedbackListView())),
+                                .init(icon: "person.crop.circle.badge.exclam", tint: .red, title: "Moderación",        destination: AnyView(Text("ModeracionView()"))),
+                                .init(icon: "chart.bar.fill",               tint: .orange, title: "Métricas",           destination: AnyView(Text("MetricasView()")))
                             ]
                         )
                     }
@@ -124,7 +124,11 @@ struct SettingsView: View {
             .sheet(isPresented: $mostrarShare) {
                 ShareProfileView(username: "carlos", profileImage: Image("foto_perfil"))
             }
-            .task { await cargarEsAdmin() }
+            .task {
+                // Carga rol admin y, de paso, sincroniza el contador de bloqueados
+                await cargarEsAdmin()
+                await blockStore.reload()
+            }
 
             // MARK: - Confirmación cerrar sesión
             .confirmationDialog(
@@ -272,7 +276,8 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Models & UI Components  (con soporte onTap)
+// MARK: - UI genérica usada arriba
+
 struct SettingsItem: Identifiable {
     let id = UUID()
     let icon: String
@@ -385,11 +390,10 @@ struct SettingsRow: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Chevron solo en filas con trailing (para acciones queda oculto)
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.tertiary)
-                .opacity(trailing == nil ? 0 : 1)
+                .opacity( (trailing != nil) ? 1 : 0 ) // muestra chevron cuando hay destino
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -420,4 +424,3 @@ struct RoundedCorner: Shape {
         return Path(path.cgPath)
     }
 }
-

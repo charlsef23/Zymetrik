@@ -18,7 +18,20 @@ final class OSClickHandler: NSObject, OSNotificationClickListener {
     }
 }
 
-// MARK: - AppDelegate (todo en MainActor para evitar data races en Swift 6)
+// MARK: - Persistencia simple para saber a quién hay logueado en OneSignal
+private enum OneSignalSession {
+    private static let key = "onesignal.externalId"
+
+    static var currentExternalId: String? {
+        get { UserDefaults.standard.string(forKey: key) }
+        set {
+            if let v = newValue { UserDefaults.standard.set(v, forKey: key) }
+            else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+    }
+}
+
+// MARK: - AppDelegate
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, @MainActor UNUserNotificationCenterDelegate {
 
@@ -29,34 +42,33 @@ final class AppDelegate: NSObject, UIApplicationDelegate, @MainActor UNUserNotif
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
 
-        // ✅ Inicializa OneSignal
+        // ✅ Inicializa OneSignal una vez al arranque
         OneSignal.initialize("6da7a54a-67c9-45dd-a816-680c69d2e690", withLaunchOptions: launchOptions)
 
-        // 🔔 Delegate de notificaciones (no pedimos permiso aún)
+        // 🔔 Delegate de notificaciones
         UNUserNotificationCenter.current().delegate = self
 
         // 🎯 Listener de clics
         OneSignal.Notifications.addClickListener(clickHandler)
 
-        // 🧭 Pedir permiso + vincular SOLO tras login correcto
+        // 🧭 Tras login correcto (tu app emite esta notificación cuando termina el sign-in de Supabase)
         loginObserver = NotificationCenter.default.addObserver(
             forName: .didLoginSuccess,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
             Task { @MainActor in
-                self.requestPushPermissionAndLink()
+                await self?.identifyOneSignalIfNeeded()
             }
         }
 
-        // Si ya había sesión (app relanzada), enlaza
+        // Si ya había sesión (app relanzada), intenta identificar de forma idempotente
         Task { @MainActor in
-            self.linkOneSignalToCurrentUser()
+            await identifyOneSignalIfNeeded()
         }
 
-        // Debug post-arranque
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        // (Opcional) Log de estado
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.debugPrintOneSignalState(context: "arranque")
         }
 
@@ -64,8 +76,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, @MainActor UNUserNotif
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {
-        linkOneSignalToCurrentUser()
-        debugPrintOneSignalState(context: "willEnterForeground")
+        // Idempotente: no re-login si no cambió el usuario
+        Task { @MainActor in
+            await identifyOneSignalIfNeeded()
+            debugPrintOneSignalState(context: "willEnterForeground")
+        }
     }
 
     deinit {
@@ -79,7 +94,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, @MainActor UNUserNotif
         completionHandler([.banner, .sound, .badge, .list])
     }
 
-    // MARK: - APNs callbacks (útiles en dispositivo real)
+    // MARK: - APNs callbacks (dispositivo real)
     func application(_ application: UIApplication,
                      didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         let tokenString = deviceToken.map { String(format: "%02x", $0) }.joined()
@@ -91,50 +106,50 @@ final class AppDelegate: NSObject, UIApplicationDelegate, @MainActor UNUserNotif
         print("❌ APNs register error:", error.localizedDescription)
     }
 
-    // MARK: - Pide permiso + registra APNs + login OneSignal (con UID en minúsculas)
-    private func requestPushPermissionAndLink() {
-        OneSignal.Notifications.requestPermission({ [weak self] accepted in
-            guard let self else { return }
+    // MARK: - Pedir permiso (llámalo cuando te interese, por ejemplo tras onboarding)
+    func requestPushPermissionIfNeeded() {
+        OneSignal.Notifications.requestPermission({ accepted in
             print("🔔 Permiso push:", accepted)
-
-            // Registrar APNs (iPhone real)
+            // Registrar APNs (en iPhone real)
             UIApplication.shared.registerForRemoteNotifications()
-
-            // Vincular tras pedir permiso
-            self.linkOneSignalToCurrentUser()
-
-            // Revisar estado después
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.debugPrintOneSignalState(context: "tras requestPermission")
-            }
         }, fallbackToSettings: true)
     }
 
-    // MARK: - Vincular dispositivo ↔ usuario Supabase
-    private func linkOneSignalToCurrentUser() {
-        Task { @MainActor in
-            guard let rawUID = try? await SupabaseManager.shared.client.auth.session.user.id.uuidString else {
+    // MARK: - Identificar OneSignal de forma idempotente
+    private func identifyOneSignalIfNeeded() async {
+        // 1) Obtener UID actual de Supabase (si no hay, desloguear si procede)
+        let rawUID = try? await SupabaseManager.shared.client.auth.session.user.id.uuidString
+        guard let uidRaw = rawUID else {
+            // No sesión → cerrar sesión OneSignal si había otra
+            if OneSignalSession.currentExternalId != nil {
                 OneSignal.logout()
+                OneSignalSession.currentExternalId = nil
                 print("ℹ️ Sin sesión Supabase → OneSignal.logout()")
-                return
             }
-            let uid = rawUID.lowercased()
-
-            // Limpieza por si había otro external_id
-            OneSignal.logout()
-            try? await Task.sleep(nanoseconds: 300_000_000)
-
-            // Espera a tener subscription id + APNs token
-            for _ in 0..<40 {
-                if OneSignal.User.pushSubscription.id != nil,
-                   OneSignal.User.pushSubscription.token != nil { break }
-                try? await Task.sleep(nanoseconds: 300_000_000)
-            }
-
-            OneSignal.login(uid)
-            print("✅ OneSignal vinculado a (lowercased):", uid)
-            debugPrintOneSignalState(context: "tras OneSignal.login(lowercased)")
+            return
         }
+
+        let externalId = uidRaw.lowercased()
+
+        // 2) Evitar re-login si ya estamos con el mismo externalId
+        if OneSignalSession.currentExternalId == externalId {
+            // Ya identificado, nada que hacer
+            return
+        }
+
+        // 3) Si hay otro usuario distinto, logout primero
+        if let current = OneSignalSession.currentExternalId, current != externalId {
+            OneSignal.logout()
+            OneSignalSession.currentExternalId = nil
+        }
+
+        // 4) Hacer login (no hace falta esperar al token APNs)
+        OneSignal.login(externalId)
+        OneSignalSession.currentExternalId = externalId
+        print("✅ OneSignal vinculado a (lowercased): \(externalId)")
+
+        // (Opcional) estado tras login
+        debugPrintOneSignalState(context: "tras OneSignal.login")
     }
 
     // MARK: - Debug OneSignal
@@ -146,4 +161,3 @@ final class AppDelegate: NSObject, UIApplicationDelegate, @MainActor UNUserNotif
         print("   token:", sub.token ?? "nil")
     }
 }
-
