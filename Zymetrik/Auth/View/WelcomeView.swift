@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct WelcomeView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var onLogin: (() -> Void)? = nil  // 🔁 callback desde RootView
 
     var body: some View {
@@ -8,7 +10,7 @@ struct WelcomeView: View {
             VStack {
                 Spacer()
 
-                Image("LogoSinFondoNegro")
+                Image(colorScheme == .dark ? "LogoSinFondo" : "LogoSinFondoNegro")
                     .resizable()
                     .scaledToFit()
                     .frame(width: 100)

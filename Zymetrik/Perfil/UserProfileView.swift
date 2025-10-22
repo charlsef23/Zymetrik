@@ -128,40 +128,6 @@ struct UserProfileView: View {
                     .padding(.horizontal)
                 }
 
-                // Botón Bloquear / Desbloquear:
-                // - Solo se muestra si NO es mi perfil
-                // - Si yo lo bloqueé → aparece botón "Desbloquear"
-                // - Si me bloqueó → NO muestro botón (solo puede desbloquear quien bloqueó)
-                if !isMe && !profileUserID.isEmpty {
-                    if iBlockHim {
-                        Button(role: .destructive) {
-                            Task { await toggleBlock() }   // esto hará "unblock"
-                        } label: {
-                            Label("Desbloquear", systemImage: "hand.raised.slash.fill")
-                                .font(.body.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(Color(.systemGray6))
-                                .foregroundColor(.primary)
-                                .cornerRadius(10)
-                        }
-                        .padding(.horizontal)
-                    } else if !heBlocksMe {
-                        Button {
-                            Task { await toggleBlock() }   // esto hará "block"
-                        } label: {
-                            Label("Bloquear", systemImage: "hand.raised.fill")
-                                .font(.body.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(Color(.systemGray6))
-                                .foregroundColor(.primary)
-                                .cornerRadius(10)
-                        }
-                        .padding(.horizontal)
-                    }
-                }
-
                 // Tabs + Contenido (ocultos si hay bloqueo)
                 if canSeeProfile {
                     HStack {
@@ -216,6 +182,32 @@ struct UserProfileView: View {
                 .font(.title)
                 .fontWeight(.bold)
             Spacer()
+            // Botón de tres puntos con acciones
+            if !isMe && !profileUserID.isEmpty {
+                Menu {
+                    if iBlockHim {
+                        // Mostrar Desbloquear si yo lo tengo bloqueado
+                        Button(role: .destructive) {
+                            Task { await toggleBlock() }
+                        } label: {
+                            Label("Desbloquear", systemImage: "hand.raised.slash.fill")
+                        }
+                    } else if !heBlocksMe {
+                        // Mostrar Bloquear si no me ha bloqueado a mí
+                        Button {
+                            Task { await toggleBlock() }
+                        } label: {
+                            Label("Bloquear", systemImage: "hand.raised.fill")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.title3.weight(.semibold))
+                        .padding(8)
+                        .contentShape(Rectangle())
+                }
+                .disabled(working)
+            }
         }
     }
 
