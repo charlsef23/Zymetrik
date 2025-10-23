@@ -33,25 +33,35 @@ struct CarruselEjerciciosView: View {
                                 Image(uiImage: image)
                                     .resizable()
                                     .scaledToFill()
+                                    .frame(width: 120, height: 120)
+                                    .clipped()
                             } else if let urlString = ejercicioItem.imagen_url,
                                       let url = URL(string: urlString) {
                                 AsyncImage(url: url) { phase in
                                     switch phase {
                                     case .empty:
                                         ShimmerRect()
+                                            .frame(width: 120, height: 120)
                                     case .success(let image):
-                                        image.resizable().scaledToFill()
+                                        image.resizable()
+                                            .scaledToFill()
+                                            .frame(width: 120, height: 120)
+                                            .clipped()
                                     case .failure:
                                         PlaceholderRect(icon: "dumbbell.fill")
+                                            .frame(width: 120, height: 120)
                                     @unknown default:
                                         PlaceholderRect(icon: "dumbbell.fill")
+                                            .frame(width: 120, height: 120)
                                     }
                                 }
+                                .transaction { t in t.animation = nil } // avoid fade flicker when switching feeds
+                                .id(ejercicioItem.id) // stabilize identity per item
                             } else {
                                 PlaceholderRect(icon: "dumbbell.fill")
+                                    .frame(width: 120, height: 120)
                             }
                         }
-                        .frame(width: 120, height: 120)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(
@@ -66,6 +76,7 @@ struct CarruselEjerciciosView: View {
                         .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 3)
                     }
                     .buttonStyle(.plain)
+                    .id("ejercicio-\(ejercicioItem.id.uuidString)")
                     .accessibilityLabel(Text("\(ejercicioItem.nombre)"))
                     .accessibilityAddTraits(ejercicioSeleccionado?.id == ejercicioItem.id ? .isSelected : [])
                 }

@@ -5,21 +5,18 @@ struct PerfilEntrenamientosView: View {
     let profileID: String? // nil para el perfil actual
     
     @State private var posts: [Post] = []
-    @State private var cargando = true
     @State private var error: String?
     
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
-                if cargando {
-                    ProgressView("Cargando entrenamientos…")
-                        .padding(.vertical, 24)
-                } else if let error {
+                if let error {
                     Text("❌ \(error)").foregroundColor(.red).padding(.vertical, 16)
                 } else if posts.isEmpty {
-                    Text("Este usuario no ha subido entrenamientos aún.")
-                        .foregroundColor(.secondary)
-                        .padding(.vertical, 24)
+                    ForEach(0..<3, id: \.self) { _ in
+                        PerfilPostSkeletonView()
+                            .redacted(reason: .placeholder)
+                    }
                 } else {
                     ForEach(posts) { post in
                         PostView(post: post, feedKey: .paraTi)
@@ -28,9 +25,11 @@ struct PerfilEntrenamientosView: View {
                 }
             }
             .padding(.vertical, 12)      // nada de padding horizontal → full-bleed
+            .animation(.default, value: posts.count)
         }
         .background(Color(.systemBackground).ignoresSafeArea())
         .task { await cargarPosts() }
+        .refreshable { await cargarPosts() }
     }
     
     func cargarPosts() async {
@@ -52,11 +51,35 @@ struct PerfilEntrenamientosView: View {
                 .execute()
             
             self.posts = try response.decodedList(to: Post.self)
-            self.cargando = false
+            self.error = nil
             
         } catch {
             self.error = "Error al cargar posts: \(error.localizedDescription)"
-            self.cargando = false
         }
+    }
+}
+
+private struct PerfilPostSkeletonView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 6) {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(width: 120, height: 14)
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.secondary.opacity(0.15))
+                        .frame(width: 80, height: 12)
+                }
+                Spacer()
+            }
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.secondary.opacity(0.15))
+                .frame(height: 200)
+        }
+        .padding(.horizontal)
     }
 }

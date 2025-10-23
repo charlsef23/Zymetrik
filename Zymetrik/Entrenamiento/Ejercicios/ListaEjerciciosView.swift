@@ -1,20 +1,33 @@
 import SwiftUI
 import Supabase
+import Combine
 
 struct ListaEjerciciosView: View {
     let fecha: Date
     var onGuardar: ([Ejercicio]) -> Void
     @Binding var isPresented: Bool
 
-    @EnvironmentObject var planStore: TrainingPlanStore   // 👈 NUEVO
+    init(
+        fecha: Date,
+        onGuardar: @escaping ([Ejercicio]) -> Void,
+        isPresented: Binding<Bool>,
+        exercisesStore: ExercisesStore = ExercisesStore.shared
+    ) {
+        self.fecha = fecha
+        self.onGuardar = onGuardar
+        self._isPresented = isPresented
+        self._exercisesStore = ObservedObject(initialValue: exercisesStore)
+    }
 
-    @State private var ejercicios: [Ejercicio] = []
+    @EnvironmentObject var planStore: TrainingPlanStore   // 👈 NUEVO
+    @ObservedObject var exercisesStore: ExercisesStore // Preloaded exercises + image cache
+
+    private var ejercicios: [Ejercicio] { exercisesStore.ejercicios }
     @State private var tipoSeleccionado: String = "Fuerza"
     @State private var filtroPartes: Set<String> = []      // categoría
     @State private var filtroSubtipos: Set<String> = []    // subtipo
     @State private var soloFavoritos: Bool = false
     @State private var seleccionados: Set<UUID> = []       // persistencia por día
-    @State private var cargando = false
 
     // Rutinas / Fechas exactas
     @State private var mostrarRutinaSheet = false
@@ -97,7 +110,7 @@ struct ListaEjerciciosView: View {
                     }
 
                     // Lista
-                    if cargando {
+                    if ejercicios.isEmpty && exercisesStore.isPreloading {
                         ProgressView("Cargando ejercicios...")
                             .frame(maxWidth: .infinity)
                             .padding(.top, 24)
@@ -156,7 +169,7 @@ struct ListaEjerciciosView: View {
                 }
             }
             .onAppear {
-                fetchEjercicios()
+                exercisesStore.ensurePreloaded()
                 preloadPlanDelDia()
             }
             // Recalcular plan al cambiar de fecha
@@ -222,20 +235,6 @@ struct ListaEjerciciosView: View {
         .toast($showToast, text: toastText)
     }
 
-    // MARK: - Data
-    func fetchEjercicios() {
-        Task {
-            cargando = true
-            defer { cargando = false }
-            do {
-                let items = try await SupabaseService.shared.fetchEjerciciosConFavoritos()
-                await MainActor.run { self.ejercicios = items }
-            } catch {
-                print("❌ Error al cargar ejercicios:", error)
-            }
-        }
-    }
-
     func preloadPlanDelDia() {
         Task {
             do {
@@ -266,14 +265,17 @@ struct ListaEjerciciosView: View {
 
     // MARK: - Favoritos
     func toggleFavorito(ejercicioID: UUID) {
-        guard let idx = ejercicios.firstIndex(where: { $0.id == ejercicioID }) else { return }
-        ejercicios[idx].esFavorito.toggle()
-        let target = ejercicios[idx].esFavorito
+        guard let idx = exercisesStore.ejercicios.firstIndex(where: { $0.id == ejercicioID }) else { return }
+        // Optimistic update
+        let newValue = !exercisesStore.ejercicios[idx].esFavorito
+        exercisesStore.ejercicios[idx].esFavorito = newValue
         Task {
             do {
-                try await SupabaseService.shared.setFavorito(ejercicioID: ejercicioID, favorito: target)
+                try await SupabaseService.shared.setFavorito(ejercicioID: ejercicioID, favorito: newValue)
             } catch {
-                await MainActor.run { ejercicios[idx].esFavorito.toggle() }
+                await MainActor.run {
+                    exercisesStore.ejercicios[idx].esFavorito.toggle()
+                }
                 print("❌ Error al togglear favorito:", error)
             }
         }

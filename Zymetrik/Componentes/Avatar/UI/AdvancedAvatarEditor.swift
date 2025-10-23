@@ -34,42 +34,30 @@ struct AdvancedAvatarEditor: View {
             .navigationTitle("Editar Avatar")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancelar") { onCancel() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar") { saveImage() }
-                        .disabled(isProcessing)
-                }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { onCancel() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Guardar") { saveImage() }.disabled(isProcessing) }
             }
         }
     }
-
-    // MARK: - Subvistas
 
     private var previewSection: some View {
         VStack(spacing: 16) {
             if isProcessing {
                 ZStack {
-                    Circle()
-                        .fill(Color(.systemGray6))
-                        .frame(width: 200, height: 200)
-                    ProgressView("Procesando...")
-                        .tint(.blue)
+                    Circle().fill(Color(.systemGray6)).frame(width: 200, height: 200)
+                    ProgressView("Procesando…").tint(.blue)
                 }
             } else {
                 ZStack {
-                    Circle()
-                        .fill(Color(.systemGray6))
-                        .frame(width: 200, height: 200)
+                    Circle().fill(Color(.systemGray6)).frame(width: 200, height: 200)
                         .overlay(
                             GeometryReader { geo in
                                 let size = min(geo.size.width, geo.size.height)
-                                let frameSize = CGSize(width: size, height: size)
+                                let frame = CGSize(width: size, height: size)
                                 Image(uiImage: basePreviewImage)
                                     .resizable()
                                     .scaledToFill()
-                                    .frame(width: frameSize.width, height: frameSize.height)
+                                    .frame(width: frame.width, height: frame.height)
                                     .scaleEffect(zoomScale)
                                     .offset(offset)
                                     .clipped()
@@ -84,21 +72,13 @@ struct AdvancedAvatarEditor: View {
                     SimultaneousGesture(
                         DragGesture()
                             .onChanged { value in
-                                offset = CGSize(
-                                    width: lastOffset.width + value.translation.width,
-                                    height: lastOffset.height + value.translation.height
-                                )
+                                offset = CGSize(width: lastOffset.width + value.translation.width,
+                                                height: lastOffset.height + value.translation.height)
                             }
-                            .onEnded { _ in
-                                lastOffset = offset
-                            },
+                            .onEnded { _ in lastOffset = offset },
                         MagnificationGesture()
-                            .onChanged { value in
-                                zoomScale = max(0.5, min(3.0, lastZoomScale * value))
-                            }
-                            .onEnded { _ in
-                                lastZoomScale = zoomScale
-                            }
+                            .onChanged { value in zoomScale = max(0.5, min(3.0, lastZoomScale * value)) }
+                            .onEnded { _ in lastZoomScale = zoomScale }
                     )
                 )
             }
@@ -120,16 +100,12 @@ struct AdvancedAvatarEditor: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(AvatarFilter.allCases, id: \.self) { filter in
-                        FilterButton(
-                            filter: filter,
-                            isSelected: selectedFilter == filter
-                        ) {
+                        FilterButton(filter: filter, isSelected: selectedFilter == filter) {
                             withAnimation(.easeInOut) { selectedFilter = filter }
                             HapticManager.shared.selection()
                         }
                     }
-                }
-                .padding(.horizontal, 4)
+                }.padding(.horizontal, 4)
             }
         }
     }
@@ -146,7 +122,6 @@ struct AdvancedAvatarEditor: View {
                     }
                 }
             }
-
             VStack(spacing: 16) {
                 AdjustmentSlider(title: "Brillo", value: $brightness, range: -0.5...0.5, icon: "sun.max")
                 AdjustmentSlider(title: "Contraste", value: $contrast, range: 0.5...2.0, icon: "circle.lefthalf.filled")
@@ -157,103 +132,55 @@ struct AdvancedAvatarEditor: View {
 
     private var actionButtons: some View {
         HStack(spacing: 16) {
-            Button("Cancelar") {
-                onCancel()
-            }
-            .font(.body)
-            .foregroundColor(.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Color(.systemGray6))
-            .clipShape(Capsule())
+            Button("Cancelar") { onCancel() }
+                .font(.body).foregroundColor(.secondary)
+                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                .background(Color(.systemGray6)).clipShape(Capsule())
 
-            Button("Guardar") {
-                saveImage()
-            }
-            .font(.body)
-            .fontWeight(.semibold)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(isProcessing ? Color.gray : Color.blue)
-            .clipShape(Capsule())
-            .disabled(isProcessing)
+            Button("Guardar") { saveImage() }
+                .font(.body).fontWeight(.semibold).foregroundColor(.white)
+                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                .background(isProcessing ? Color.gray : Color.blue)
+                .clipShape(Capsule()).disabled(isProcessing)
         }
     }
 
-    // MARK: - Imagen para preview (en main)
-
     private var basePreviewImage: UIImage {
-        var image = originalImage.normalizedUp()
-        image = selectedFilter.apply(to: image)
-        image = imageProcessor.adjustImage(image, brightness: brightness, contrast: contrast, saturation: saturation)
-        return image
+        var img = originalImage.normalizedUp()
+        img = selectedFilter.apply(to: img)
+        img = imageProcessor.adjustImage(img, brightness: brightness, contrast: contrast, saturation: saturation)
+        return img
     }
 
-    // MARK: - Snapshot y procesado en background
-
+    // Snap + procesamiento off-main
     private struct Snapshot {
-        let originalImage: UIImage
-        let filter: AvatarFilter
-        let brightness: Double
-        let contrast: Double
-        let saturation: Double
-        let zoomScale: CGFloat
-        let offset: CGSize
+        let original: UIImage; let filter: AvatarFilter
+        let brightness: Double; let contrast: Double; let saturation: Double
+        let zoomScale: CGFloat; let offset: CGSize
     }
 
-    // No es async; lo ejecutaremos dentro de `MainActor.run { ... }`
     private func makeSnapshot() -> Snapshot {
-        Snapshot(
-            originalImage: originalImage,
-            filter: selectedFilter,
-            brightness: brightness,
-            contrast: contrast,
-            saturation: saturation,
-            zoomScale: zoomScale,
-            offset: offset
-        )
+        Snapshot(original: originalImage, filter: selectedFilter, brightness: brightness, contrast: contrast, saturation: saturation, zoomScale: zoomScale, offset: offset)
     }
 
     private func processImageAsync() async -> UIImage {
-        // ✅ Captura de estado segura en el MainActor
         let s = await MainActor.run { makeSnapshot() }
-
-        return await withCheckedContinuation { continuation in
+        return await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
-                var img = s.originalImage.normalizedUp()
+                var img = s.original.normalizedUp()
                 img = s.filter.apply(to: img)
-
-                let processor = ImageProcessor()
-                img = processor.adjustImage(
-                    img,
-                    brightness: s.brightness,
-                    contrast: s.contrast,
-                    saturation: s.saturation
-                )
-
-                let targetSize = CGSize(width: 400, height: 400)
-                let result = ImageCropper.crop(
-                    img,
-                    to: targetSize,
-                    zoomScale: s.zoomScale,
-                    offset: s.offset
-                )
-                continuation.resume(returning: result)
+                let proc = ImageProcessor()
+                img = proc.adjustImage(img, brightness: s.brightness, contrast: s.contrast, saturation: s.saturation)
+                let result = ImageCropper.crop(img, to: .init(width: 400, height: 400), zoomScale: s.zoomScale, offset: s.offset)
+                cont.resume(returning: result)
             }
         }
     }
 
-    // MARK: - Acciones
-
     private func resetAdjustments() {
-        brightness = 0
-        contrast = 1
-        saturation = 1
-        zoomScale = 1.0
-        lastZoomScale = 1.0
-        offset = .zero
-        lastOffset = .zero
+        brightness = 0; contrast = 1; saturation = 1
+        zoomScale = 1; lastZoomScale = 1
+        offset = .zero; lastOffset = .zero
     }
 
     private func saveImage() {
@@ -271,14 +198,11 @@ struct AdvancedAvatarEditor: View {
     }
 }
 
-// MARK: - Crop helper
-
+// Crop helper para preview → imagen final
 extension ImageCropper {
-    /// Crops the image to a square of target size using a center-based zoom and offset in preview space.
     static func crop(_ image: UIImage, to targetSize: CGSize, zoomScale: CGFloat, offset: CGSize) -> UIImage {
-        let baseSize = min(targetSize.width, targetSize.height)
-        let canvas = CGSize(width: baseSize, height: baseSize)
-
+        let base = min(targetSize.width, targetSize.height)
+        let canvas = CGSize(width: base, height: base)
         let renderer = UIGraphicsImageRenderer(size: canvas)
         return renderer.image { ctx in
             ctx.cgContext.setFillColor(UIColor.clear.cgColor)
@@ -286,27 +210,19 @@ extension ImageCropper {
 
             let imgSize = image.size
             let scaleToFill = max(canvas.width / imgSize.width, canvas.height / imgSize.height)
-            let baseWidth = imgSize.width * scaleToFill
-            let baseHeight = imgSize.height * scaleToFill
-
-            var drawRect = CGRect(
-                x: (canvas.width - baseWidth) / 2.0,
-                y: (canvas.height - baseHeight) / 2.0,
-                width: baseWidth,
-                height: baseHeight
-            )
-
-            // Ajuste de desplazamiento (offset) — el preview es 200pt, el destino 400px
+            let baseW = imgSize.width * scaleToFill
+            let baseH = imgSize.height * scaleToFill
             let z = max(0.5, min(3.0, zoomScale))
+
+            // Origen centrado + offset transformado desde preview (200pt) a canvas
             let center = CGPoint(x: canvas.width/2, y: canvas.height/2)
             let scaleFactor = canvas.width / 200.0
-            let translatedOffset = CGSize(width: offset.width * scaleFactor, height: offset.height * scaleFactor)
-            drawRect = drawRect.applying(CGAffineTransform(translationX: translatedOffset.width, y: translatedOffset.height))
+            let tOffset = CGSize(width: offset.width * scaleFactor, height: offset.height * scaleFactor)
 
-            // Zoom alrededor del centro
-            let newSize = CGSize(width: drawRect.width * z, height: drawRect.height * z)
-            drawRect = CGRect(x: center.x - newSize.width/2, y: center.y - newSize.height/2, width: newSize.width, height: newSize.height)
-
+            let newW = baseW * z, newH = baseH * z
+            let drawRect = CGRect(x: center.x - newW/2 + tOffset.width,
+                                  y: center.y - newH/2 + tOffset.height,
+                                  width: newW, height: newH)
             image.draw(in: drawRect)
         }
     }

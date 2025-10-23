@@ -2,96 +2,79 @@ import UIKit
 
 class AvatarCache {
     static let shared = AvatarCache()
-    
+
     private let cache = NSCache<NSString, UIImage>()
     private let fileManager = FileManager.default
     private let cacheDirectory: URL
-    
+
     private init() {
-        cache.countLimit = 100
-        cache.totalCostLimit = 50 * 1024 * 1024 // 50MB
-        
+        cache.countLimit = 150
+        cache.totalCostLimit = 64 * 1024 * 1024 // 64MB
         cacheDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("AvatarCache")
-        
         createCacheDirectoryIfNeeded()
     }
-    
-    // MARK: - Memory Cache
-    
+
+    // MARK: Memory
     func setImage(_ image: UIImage, forKey key: String) {
-        cache.setObject(image, forKey: key as NSString)
+        let cost = (image.cgImage?.bytesPerRow ?? 0) * (image.cgImage?.height ?? 0)
+        cache.setObject(image, forKey: key as NSString, cost: cost)
         saveImageToDisk(image, key: key)
     }
-    
+
     func getImage(forKey key: String) -> UIImage? {
-        // Primero intentar memoria
-        if let image = cache.object(forKey: key as NSString) {
-            return image
-        }
-        
-        // Luego intentar disco
+        if let image = cache.object(forKey: key as NSString) { return image }
         if let image = loadImageFromDisk(key: key) {
-            cache.setObject(image, forKey: key as NSString)
+            let cost = (image.cgImage?.bytesPerRow ?? 0) * (image.cgImage?.height ?? 0)
+            cache.setObject(image, forKey: key as NSString, cost: cost)
             return image
         }
-        
         return nil
     }
-    
+
     func removeImage(forKey key: String) {
         cache.removeObject(forKey: key as NSString)
         removeImageFromDisk(key: key)
     }
-    
+
     func clearCache() {
         cache.removeAllObjects()
         clearDiskCache()
     }
-    
-    // MARK: - Disk Cache
-    
+
+    // MARK: Disk
     private func createCacheDirectoryIfNeeded() {
         if !fileManager.fileExists(atPath: cacheDirectory.path) {
-            try? fileManager.createDirectory(
-                at: cacheDirectory,
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
+            try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         }
     }
-    
+
     private func saveImageToDisk(_ image: UIImage, key: String) {
+        // JPEG 0.8: buen equilibrio calidad/tamaño; usa WebP si ya lo tienes en el proyecto.
         guard let data = image.jpegData(compressionQuality: 0.8) else { return }
-        
-        let url = cacheDirectory.appendingPathComponent("\(key.hash).jpg")
-        try? data.write(to: url)
+        let url = cacheDirectory.appendingPathComponent("\(key.hashValue)_v1.jpg")
+        try? data.write(to: url, options: .atomic)
     }
-    
+
     private func loadImageFromDisk(key: String) -> UIImage? {
-        let url = cacheDirectory.appendingPathComponent("\(key.hash).jpg")
+        let url = cacheDirectory.appendingPathComponent("\(key.hashValue)_v1.jpg")
         guard let data = try? Data(contentsOf: url) else { return nil }
         return UIImage(data: data)
     }
-    
+
     private func removeImageFromDisk(key: String) {
-        let url = cacheDirectory.appendingPathComponent("\(key.hash).jpg")
+        let url = cacheDirectory.appendingPathComponent("\(key.hashValue)_v1.jpg")
         try? fileManager.removeItem(at: url)
     }
-    
+
     private func clearDiskCache() {
         guard let enumerator = fileManager.enumerator(at: cacheDirectory, includingPropertiesForKeys: nil) else { return }
-        
-        for case let fileURL as URL in enumerator {
-            try? fileManager.removeItem(at: fileURL)
-        }
+        for case let fileURL as URL in enumerator { try? fileManager.removeItem(at: fileURL) }
     }
-    
-    // MARK: - Cache Statistics
-    
+
+    // MARK: Utils
     func getCacheSize() -> String {
         let memorySize = cache.totalCostLimit
-        
         var diskSize: Int64 = 0
         if let enumerator = fileManager.enumerator(at: cacheDirectory, includingPropertiesForKeys: [.fileSizeKey]) {
             for case let fileURL as URL in enumerator {
@@ -100,32 +83,21 @@ class AvatarCache {
                 }
             }
         }
-        
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useMB, .useKB]
-        formatter.countStyle = .file
-        
-        return "Memoria: \(formatter.string(fromByteCount: Int64(memorySize))), Disco: \(formatter.string(fromByteCount: diskSize))"
+        let fmt = ByteCountFormatter()
+        fmt.allowedUnits = [.useMB, .useKB]; fmt.countStyle = .file
+        return "Memoria: \(fmt.string(fromByteCount: Int64(memorySize))), Disco: \(fmt.string(fromByteCount: diskSize)))"
     }
-}
 
-extension AvatarCache {
-    // Limpiar cache cuando el usuario cambia avatar
+    // Invalida cachés
     func clearUserAvatar(userID: String) {
-        // Buscar y eliminar todas las entradas relacionadas con este usuario
-        let cacheDirectory = self.cacheDirectory
-        
-        guard let enumerator = fileManager.enumerator(at: cacheDirectory, includingPropertiesForKeys: nil) else { return }
-        
+        let dir = self.cacheDirectory
+        guard let enumerator = fileManager.enumerator(at: dir, includingPropertiesForKeys: nil) else { return }
         for case let fileURL as URL in enumerator {
-            let fileName = fileURL.lastPathComponent
-            if fileName.contains("avatar_\(userID)") {
-                try? fileManager.removeItem(at: fileURL)
-            }
+            let name = fileURL.lastPathComponent
+            if name.contains("avatar_\(userID)") { try? fileManager.removeItem(at: fileURL) }
         }
     }
-    
-    // Método para invalidar cache de avatar específico
+
     func invalidateAvatar(for url: String) {
         removeImage(forKey: url)
     }

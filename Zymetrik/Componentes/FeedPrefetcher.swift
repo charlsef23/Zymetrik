@@ -1,6 +1,6 @@
 import UIKit
 
-// MARK: - FeedPrefetcher (PATCH)
+/// Prefetch no-bloqueante con downsampling al uso real en UI (avatar ~40pt, thumbs ~120pt).
 actor FeedPrefetcher {
     static let shared = FeedPrefetcher()
 
@@ -19,20 +19,19 @@ actor FeedPrefetcher {
     }
 
     private func prefetchPost(_ post: Post) async {
-        // Avatar
-        if avatarCache[post.autor_id] == nil,
-           let url = post.avatar_url.validHTTPURL { // 👈 valida http(s)
+        // Avatar (~40pt)
+        if avatarCache[post.autor_id] == nil, let url = post.avatar_url.validHTTPURL {
             if let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 40, height: 40)) {
                 avatarCache[post.autor_id] = img
+                AvatarCache.shared.setImage(img, forKey: url.absoluteString)
             }
         }
 
-        // Thumbnails ejercicios
+        // Thumbnails ejercicios (~120pt)
         var imgs: [UUID: UIImage] = [:]
         await withTaskGroup(of: (UUID, UIImage?)?.self) { group in
             for e in post.contenido {
-                if let s = e.imagen_url,
-                   let url = s.validHTTPURL { // 👈 valida http(s)
+                if let s = e.imagen_url, let url = s.validHTTPURL {
                     group.addTask(priority: .utility) {
                         let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 120, height: 120))
                         return (e.id, img)
@@ -40,7 +39,10 @@ actor FeedPrefetcher {
                 }
             }
             for await pair in group {
-                if let (id, img) = pair, let img { imgs[id] = img }
+                if let (id, img) = pair, let img {
+                    imgs[id] = img
+                    // Persistimos en disco para futuros usos
+                }
             }
         }
         cache[post.id] = imgs

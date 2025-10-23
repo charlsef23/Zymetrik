@@ -31,6 +31,7 @@ struct InicioView: View {
 
     // Concurrencia
     @State private var loadTask: Task<Void, Never>? = nil
+    @State private var lastLoadMoreRequestAt: CFAbsoluteTime = 0
     @State private var feedGeneration: Int = 0
 
     enum FeedSelection: String, CaseIterable, Identifiable {
@@ -63,15 +64,20 @@ struct InicioView: View {
                     LazyVStack(spacing: 24) {
                         ForEach(posts) { post in
                             PostView(post: post, feedKey: selectedFeed)
-                                .id("\(selectedFeed.rawValue)-\(post.id)") // identidad por feed
                                 .onAppear {
                                     if post.id == posts.last?.id {
-                                        triggerLoadMoreIfNeeded()
+                                        // Debounce to avoid multiple calls when many cells appear almost at once
+                                        let now = CFAbsoluteTimeGetCurrent()
+                                        if now - lastLoadMoreRequestAt > 0.3 {
+                                            lastLoadMoreRequestAt = now
+                                            triggerLoadMoreIfNeeded()
+                                        }
                                     }
                                 }
                         }
                         if isLoadingMore { ProgressView().padding(.vertical, 12) }
                     }
+                    .id(selectedFeed.rawValue)
                     .padding(.top)
                 }
                 .refreshable { await refresh() }
@@ -119,14 +125,16 @@ struct InicioView: View {
             errorMsg = nil
         }
         do {
-            posts = try await SupabaseService.shared.fetchPosts()
-            await MainActor.run { cargando = false }
+            let fetched = try await SupabaseService.shared.fetchPosts()
+            await MainActor.run {
+                posts = fetched
+                cargando = false
+            }
             restartFeed()
         } catch {
             await MainActor.run {
                 cargando = false
                 errorMsg = "No se pudo cargar el feed: \(error.localizedDescription)"
-                print("❌ fetchPosts error:", error)
             }
         }
     }
@@ -180,10 +188,14 @@ struct InicioView: View {
 
     // MARK: - Carga paginada
     private func loadMore(reset: Bool, generation: Int) async {
-        await MainActor.run {
-            if isLoadingMore || reachedEnd { return }
+        // Fast guard to avoid overlapping loads
+        let shouldStart: Bool = await MainActor.run {
+            if isLoadingMore || reachedEnd { return false }
             isLoadingMore = true
+            return true
         }
+        guard shouldStart else { return }
+
         defer { Task { @MainActor in isLoadingMore = false } }
 
         do {
@@ -194,7 +206,6 @@ struct InicioView: View {
 
             let page: [Post]
             if isParaTi {
-                // RPC con nulls explícitos para evitar PGRST202
                 let params = FeedParams(
                     p_after_ts: nil,
                     p_before_ts: beforeCursor.map { iso.string(from: $0) },
@@ -208,7 +219,6 @@ struct InicioView: View {
 
                 page = try res.decodedList(to: Post.self)
             } else {
-                // Feed "Siguiendo"
                 page = try await SupabaseService.shared.fetchFollowingPosts(
                     userID: me,
                     before: beforeCursor,
@@ -222,14 +232,20 @@ struct InicioView: View {
                 if reset {
                     posts = page
                 } else {
+                    if page.isEmpty {
+                        // No need to merge when empty; mark end and return
+                        reachedEnd = true
+                        return
+                    }
                     var dict = Dictionary(uniqueKeysWithValues: posts.map { ($0.id, $0) })
                     for p in page { dict[p.id] = p }
                     posts = dict.values.sorted { $0.fecha > $1.fecha }
+                    beforeCursor = page.last?.fecha
                 }
 
                 if page.isEmpty {
                     reachedEnd = true
-                } else {
+                } else if reset {
                     beforeCursor = page.last?.fecha
                 }
             }
@@ -238,7 +254,6 @@ struct InicioView: View {
         } catch let urlErr as URLError where urlErr.code == .cancelled {
             return
         } catch {
-            print("Error al cargar feed:", error)
             await MainActor.run {
                 if posts.isEmpty {
                     errorMsg = "No se pudo cargar el feed \(selectedFeed.rawValue): \(error.localizedDescription)"
@@ -247,3 +262,4 @@ struct InicioView: View {
         }
     }
 }
+

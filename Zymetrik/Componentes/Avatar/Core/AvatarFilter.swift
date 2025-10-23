@@ -3,15 +3,8 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 
 enum AvatarFilter: String, CaseIterable {
-    case none = "none"
-    case blur = "blur"
-    case sepia = "sepia"
-    case noir = "noir"
-    case vintage = "vintage"
-    case vibrant = "vibrant"
-    case cool = "cool"
-    case warm = "warm"
-    
+    case none, blur, sepia, noir, vintage, vibrant, cool, warm
+
     var displayName: String {
         switch self {
         case .none: return "Original"
@@ -24,7 +17,7 @@ enum AvatarFilter: String, CaseIterable {
         case .warm: return "Cálido"
         }
     }
-    
+
     var icon: String {
         switch self {
         case .none: return "circle"
@@ -37,67 +30,71 @@ enum AvatarFilter: String, CaseIterable {
         case .warm: return "sun.max"
         }
     }
-    
-    func apply(to image: UIImage) -> UIImage {
-        guard self != .none,
-              let ciImage = CIImage(image: image) else {
-            return image
-        }
-        
-        let context = CIContext()
-        var outputImage = ciImage
-        
-        switch self {
+}
+
+/// Contexto compartido + pipeline optimizada (evita crear CIContext por filtro).
+enum AvatarFilterService {
+    static let shared = AvatarFilterRuntime()
+}
+
+final class AvatarFilterRuntime {
+    private let context = CIContext(options: [.useSoftwareRenderer: false])
+
+    func apply(filter: AvatarFilter, to image: UIImage) -> UIImage {
+        guard filter != .none, let ciImage = CIImage(image: image) else { return image }
+
+        let outputImage: CIImage?
+        switch filter {
         case .none:
-            break
-            
+            outputImage = ciImage
+
         case .blur:
-            let blurFilter = CIFilter.gaussianBlur()
-            blurFilter.inputImage = ciImage
-            blurFilter.radius = 2.0
-            outputImage = blurFilter.outputImage ?? ciImage
-            
+            let f = CIFilter.gaussianBlur()
+            f.inputImage = ciImage
+            f.radius = 2.0
+            outputImage = f.outputImage?.clampedToExtent()
+
         case .sepia:
-            let sepiaFilter = CIFilter.sepiaTone()
-            sepiaFilter.inputImage = ciImage
-            sepiaFilter.intensity = 0.8
-            outputImage = sepiaFilter.outputImage ?? ciImage
-            
+            let f = CIFilter.sepiaTone()
+            f.inputImage = ciImage
+            f.intensity = 0.8
+            outputImage = f.outputImage
+
         case .noir:
-            let noirFilter = CIFilter.photoEffectNoir()
-            noirFilter.inputImage = ciImage
-            outputImage = noirFilter.outputImage ?? ciImage
-            
+            let f = CIFilter.photoEffectNoir()
+            f.inputImage = ciImage
+            outputImage = f.outputImage
+
         case .vintage:
-            let vintageFilter = CIFilter.photoEffectInstant()
-            vintageFilter.inputImage = ciImage
-            outputImage = vintageFilter.outputImage ?? ciImage
-            
+            let f = CIFilter.photoEffectInstant()
+            f.inputImage = ciImage
+            outputImage = f.outputImage
+
         case .vibrant:
-            let vibranceFilter = CIFilter.vibrance()
-            vibranceFilter.inputImage = ciImage
-            vibranceFilter.amount = 1.0
-            outputImage = vibranceFilter.outputImage ?? ciImage
-            
+            let f = CIFilter.vibrance()
+            f.inputImage = ciImage
+            f.amount = 1.0
+            outputImage = f.outputImage
+
         case .cool:
-            let temperatureFilter = CIFilter.temperatureAndTint()
-            temperatureFilter.inputImage = ciImage
-            temperatureFilter.neutral = CIVector(x: 6500, y: 0)
-            temperatureFilter.targetNeutral = CIVector(x: 7000, y: -200)
-            outputImage = temperatureFilter.outputImage ?? ciImage
-            
+            let f = CIFilter.temperatureAndTint()
+            f.inputImage = ciImage
+            f.neutral = CIVector(x: 6500, y: 0)
+            f.targetNeutral = CIVector(x: 7000, y: -200)
+            outputImage = f.outputImage
+
         case .warm:
-            let temperatureFilter = CIFilter.temperatureAndTint()
-            temperatureFilter.inputImage = ciImage
-            temperatureFilter.neutral = CIVector(x: 6500, y: 0)
-            temperatureFilter.targetNeutral = CIVector(x: 5500, y: 200)
-            outputImage = temperatureFilter.outputImage ?? ciImage
+            let f = CIFilter.temperatureAndTint()
+            f.inputImage = ciImage
+            f.neutral = CIVector(x: 6500, y: 0)
+            f.targetNeutral = CIVector(x: 5500, y: 200)
+            outputImage = f.outputImage
         }
-        
-        guard let cgImage = context.createCGImage(outputImage, from: outputImage.extent) else {
-            return image
-        }
-        
-        return UIImage(cgImage: cgImage)
+
+        guard let out = outputImage,
+              let cg = context.createCGImage(out, from: ciImage.extent)
+        else { return image }
+
+        return UIImage(cgImage: cg, scale: image.scale, orientation: .up)
     }
 }
