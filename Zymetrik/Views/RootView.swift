@@ -13,8 +13,13 @@ struct RootView: View {
     @StateObject private var routine = RoutineTracker.shared
     @StateObject private var subs = SubscriptionStore.shared
 
-    // ⬇️ inyecta BlockStore aquí
+    // Contadores/bloques
     @StateObject private var blockStore = BlockStore()
+
+    // ⬇️ Stores precargados
+    @StateObject private var feedStore = FeedStore.shared
+    @StateObject private var statsStore = StatsStore.shared
+    @StateObject private var achievementsStore = AchievementsStore.shared
 
     var body: some View {
         Group {
@@ -28,6 +33,7 @@ struct RootView: View {
             } else {
                 switch appState.phase {
                 case .loading, .error:
+                    // Mantén splash mientras se precarga TODO
                     SplashView()
                 case .ready:
                     CustomTabContainer()
@@ -35,23 +41,40 @@ struct RootView: View {
                 }
             }
         }
+        // Inyección de dependencias
         .environmentObject(appState)
         .environmentObject(contentStore)
         .environmentObject(planStore)
         .environmentObject(uiState)
         .environmentObject(routine)
         .environmentObject(subs)
-        .environmentObject(blockStore)       // ⬅️ importante
+        .environmentObject(blockStore)
+        .environmentObject(feedStore)
+        .environmentObject(statsStore)
+        .environmentObject(achievementsStore)
+        // Precarga al iniciar sesión
         .task {
             await checkSession()
             if isLoggedIn {
-                appState.phase = .loading(progress: 0, message: "Preparando…")
-                await blockStore.reload()     // ⬅️ carga contador inicial
+                appState.phase = .loading(progress: 0.1, message: "Preparando…")
+
+                // Ejecuta cargas en paralelo
+                async let _subsProducts: Void = subs.loadProducts()
+                async let _subsRefresh:  Void = subs.refresh()
+                async let _blocks:       Void = blockStore.reload()
+
+                // Feed completo (Para ti / Siguiendo)
+                async let _feed:  Void = feedStore.preloadAll()
+
+                // Precargas dependientes del usuario/feeds
+                async let _stats: Void = statsStore.preloadForCurrentUser(feedStore: feedStore)
+                async let _ach:   Void = achievementsStore.preloadForCurrentUser()
+
+                // Espera a que todo termine antes de mostrar la UI
+                _ = await (_subsProducts, _subsRefresh, _blocks, _feed, _stats, _ach)
+
+                appState.phase = .ready
             }
-        }
-        .task {
-            await subs.loadProducts()
-            await subs.refresh()
         }
     }
 

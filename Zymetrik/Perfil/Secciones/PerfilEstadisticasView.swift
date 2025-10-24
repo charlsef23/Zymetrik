@@ -4,27 +4,40 @@ struct PerfilEstadisticasView: View {
     /// Si nil => estadísticas del usuario autenticado. Si no, del perfil indicado.
     let perfilId: UUID?
 
+    @EnvironmentObject private var statsStore: StatsStore
+
     @State private var ejerciciosConSesiones: [(ejercicio: EjercicioPostContenido, sesiones: [SesionEjercicio])] = []
-    @State private var cargando = true
     @State private var ejerciciosAbiertos: Set<UUID> = []
     @State private var categoriaSeleccionada: String = "Todas"
     @State private var categoriasDisponibles: [String] = ["Todas"]
+    @State private var hasLoaded: Bool = false
 
     var body: some View {
         ScrollView {
             // Filtro por categoría
-            if !cargando {
+            if hasLoaded {
                 VStack(alignment: .leading, spacing: 10) {
-                    // Desplegable de categorías
                     Menu {
-                        // Opción Todas
+                        // Opción "Todas"
                         Button(action: { categoriaSeleccionada = "Todas" }) {
-                            Label("Todas", systemImage: categoriaSeleccionada == "Todas" ? "checkmark" : "")
+                            HStack {
+                                Text("Todas")
+                                Spacer()
+                                if categoriaSeleccionada == "Todas" {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
                         }
                         Divider()
                         ForEach(categoriasDisponibles.filter { $0 != "Todas" }.sorted(), id: \.self) { cat in
                             Button(action: { categoriaSeleccionada = cat }) {
-                                Label(cat, systemImage: categoriaSeleccionada == cat ? "checkmark" : "")
+                                HStack {
+                                    Text(cat)
+                                    Spacer()
+                                    if categoriaSeleccionada == cat {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
                             }
                         }
                     } label: {
@@ -59,103 +72,91 @@ struct PerfilEstadisticasView: View {
                 .padding(.horizontal)
                 .padding(.top, 12)
             }
-            LazyVStack(spacing: 16, pinnedViews: []) {
-                if cargando {
-                    ProgressView("Cargando…")
-                        .padding(.vertical, 24)
-                } else if ejerciciosConSesiones.isEmpty {
+
+            LazyVStack(spacing: 16) {
+                if hasLoaded && ejerciciosConSesiones.isEmpty {
                     Text("No hay ejercicios con datos.")
                         .foregroundColor(.secondary)
                         .padding(.vertical, 24)
                 } else {
-                    ForEach(filtradosPorCategoria(), id: \.ejercicio.id) { par in
+                    ForEach(ejerciciosOrdenados(), id: \.ejercicio.id) { par in
                         EstadisticaEjercicioCard(
                             ejercicio: par.ejercicio,
                             perfilId: perfilId,
                             ejerciciosAbiertos: $ejerciciosAbiertos
                         )
-                        // No añadimos overlays/bordes aquí
                     }
                 }
             }
-            .padding(.vertical, 12)          // sin padding horizontal → full-bleed
+            .padding(.vertical, 12)
         }
         .background(Color(.systemBackground).ignoresSafeArea())
-        .task { await cargarTodasLasEstadisticas() }
+        .task { await prefillAndRefresh() }
+        .refreshable { await hardRefresh() }
     }
 
-    private func filtradosPorCategoria() -> [(ejercicio: EjercicioPostContenido, sesiones: [SesionEjercicio])] {
-        if categoriaSeleccionada == "Todas" { return ejerciciosConSesiones }
-        return ejerciciosConSesiones.filter { par in
-            // Asumimos que EjercicioPostContenido tiene una propiedad `categoria` de tipo String.
-            // Si no existiera, reemplace el acceso a la propiedad con la correcta.
-            return (par.ejercicio.categoria == categoriaSeleccionada)
+    // MARK: - Orden y filtros
+
+    private func ejerciciosOrdenados() -> [(ejercicio: EjercicioPostContenido, sesiones: [SesionEjercicio])] {
+        let base: [(ejercicio: EjercicioPostContenido, sesiones: [SesionEjercicio])]
+        if categoriaSeleccionada == "Todas" {
+            base = ejerciciosConSesiones
+        } else {
+            base = ejerciciosConSesiones.filter { $0.ejercicio.categoria == categoriaSeleccionada }
+        }
+
+        // Orden alfabético por nombre (localizado y case-insensitive)
+        return base.sorted {
+            $0.ejercicio.nombre.localizedCaseInsensitiveCompare($1.ejercicio.nombre) == .orderedAscending
         }
     }
 
-    func cargarTodasLasEstadisticas() async {
-        cargando = true
-        do {
-            let autorId: UUID = try await {
-                if let perfilId { return perfilId }
-                return try await SupabaseService.shared.client.auth.session.user.id
-            }()
+    // MARK: - Carga instantánea + refresco silencioso
 
-            let posts = try await SupabaseService.shared.fetchPostsDelUsuario(autorId: autorId)
+    private func prefillAndRefresh() async {
+        let target: UUID? = perfilId ?? SupabaseManager.shared.client.auth.currentSession?.user.id
+        guard let authorId = target else { return }
 
-            var uniqueIds = Set<UUID>()
-            var metaById: [UUID: EjercicioPostContenido] = [:]
-            for post in posts {
-                for e in post.contenido {
-                    uniqueIds.insert(e.id)
-                    if metaById[e.id] == nil { metaById[e.id] = e }
-                }
-            }
-
-            if uniqueIds.isEmpty {
-                await MainActor.run {
-                    ejerciciosConSesiones = []
-                    categoriasDisponibles = ["Todas"]
-                    categoriaSeleccionada = "Todas"
-                    cargando = false
-                }
-                return
-            }
-
-            var acumulado: [(EjercicioPostContenido, [SesionEjercicio])] = []
-
-            // Usa versión cacheada/tolerante
-            await withTaskGroup(of: (UUID, [SesionEjercicio]).self) { group in
-                for id in uniqueIds {
-                    group.addTask {
-                        let sesiones = await SupabaseService.shared
-                            .obtenerSesionesParaCached(ejercicioID: id, autorId: autorId)
-                        return (id, sesiones)
-                    }
-                }
-                for await (id, sesiones) in group {
-                    if !sesiones.isEmpty, let meta = metaById[id] {
-                        acumulado.append((meta, sesiones))
-                    }
-                }
-            }
-
-            acumulado.sort { ($0.1.last?.fecha ?? .distantPast) > ($1.1.last?.fecha ?? .distantPast) }
-
+        // 1) Prefill instantáneo desde store si existe
+        let pref = statsStore.stats(for: authorId)
+        if !pref.isEmpty {
             await MainActor.run {
-                ejerciciosConSesiones = acumulado.map { (ej, ses) in (ejercicio: ej, sesiones: ses) }
-                // Construir categorías disponibles a partir de los ejercicios cargados
-                let cats = Set(ejerciciosConSesiones.compactMap { $0.ejercicio.categoria })
-                let ordenadas = ["Todas"] + cats.sorted()
-                categoriasDisponibles = ordenadas
-                if !ordenadas.contains(categoriaSeleccionada) {
-                    categoriaSeleccionada = "Todas"
-                }
-                cargando = false
+                ejerciciosConSesiones = pref
+                applyCategories()
+                hasLoaded = true
             }
-        } catch {
-            print("❌ Error al cargar estadísticas: \(error)")
-            await MainActor.run { cargando = false }
+        }
+
+        // 2) Reload silencioso
+        await statsStore.reload(authorId: authorId)
+
+        // 3) Volcar resultado actualizado
+        let updated = statsStore.stats(for: authorId)
+        await MainActor.run {
+            ejerciciosConSesiones = updated
+            applyCategories()
+            hasLoaded = true
+        }
+    }
+
+    private func hardRefresh() async {
+        let target: UUID? = perfilId ?? SupabaseManager.shared.client.auth.currentSession?.user.id
+        guard let authorId = target else { return }
+        await statsStore.reload(authorId: authorId)
+        let updated = statsStore.stats(for: authorId)
+        await MainActor.run {
+            ejerciciosConSesiones = updated
+            applyCategories()
+            hasLoaded = true
+        }
+    }
+
+    private func applyCategories() {
+        let cats = Set(ejerciciosConSesiones.compactMap { $0.ejercicio.categoria })
+        let ordenadas = ["Todas"] + cats.sorted()
+        categoriasDisponibles = ordenadas
+        if !ordenadas.contains(categoriaSeleccionada) {
+            categoriaSeleccionada = "Todas"
         }
     }
 }

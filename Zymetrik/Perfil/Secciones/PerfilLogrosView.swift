@@ -4,9 +4,11 @@ import Supabase
 struct PerfilLogrosView: View {
     let perfilId: UUID?
 
+    @EnvironmentObject private var achievementsStore: AchievementsStore
+
     @State private var logrosCompletados: [LogroConEstado] = []
     @State private var logrosPendientes:  [LogroConEstado] = []
-    @State private var cargando = true
+    @State private var hasLoaded: Bool = false
     @State private var targetId: UUID?
 
     init(perfilId: UUID? = nil) { self.perfilId = perfilId }
@@ -14,10 +16,10 @@ struct PerfilLogrosView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 20) {
-                if cargando {
-                    ProgressView("Cargando logros…").padding(.vertical, 24)
-                } else if logrosCompletados.isEmpty && logrosPendientes.isEmpty {
-                    Text("No hay logros aún.").foregroundColor(.secondary).padding(.vertical, 24)
+                if hasLoaded && logrosCompletados.isEmpty && logrosPendientes.isEmpty {
+                    Text("No hay logros aún.")
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 24)
                 } else {
                     if !logrosCompletados.isEmpty {
                         SectionView(titulo: "Completados", logros: logrosCompletados)
@@ -31,57 +33,57 @@ struct PerfilLogrosView: View {
         }
         .background(Color(.systemBackground).ignoresSafeArea())
         .task {
-            await resolverTarget()
-            await cargarLogros()
+            await resolveTarget()
+            await prefillAndRefresh()
         }
-        .refreshable {
-            await cargarLogros()
-        }
+        .refreshable { await hardRefresh() }
     }
 
-    // MARK: - Resolver target (async por aislamiento de Supabase)
-    private func resolverTarget() async {
-        do {
-            let session = try await SupabaseService.shared.client.auth.session
-            let me = session.user.id
-            targetId = perfilId ?? me
-        } catch {
+    // MARK: - Resolver target
+    private func resolveTarget() async {
+        if let perfilId {
             targetId = perfilId
+        } else if let session = try? await SupabaseService.shared.client.auth.session {
+            targetId = session.user.id
         }
     }
 
-    // MARK: - Carga
+    // MARK: - Prefill + refresh
+    private func prefillAndRefresh() async {
+        guard let authorId = targetId else { return }
+
+        // Prefill instantáneo
+        let pref = achievementsStore.achievements(for: authorId)
+        if !pref.isEmpty {
+            await MainActor.run {
+                setLists(pref)
+                hasLoaded = true
+            }
+        }
+
+        // Refresco silencioso
+        await achievementsStore.reload(authorId: authorId)
+
+        let updated = achievementsStore.achievements(for: authorId)
+        await MainActor.run {
+            setLists(updated)
+            hasLoaded = true
+        }
+    }
+
+    private func hardRefresh() async {
+        guard let authorId = targetId else { return }
+        await achievementsStore.reload(authorId: authorId)
+        let updated = achievementsStore.achievements(for: authorId)
+        await MainActor.run {
+            setLists(updated)
+            hasLoaded = true
+        }
+    }
+
     private func setLists(_ all: [LogroConEstado]) {
         logrosCompletados = all.filter { $0.desbloqueado }
         logrosPendientes  = all.filter { !$0.desbloqueado }
-        cargando = false
-    }
-
-    private func cargarLogros() async {
-        guard let targetId else {
-            await MainActor.run { cargando = false }
-            return
-        }
-        await MainActor.run { cargando = true }
-
-        do {
-            var me: UUID?
-            if let session = try? await SupabaseService.shared.client.auth.session {
-                me = session.user.id
-            }
-
-            let all: [LogroConEstado]
-            if let me, me == targetId {
-                all = try await SupabaseService.shared.fetchLogrosCompletos()
-            } else {
-                all = try await SupabaseService.shared.fetchLogrosCompletos(autorId: targetId)
-            }
-
-            await MainActor.run { setLists(all) }   // 👈 hop correcto
-        } catch {
-            print("❌ Error al cargar logros:", error)
-            await MainActor.run { cargando = false }
-        }
     }
 }
 

@@ -16,25 +16,26 @@ private func isCancelled(_ error: Error) -> Bool {
     return (error as? CancellationError) != nil
 }
 
-@discardableResult
-private func debounceTask(milliseconds: UInt64, operation: @escaping @Sendable () async -> Void) -> Task<Void, Never> {
-    return Task { @MainActor in
-        let delay = Duration.milliseconds(Int64(milliseconds))
-        do {
-            try await Task.sleep(for: delay)
-        } catch {
-            return
+// MARK: - Debouncer actor (no-main, cancelable)
+private actor Debouncer {
+    private var task: Task<Void, Never>?
+    func submit(delay ms: Int, operation: @escaping @Sendable () async -> Void) {
+        task?.cancel()
+        task = Task {
+            do {
+                try await Task.sleep(nanoseconds: UInt64(ms) * 1_000_000)
+                try Task.checkCancellation()
+                await operation()
+            } catch { /* cancel */ }
         }
-        if !Task.isCancelled { await operation() }
     }
+    func cancel() { task?.cancel() }
 }
 
 // MARK: - Scroll offset preference
 private struct ScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 // MARK: - BuscarView
@@ -54,14 +55,14 @@ struct BuscarView: View {
 
     @State private var historial: [Perfil] = []
     @State private var cargarHistorialTask: Task<Void, Never>? = nil
-    @State private var searchTask: Task<Void, Never>? = nil
     @State private var cargandoHistorial = true
     @State private var scrollOffset: CGFloat = 0
 
+    // Debouncer dedicado a las búsquedas
+    private let debouncer = Debouncer()
+
     // Si tienes flag de verificado en DB, úsalo desde ahí.
     private let verificadosDemo: Set<UUID> = []
-
-    // ⬇️ Eliminado el init con .constant(""). Ahora hay que pasar bindings reales desde fuera.
 
     var body: some View {
         NavigationStack {
@@ -83,14 +84,9 @@ struct BuscarView: View {
                         }
                         .padding(.top, 16)
                     } else if !historial.isEmpty {
-                        // Encabezado + lista recientes
-                        SeccionHeader(
-                            titulo: "Recientes",
-                            onAccion: { /* opcional */ }
-                        )
-                        .padding(.top, 12)
-
-                        ListRecientes // ya es LazyVStack
+                        SeccionHeader(titulo: "Recientes", onAccion: { /* opcional */ })
+                            .padding(.top, 12)
+                        ListRecientes
                     } else {
                         EmptyStateBusqueda()
                             .padding(.top, 16)
@@ -120,7 +116,7 @@ struct BuscarView: View {
                         .padding(.top, 6)
                     }
                 }
-                // Pequeño padding inferior para que el último elemento no quede pegado
+
                 Color.clear.frame(height: 12)
             }
             .coordinateSpace(name: "buscar_scroll")
@@ -129,15 +125,7 @@ struct BuscarView: View {
                 scrollOffset = max(0, -value)
             }
             .onChange(of: searchText) { _, _ in
-                searchTask?.cancel()
-                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    resultados = []
-                    cargando = false
-                } else {
-                    searchTask = debounceTask(milliseconds: 250) {
-                        await buscarUsuarios()
-                    }
-                }
+                Task { await debouncedBuscarUsuarios() }
             }
             .onChange(of: isSearchActive) { _, newValue in
                 if !newValue {
@@ -160,6 +148,22 @@ struct BuscarView: View {
         }
     }
 
+    // MARK: - Debounced search trigger (no-main)
+    private func debouncedBuscarUsuarios() async {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            await MainActor.run {
+                resultados = []
+                cargando = false
+            }
+            await debouncer.cancel()
+            return
+        }
+        await debouncer.submit(delay: 250) { [trimmed] in
+            await buscarUsuarios(query: trimmed)
+        }
+    }
+
     // MARK: - Vistas
 
     @ViewBuilder
@@ -175,7 +179,6 @@ struct BuscarView: View {
         }
     }
 
-    // Ya NO es ScrollView; se usa dentro del ScrollView principal
     private var ListRecientes: some View {
         LazyVStack(spacing: 0) {
             ForEach(historial.unique(by: { $0.id }), id: \.id) { p in
@@ -199,36 +202,29 @@ struct BuscarView: View {
 
     // MARK: - Data
 
-    @MainActor
-    private func buscarUsuarios() async {
-        let currentQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !currentQuery.isEmpty else {
-            cargando = false
-            resultados = []
-            return
-        }
-
+    /// IMPORTANTE: No en el main. Solo tocar estado dentro de `MainActor.run`.
+    private func buscarUsuarios(query: String) async {
+        let currentQuery = query
         do {
-            cargando = true
+            await MainActor.run { cargando = true }
+
             let session = try await SupabaseManager.shared.client.auth.session
             let currentUserID = session.user.id
 
-            // Si tienes columna generada `username_lc` + índice pg_trgm, úsala.
-            // Si no la tienes, mantén "username_lc" y cambia tú manualmente a "username".
             let queryColumn = "username_lc"
 
             let resp = try await SupabaseManager.shared.client
                 .from("perfil")
                 .select("id, username, nombre, avatar_url")
                 .ilike(queryColumn, pattern: "%\(currentQuery.lowercased())%")
-                // .neq("id", value: currentUserID.uuidString) // opcional para ocultarte
-                .order("username") // orden estable; refinamos abajo
+                // .neq("id", value: currentUserID.uuidString) // opcional
+                .order("username")
                 .limit(30)
                 .execute()
 
             var lista = try resp.decodedList(to: Perfil.self).unique(by: { $0.id })
 
-            // Prioriza prefijo como IG
+            // Prioriza prefijo
             let q = currentQuery.lowercased()
             lista.sort { a, b in
                 let ap = a.username.lowercased().hasPrefix(q)
@@ -237,21 +233,30 @@ struct BuscarView: View {
                 return a.username.lowercased() < b.username.lowercased()
             }
 
-            // Evita pintar resultados de queries viejas
-            guard currentQuery == searchText.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+            // ✅ HAZLO EN DOS PASOS: primero lee en main, luego haz el guard
+            let latestQuery = await MainActor.run {
+                searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard currentQuery == latestQuery else { return }
 
-            resultados = lista
+            await MainActor.run {
+                resultados = lista
+                cargando = false
+            }
 
-            if seguidos.isEmpty { await cargarSeguidos(userID: currentUserID) }
+            // ✅ También en dos pasos para el booleano
+            let needSeguidos = await MainActor.run { seguidos.isEmpty }
+            if needSeguidos {
+                await cargarSeguidos(userID: currentUserID)
+            }
         } catch {
             if !isCancelled(error) {
                 print("❌ Buscar usuarios (real): \(error)")
             }
+            await MainActor.run { cargando = false }
         }
-
-        cargando = false
     }
-
+    
     private func cargarSeguidos(userID: UUID) async {
         struct FollowedOnly: Decodable { let followed_id: UUID }
         do {
@@ -270,7 +275,6 @@ struct BuscarView: View {
         }
     }
 
-    @MainActor
     private func cargarHistorial() {
         cargarHistorialTask?.cancel()
         cargandoHistorial = true
@@ -299,7 +303,6 @@ struct BuscarView: View {
                 print("❌ Cargar historial (real): \(error)")
             }
         }
-
         await MainActor.run { cargandoHistorial = false }
     }
 
@@ -371,7 +374,7 @@ struct BuscarView: View {
     }
 }
 
-// MARK: - Sección encabezado (“Recientes · Ver todo”)
+// MARK: - Sección encabezado
 
 private struct SeccionHeader: View {
     let titulo: String
@@ -384,9 +387,7 @@ private struct SeccionHeader: View {
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(.primary)
                 .padding(.leading, 16)
-
             Spacer()
-
             if let accionTitulo, let onAccion {
                 Button(accionTitulo, action: onAccion)
                     .font(.system(size: 15, weight: .semibold))
@@ -397,7 +398,7 @@ private struct SeccionHeader: View {
     }
 }
 
-// MARK: - Fila de reciente con ✕ y badge
+// MARK: - Fila de reciente (usa AvatarAsyncImage con caché)
 
 private struct HistorialRowView: View {
     let perfil: Perfil
@@ -408,20 +409,11 @@ private struct HistorialRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if let url = perfil.avatar_url, let imageURL = URL(string: url) {
-                AsyncImage(url: imageURL) { image in
-                    image.resizable()
-                } placeholder: { Color.gray.opacity(0.3) }
-                .frame(width: 56, height: 56)
-                .clipShape(Circle())
-                .accessibilityHidden(true)
-            } else {
-                Image(systemName: "person.circle.fill")
-                    .resizable()
-                    .frame(width: 56, height: 56)
-                    .foregroundColor(.gray)
-                    .accessibilityHidden(true)
-            }
+            AvatarAsyncImage(
+                url: perfil.avatar_url.validHTTPURL,
+                size: 56,
+                showBorder: false
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
@@ -465,7 +457,7 @@ private struct HistorialRowView: View {
     }
 }
 
-// MARK: - Empty state sutil
+// MARK: - Empty state
 
 private struct EmptyStateBusqueda: View {
     var body: some View {

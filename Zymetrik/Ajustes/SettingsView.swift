@@ -71,7 +71,8 @@ struct SettingsView: View {
                             .init(icon: "envelope.fill",             tint: .teal,   title: "Enviar feedback",        destination: AnyView(FeedbackView())),
                             .init(icon: "questionmark.circle.fill",  tint: .indigo, title: "Contactar con soporte",  destination: AnyView(SupportView())),
                             .init(icon: "book.fill",                 tint: .brown,  title: "FAQ",                    destination: AnyView(FAQView())),
-                            .init(icon: "lock.doc.fill",             tint: .purple, title: "Política de privacidad", destination: AnyView(PrivacyPolicyView()))
+                            .init(icon: "lock.doc.fill",             tint: .purple, title: "Política de privacidad", destination: AnyView(PrivacyPolicyView())),
+                            .init(icon: "lock.doc.fill",             tint: .gray,   title: "Términos de uso",        destination: AnyView(TerminosDeUsoView()))
                         ]
                     )
 

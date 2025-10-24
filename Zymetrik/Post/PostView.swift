@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 struct PostView: View {
     let post: Post
-    let feedKey: InicioView.FeedSelection      // ⬅️ clave de feed
+    let feedKey: InicioView.FeedSelection
     var onPostEliminado: (() -> Void)?
     var onGuardadoCambio: ((Bool) -> Void)? = nil
 
@@ -26,15 +26,6 @@ struct PostView: View {
     @State private var showHeart = false
     @Namespace private var heartNS
 
-    // Control de carga
-    @State private var didPrime = false
-    @State private var primeTask: Task<Void, Never>? = nil
-    @State private var isReady = false
-
-    // Cache de avatar para el nuevo sistema
-    @State private var avatarImage: UIImage? = nil
-    @State private var imageCache: [UUID: UIImage] = [:]
-
     // Reportar
     @State private var mostrarReportar = false
     @State private var reportSuccess = false
@@ -52,7 +43,6 @@ struct PostView: View {
         self.onGuardadoCambio = onGuardadoCambio
     }
 
-    // ¿Es un post propio?
     private var isOwnPost: Bool {
         if let session = SupabaseManager.shared.client.auth.currentSession {
             return session.user.id == post.autor_id
@@ -61,37 +51,22 @@ struct PostView: View {
     }
 
     var body: some View {
-        Group {
-            if isReady {
-                mainCard
-                    .transition(.opacity.combined(with: .scale))
-            } else {
-                PostSkeletonView()
+        // Siempre muestra el contenido (sin skeleton)
+        mainCard
+            .onAppear {
+                if ejercicioSeleccionado == nil {
+                    ejercicioSeleccionado = post.contenido.first
+                }
+                // Carga meta (like/guardado) sin bloquear UI
+                Task { await loadMeta() }
             }
-        }
-        .onAppear {
-            if !didPrime {
-                didPrime = true
+            // iOS 17+: usar onChange con cierre sin parámetros
+            .onChange(of: feedKey) {
                 ejercicioSeleccionado = post.contenido.first
-                primeTask?.cancel()
-                primeTask = Task { await primeAll() }
             }
-        }
-        .onDisappear { primeTask?.cancel() }
-        // 🔁 Reinicia si cambia el feed o el post
-        .onChange(of: feedKey) { resetStateAndPrime() }
-        .onChange(of: post.id) { resetStateAndPrime() }
-    }
-
-    // MARK: - Reset del estado para evitar “carrusel invisible”
-    private func resetStateAndPrime() {
-        primeTask?.cancel()
-        ejercicioSeleccionado = post.contenido.first
-        avatarImage = nil
-        imageCache = [:]
-        isReady = false
-        didPrime = false
-        primeTask = Task { await primeAll() }
+            .onChange(of: post.id) {
+                ejercicioSeleccionado = post.contenido.first
+            }
     }
 
     // MARK: - Subvistas
@@ -102,7 +77,7 @@ struct PostView: View {
             isOwnPost: isOwnPost,
             onEliminar: { mostrarConfirmacionEliminar = true },
             onCompartir: { mostrarShareOptions = true },
-            preloadedAvatar: avatarImage,
+            preloadedAvatar: nil, // sin avatar precargado
             onReportar: { mostrarReportar = true }
         )
     }
@@ -120,10 +95,11 @@ struct PostView: View {
     }
 
     private var carouselView: some View {
+        // Pasamos diccionario vacío si la vista lo requiere
         CarruselEjerciciosView(
             ejercicios: post.contenido,
             ejercicioSeleccionado: $ejercicioSeleccionado,
-            preloadedImages: imageCache
+            preloadedImages: [:]
         )
     }
 
@@ -231,11 +207,7 @@ struct PostView: View {
     }
 
     private func shareItems() -> [Any] {
-        var items: [Any] = [shareText()]
-        if let firstID = post.contenido.first?.id, let img = imageCache[firstID] {
-            items.append(img)
-        }
-        return items
+        [shareText()]
     }
 
     private func shareToWhatsApp() {
@@ -255,16 +227,9 @@ struct PostView: View {
             return
         }
 
-        // Usamos la primera imagen del post; si no hay, generamos 1x1 transparente
-        let stickerImage: UIImage = {
-            if let firstID = post.contenido.first?.id, let img = imageCache[firstID] {
-                return img
-            } else {
-                return UIGraphicsImageRenderer(size: .init(width: 1, height: 1)).image { _ in }
-            }
-        }()
-
-        guard let pngData = stickerImage.pngData() else {
+        // Si quisieras compartir imagen real, captura snapshot del carrusel aquí
+        let emptyImage = UIGraphicsImageRenderer(size: .init(width: 1, height: 1)).image { _ in }
+        guard let pngData = emptyImage.pngData() else {
             shareError = "No se pudo preparar la imagen para Instagram."
             return
         }
@@ -274,11 +239,9 @@ struct PostView: View {
             "com.instagram.sharedSticker.backgroundTopColor": "#1F1F1F",
             "com.instagram.sharedSticker.backgroundBottomColor": "#1F1F1F",
         ]]
-
         UIPasteboard.general.setItems(pasteboardItems, options: [
             UIPasteboard.OptionsKey.expirationDate: Date().addingTimeInterval(60)
         ])
-
         UIApplication.shared.open(urlScheme)
     }
 
@@ -295,7 +258,6 @@ struct PostView: View {
                 p_post_id: post.id.uuidString,
                 p_reason: (reason?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? reason : nil
             )
-
             _ = try await SupabaseManager.shared.client
                 .rpc("report_post", params: params)
                 .execute()
@@ -308,7 +270,7 @@ struct PostView: View {
         }
     }
 
-    // MARK: - Lógica UI / acciones
+    // MARK: - Acciones
 
     private func doubleTapLike() async {
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
@@ -392,93 +354,23 @@ struct PostView: View {
         }
     }
 
-    // MARK: - Carga total (meta + imágenes)
-
-    private func primeAll() async {
-        isReady = false
-
-        let postID = post.id
-        let autorID = post.autor_id
-        let avatarURL = post.avatar_url?.validHTTPURL
-        let ejercicios = post.contenido
-        let existingAvatar = self.avatarImage
-        let existingCache = self.imageCache
-
-        // Avatar cache
-        if avatarImage == nil {
-            if let cacheKey = post.avatar_url, let cachedAvatar = AvatarCache.shared.getImage(forKey: cacheKey) {
-                avatarImage = cachedAvatar
-            } else if let preA = await FeedPrefetcher.shared.avatar(for: autorID) {
-                avatarImage = preA
-                if let avatarURL = post.avatar_url {
-                    AvatarCache.shared.setImage(preA, forKey: avatarURL)
-                }
-            }
-        }
-
-        // Carrusel cache
-        if imageCache.isEmpty, let preI = await FeedPrefetcher.shared.images(for: postID) {
-            imageCache = preI
-        }
-
-        @Sendable func loadAvatarImage(url: URL?, existing: UIImage?) async -> UIImage? {
-            if let existing { return existing }
-            if let url {
-                let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 60, height: 60))
-                if let img = img {
-                    AvatarCache.shared.setImage(img, forKey: url.absoluteString)
-                }
-                return img
-            }
-            return nil
-        }
-
-        @Sendable func loadThumbs(ejercicios: [EjercicioPostContenido], existing: [UUID: UIImage]) async -> [UUID: UIImage] {
-            var dict: [UUID: UIImage] = [:]
-            await withTaskGroup(of: (UUID, UIImage?)?.self) { group in
-                for e in ejercicios {
-                    guard existing[e.id] == nil else { continue }
-                    if let s = e.imagen_url, let url = s.validHTTPURL {
-                        group.addTask {
-                            let img = await FastImageLoader.downsampledImage(from: url, targetSize: .init(width: 120, height: 120))
-                            return (e.id, img)
-                        }
-                    }
-                }
-                for await pair in group {
-                    if let (id, img) = pair, let img { dict[id] = img }
-                }
-            }
-            return dict
-        }
-
-        async let avatarTask: UIImage? = loadAvatarImage(url: avatarURL, existing: existingAvatar)
-        async let thumbsTask: [UUID: UIImage] = loadThumbs(ejercicios: ejercicios, existing: existingCache)
-
-        var meta: SupabaseService.PostMetaResponse? = nil
+    // Carga meta ligera (likes/guardado) con tipo explícito para evitar ambigüedad
+    private func loadMeta() async {
         do {
-            meta = try await SupabaseService.shared.fetchPostMeta(postID: postID)
-        } catch {
-            meta = nil
-        }
-
-        let avatar = await avatarTask
-        let thumbs = await thumbsTask
-
-        await MainActor.run {
-            if let m = meta {
+            let m: SupabaseService.PostMetaResponse =
+                try await SupabaseService.shared.fetchPostMeta(postID: post.id)
+            await MainActor.run {
                 leDioLike = m.liked
                 guardado  = m.saved
                 numLikes  = max(0, m.likes_count)
             }
-            if let avatar { avatarImage = avatar }
-            imageCache.merge(thumbs) { old, _ in old }
-            withAnimation(.easeOut(duration: 0.18)) { isReady = true }
+        } catch {
+            // silencioso
         }
     }
 }
 
-// MARK: - PostHeader (username + tiempo; condicional de eliminar y navegación del username)
+// MARK: - Header
 private struct PostHeaderMejorado: View {
     let post: Post
     let isOwnPost: Bool
@@ -491,7 +383,6 @@ private struct PostHeaderMejorado: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Avatar
             NavigationLink {
                 UserProfileView(username: post.username)
             } label: {
@@ -520,7 +411,6 @@ private struct PostHeaderMejorado: View {
             }
             .buttonStyle(.plain)
 
-            // Username + tiempo
             VStack(alignment: .leading, spacing: 0) {
                 if isOwnPost {
                     NavigationLink { PerfilView() } label: { usernameAndTime }
@@ -575,7 +465,7 @@ private struct PostHeaderMejorado: View {
     }
 }
 
-// MARK: - Hoja de reportar
+// MARK: - Hoja Reporte
 private struct ReportPostSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var reason: String = ""

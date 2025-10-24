@@ -9,29 +9,47 @@ struct CustomTabContainer: View {
     @State private var isSearchFieldActive: Bool = false
     @State private var keyboardHeight: CGFloat = 0
 
+    // Mantén instancias vivas de cada pestaña
+    @State private var inicioView = InicioView()
+    @State private var entrenamientoView = EntrenamientoView()
+    @State private var perfilView = PerfilView()
+
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Contenido según la pestaña activa o búsqueda
-            Group {
-                if isSearchExpanded || isSearchFieldActive || !searchText.isEmpty {
-                    BuscarView(
-                        searchText: $searchText,
-                        isSearchActive: $isSearchFieldActive
-                    )
-                } else {
-                    switch activeTab {
-                    case .inicio:
-                        InicioView()
-                    case .entrenamiento:
-                        EntrenamientoView()
-                    case .perfil:
-                        PerfilView()
-                    }
-                }
+
+            // ==== CONTENIDO DE TABS: siempre montado ====
+            ZStack {
+                // Inicio
+                inicioView
+                    .opacity(activeTab == .inicio && !isSearchOverlayActive ? 1 : 0)
+                    .allowsHitTesting(activeTab == .inicio && !isSearchOverlayActive)
+                    .zIndex(activeTab == .inicio ? 1 : 0)
+
+                // Entrenamiento
+                entrenamientoView
+                    .opacity(activeTab == .entrenamiento && !isSearchOverlayActive ? 1 : 0)
+                    .allowsHitTesting(activeTab == .entrenamiento && !isSearchOverlayActive)
+                    .zIndex(activeTab == .entrenamiento ? 1 : 0)
+
+                // Perfil
+                perfilView
+                    .opacity(activeTab == .perfil && !isSearchOverlayActive ? 1 : 0)
+                    .allowsHitTesting(activeTab == .perfil && !isSearchOverlayActive)
+                    .zIndex(activeTab == .perfil ? 1 : 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Barra de pestañas — se muestra salvo que uiState.hideTabBar sea true
+            // ==== BUSCADOR COMO OVERLAY ====
+            if isSearchOverlayActive {
+                BuscarView(
+                    searchText: $searchText,
+                    isSearchActive: $isSearchFieldActive
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                .zIndex(5)
+            }
+
+            // ==== TAB BAR ====
             CustomTabBar(
                 showsSearchBar: true,
                 activeTab: $activeTab,
@@ -39,7 +57,6 @@ struct CustomTabContainer: View {
                 onSearchBarExpanded: { isSearchExpanded = $0 },
                 onSearchTextFieldActive: { isSearchFieldActive = $0 }
             )
-            // 👇 Nada de huecos cuando está oculta
             .padding(.bottom, uiState.hideTabBar ? 0 : max(50, keyboardHeight + 10))
             .opacity(uiState.hideTabBar ? 0 : 1)
             .frame(height: uiState.hideTabBar ? 0 : nil)
@@ -48,6 +65,7 @@ struct CustomTabContainer: View {
             .zIndex(10)
         }
         .ignoresSafeArea(edges: .bottom)
+        // Teclado
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { note in
             guard let endFrame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
             let overlap = max(0, UIScreen.main.bounds.height - endFrame.origin.y)
@@ -56,12 +74,16 @@ struct CustomTabContainer: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             withAnimation(.easeOut(duration: 0.25)) { keyboardHeight = 0 }
         }
-        // Si se oculta la barra, cierra el estado de búsqueda para evitar “zombis”
+        // Si ocultas la barra, cierra búsqueda
         .onChange(of: uiState.hideTabBar) { _, hidden in
             if hidden {
                 isSearchExpanded = false
                 isSearchFieldActive = false
             }
         }
+    }
+
+    private var isSearchOverlayActive: Bool {
+        isSearchExpanded || isSearchFieldActive || !searchText.isEmpty
     }
 }
