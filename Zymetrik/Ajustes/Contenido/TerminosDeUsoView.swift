@@ -6,7 +6,7 @@ struct TerminosDeUsoView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Términos de Uso (también EULA)")
+                Text("Términos de Uso (EULA)")
                     .font(.largeTitle).bold()
                     .padding(.top)
 
