@@ -36,7 +36,7 @@ struct RootView: View {
                     // Mantén splash mientras se precarga TODO
                     SplashView()
                 case .ready:
-                    CustomTabContainer()
+                    NativeTabContainer()
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
             }

@@ -41,7 +41,6 @@ struct InicioView: View {
                     await feedStore.reload(selection: selectedFeed)
                 }
             }
-            .ignoresSafeArea(edges: .bottom)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
@@ -52,7 +51,8 @@ struct InicioView: View {
                         }
                     } label: {
                         HStack(spacing: 6) {
-                            Text(selectedFeed.rawValue).font(.headline)
+                            Text(selectedFeed.rawValue)
+                                .font(.headline)
                             Image(systemName: "chevron.down")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
@@ -63,12 +63,18 @@ struct InicioView: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 20) {
-                        NavigationLink(destination: AlertasView()) { Image(systemName: "bell.fill") }
-                        NavigationLink(destination: DMInboxView()) { Image(systemName: "paperplane.fill") }
+                        NavigationLink(destination: AlertasView()) {
+                            Image(systemName: "bell.fill")
+                        }
+
+                        NavigationLink(destination: DMInboxView()) {
+                            Image(systemName: "paperplane.fill")
+                        }
                     }
                     .font(.system(size: 16, weight: .medium))
                 }
             }
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

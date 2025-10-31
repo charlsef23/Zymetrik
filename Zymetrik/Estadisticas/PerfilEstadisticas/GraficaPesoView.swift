@@ -173,6 +173,9 @@ private struct EnhancedPesoChart: View {
         return out
     }
 
+    private var showMovingAverage: Bool { datos.count >= 6 }
+    private var showMinMax: Bool { datos.count >= 8 }
+
     var body: some View {
         Chart {
             // Área bajo la línea
@@ -189,10 +192,10 @@ private struct EnhancedPesoChart: View {
             // Línea principal
             ForEach(datos, id: \.id) { s in
                 LineMark(x: .value("Fecha", s.fecha), y: .value("Peso", s.pesoTotal))
-                    .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .lineStyle(StrokeStyle(lineWidth: datos.count >= 4 ? 1.8 : 2.5, lineCap: .round))
                     .interpolationMethod(.linear)
                     .foregroundStyle(lineShapeStyle)
-                    .shadow(color: Color.blue.opacity(0.25), radius: 6, y: 3)
+                    .shadow(color: datos.count >= 4 ? Color.clear : Color.blue.opacity(0.25), radius: 6, y: 3)
             }
 
             // Puntos para cada entrenamiento
@@ -202,33 +205,37 @@ private struct EnhancedPesoChart: View {
                     y: .value("Peso", s.pesoTotal)
                 )
                 .symbol(.circle)
-                .symbolSize(28)
+                .symbolSize(datos.count >= 8 ? 14 : (datos.count >= 4 ? 18 : 24))
                 .foregroundStyle(lineShapeStyle)
-                .shadow(color: Color.blue.opacity(0.15), radius: 2, y: 1)
+                .shadow(color: (datos.count >= 4 ? Color.clear : Color.blue.opacity(0.15)), radius: 2, y: 1)
             }
 
             // Media móvil
-            ForEach(mediaMovil, id: \.fecha) { item in
-                LineMark(x: .value("Fecha", item.fecha), y: .value("Media", item.valor))
-                    .lineStyle(StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
-                    .interpolationMethod(.linear)
-                    .foregroundStyle(Color.mint.opacity(0.85))
+            if showMovingAverage {
+                ForEach(mediaMovil, id: \.fecha) { item in
+                    LineMark(x: .value("Fecha", item.fecha), y: .value("Media", item.valor))
+                        .lineStyle(StrokeStyle(lineWidth: 1.0, dash: [4, 3]))
+                        .interpolationMethod(.linear)
+                        .foregroundStyle(Color.mint.opacity(0.7))
+                }
             }
 
             // Min/Max sutiles
-            if let minItem, let minV = minValor {
-                PointMark(x: .value("Fecha", minItem.fecha), y: .value("Min", minV))
-                    .symbol(.circle)
-                    .symbolSize(34)
-                    .foregroundStyle(minPointShapeStyle)
-                    .shadow(color: Color.red.opacity(0.25), radius: 4, y: 2)
-            }
-            if let maxItem, let maxV = maxValor {
-                PointMark(x: .value("Fecha", maxItem.fecha), y: .value("Max", maxV))
-                    .symbol(.circle)
-                    .symbolSize(40)
-                    .foregroundStyle(maxPointShapeStyle)
-                    .shadow(color: Color.purple.opacity(0.25), radius: 4, y: 2)
+            if showMinMax {
+                if let minItem, let minV = minValor {
+                    PointMark(x: .value("Fecha", minItem.fecha), y: .value("Min", minV))
+                        .symbol(.circle)
+                        .symbolSize(34)
+                        .foregroundStyle(minPointShapeStyle)
+                        .shadow(color: Color.red.opacity(0.25), radius: 4, y: 2)
+                }
+                if let maxItem, let maxV = maxValor {
+                    PointMark(x: .value("Fecha", maxItem.fecha), y: .value("Max", maxV))
+                        .symbol(.circle)
+                        .symbolSize(40)
+                        .foregroundStyle(maxPointShapeStyle)
+                        .shadow(color: Color.purple.opacity(0.25), radius: 4, y: 2)
+                }
             }
 
             // Selección
@@ -239,7 +246,7 @@ private struct EnhancedPesoChart: View {
                     .foregroundStyle(lineGradient.opacity(0.35))
                 PointMark(x: .value("Fecha", nearest.fecha), y: .value("Peso", nearest.pesoTotal))
                     .symbol(.circle)
-                    .symbolSize(44)
+                    .symbolSize(datos.count >= 4 ? 28 : 44)
                     .foregroundStyle(lineShapeStyle)
                     .shadow(color: Color.blue.opacity(0.15), radius: 3, y: 1)
             }
@@ -330,3 +337,4 @@ private func formatPesoShort(_ value: Double) -> String {
     let nf = NumberFormatter(); nf.numberStyle = .decimal; nf.maximumFractionDigits = 0
     return "\(nf.string(from: value as NSNumber) ?? "-")"
 }
+
